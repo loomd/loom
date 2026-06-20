@@ -1,50 +1,77 @@
 import React, { useState, useEffect } from 'react';
-import { getCliTools, updateCliEnv } from '../api';
-import type { CliTool } from '../types';
+import {
+  getGlobalEnvVars,
+  createGlobalEnvVar,
+  updateGlobalEnvVar,
+  deleteGlobalEnvVar
+} from '../api';
+import type { GlobalEnvVar } from '../types';
 import { useToast } from '../ToastContext';
 import { useI18n } from '../I18nContext';
 
-interface Props {
-  tools: CliTool[];
-}
-
-export default function EnvVarsPage({ tools: initialTools }: Props) {
+export default function EnvVarsPage() {
   const { t } = useI18n();
-  const [tools, setTools] = useState<CliTool[]>(initialTools);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [envVars, setEnvVars] = useState<GlobalEnvVar[]>([]);
   const [search, setSearch] = useState('');
-  const [pairs, setPairs] = useState<{ k: string; v: string }[]>([]);
+  const [showModal, setShowModal] = useState(false);
+  const [editingVar, setEditingVar] = useState<GlobalEnvVar | null>(null);
+  
+  const [modalKey, setModalKey] = useState('');
+  const [modalValue, setModalValue] = useState('');
+  const [modalDesc, setModalDesc] = useState('');
   const [saving, setSaving] = useState(false);
   const toast = useToast();
 
-  useEffect(() => { setTools(initialTools); }, [initialTools]);
-
-  const selected = tools.find(t => t.id === selectedId);
+  const load = async () => {
+    try {
+      const vars = await getGlobalEnvVars();
+      setEnvVars(vars);
+    } catch (e: any) {
+      toast.error(e?.toString() ?? 'Failed to load global environment variables');
+    }
+  };
 
   useEffect(() => {
-    if (selected) {
-      setPairs(Object.entries(selected.custom_env).map(([k, v]) => ({ k, v })));
-    } else {
-      setPairs([]);
-    }
-  }, [selectedId, tools]);
+    load();
+  }, []);
 
-  const addPair = () => setPairs(p => [...p, { k: '', v: '' }]);
-  const removePair = (i: number) => setPairs(p => p.filter((_, idx) => idx !== i));
-  const updatePair = (i: number, field: 'k' | 'v', val: string) =>
-    setPairs(p => p.map((e, idx) => idx === i ? { ...e, [field]: val } : e));
+  const handleEditClick = (ev: GlobalEnvVar | null) => {
+    setEditingVar(ev);
+    if (ev) {
+      setModalKey(ev.key);
+      setModalValue(ev.value);
+      setModalDesc(ev.description || '');
+    } else {
+      setModalKey('');
+      setModalValue('');
+      setModalDesc('');
+    }
+    setShowModal(true);
+  };
 
   const handleSave = async () => {
-    if (!selectedId) return;
+    const key = modalKey.trim();
+    const val = modalValue.trim();
+    if (!key) {
+      toast.error(t('env.toast.keyEmpty'));
+      return;
+    }
+    
+    // Check duplicates locally (ignoring self if editing)
+    if (envVars.some(ev => ev.key.toUpperCase() === key.toUpperCase() && (!editingVar || ev.id !== editingVar.id))) {
+      toast.error(t('env.toast.dupKey', { key }));
+      return;
+    }
+
     setSaving(true);
     try {
-      const env: Record<string, string> = {};
-      for (const { k, v } of pairs) {
-        if (k.trim()) env[k.trim()] = v;
+      if (editingVar) {
+        await updateGlobalEnvVar(editingVar.id, key, val, modalDesc.trim());
+      } else {
+        await createGlobalEnvVar(key, val, modalDesc.trim());
       }
-      await updateCliEnv(selectedId, env);
-      const fresh = await getCliTools();
-      setTools(fresh);
+      setShowModal(false);
+      load();
       toast.success(t('env.toast.saved'));
     } catch (e: any) {
       toast.error(e?.toString() ?? t('env.toast.saveFailed'));
@@ -53,8 +80,24 @@ export default function EnvVarsPage({ tools: initialTools }: Props) {
     }
   };
 
-  const filtered = tools.filter(t =>
-    !search || t.name.toLowerCase().includes(search.toLowerCase())
+  const handleDeleteClick = async (id: string) => {
+    if (!confirm(t('temp.confirm.delete', { name: envVars.find(e => e.id === id)?.key ?? '' }))) {
+      return;
+    }
+    try {
+      await deleteGlobalEnvVar(id);
+      load();
+      toast.success(t('temp.toast.deleted'));
+    } catch (e: any) {
+      toast.error(e?.toString() ?? 'Delete failed');
+    }
+  };
+
+  const filtered = envVars.filter(ev =>
+    !search ||
+    ev.key.toLowerCase().includes(search.toLowerCase()) ||
+    ev.value.toLowerCase().includes(search.toLowerCase()) ||
+    (ev.description && ev.description.toLowerCase().includes(search.toLowerCase()))
   );
 
   return (
@@ -64,103 +107,115 @@ export default function EnvVarsPage({ tools: initialTools }: Props) {
           <div className="page-title">{t('env.title')}</div>
           <div className="page-subtitle">{t('env.desc')}</div>
         </div>
+        <button className="btn btn-primary" onClick={() => handleEditClick(null)} style={{ fontSize: 12 }}>
+          <span>＋</span> {t('env.btn.newVar')}
+        </button>
       </div>
 
-      <div className="split-layout" style={{ flex: 1, overflow: 'hidden' }}>
-        {/* Tool selector */}
-        <div className="split-left">
-          <div className="search-input-wrap" style={{ maxWidth: '100%' }}>
-            <span className="search-icon" style={{ fontSize: 12 }}>🔍</span>
-            <input
-              className="input"
-              placeholder={t('env.search.placeholder')}
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-              style={{ fontSize: 12 }}
-            />
-          </div>
-          <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 4 }}>
-            {filtered.map(tool => {
-              const envCount = Object.keys(tool.custom_env).length;
-              return (
-                <div
-                  key={tool.id}
-                  className={`tool-row${selectedId === tool.id ? ' selected' : ''}`}
-                  onClick={() => setSelectedId(tool.id)}
-                  style={{ gridTemplateColumns: '1fr auto', padding: '10px 12px' }}
-                >
-                  <div className="tool-info">
-                    <div className="tool-name" style={{ fontSize: 12 }}>{tool.name}</div>
-                  </div>
-                  {envCount > 0 && (
-                    <span className="badge badge-emerald" style={{ fontSize: 10 }}>{envCount}</span>
-                  )}
-                </div>
-              );
-            })}
-          </div>
+      <div className="page-body" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <div className="search-input-wrap" style={{ width: '100%', maxWidth: '320px', marginBottom: 4, flex: 'none' }}>
+          <span className="search-icon">🔍</span>
+          <input
+            className="input"
+            placeholder={t('env.search.placeholder')}
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            style={{ fontSize: 12 }}
+          />
         </div>
 
-        {/* Env editor */}
-        <div className="split-right">
-          {!selected ? (
-            <div className="empty-state" style={{ height: '100%' }}>
-              <div className="empty-state-icon">⚙️</div>
-              <div className="empty-state-title">{t('env.toast.selectTool')}</div>
-              <div className="empty-state-desc">{t('env.desc')}</div>
-            </div>
-          ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', height: '100%', gap: 16 }}>
-              <div className="flex items-center justify-between">
-                <div>
-                  <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)' }}>{t('env.editor.title', { name: selected.name })}</div>
-                  <div style={{ fontSize: 11, color: 'var(--text-tertiary)', fontFamily: 'monospace', marginTop: 2 }}>{selected.path}</div>
-                </div>
-                <div className="flex gap-2">
-                  <button className="btn btn-ghost" onClick={addPair} style={{ fontSize: 12 }}>＋ {t('env.btn.newVar')}</button>
-                  <button className="btn btn-primary" onClick={handleSave} disabled={saving} style={{ fontSize: 12 }}>
-                    {saving ? t('env.btn.saving') : `✓ ${t('env.btn.save')}`}
-                  </button>
+        {filtered.length === 0 ? (
+          <div className="empty-state">
+            <div className="empty-state-icon">📭</div>
+            <div className="empty-state-title">{t('env.empty.noVars')}</div>
+            {search && <div className="empty-state-desc">没有找到匹配的环境变量</div>}
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {filtered.map((ev, idx) => (
+              <div key={ev.id} className="card-outer" style={{ animationDelay: `${idx * 40}ms` }}>
+                <div
+                  className="card-inner"
+                  style={{
+                    padding: '14px 18px',
+                    display: 'grid',
+                    gridTemplateColumns: '200px 300px 1fr auto',
+                    gap: 16,
+                    alignItems: 'center'
+                  }}
+                >
+                  <div style={{ fontFamily: 'monospace', fontSize: 13, fontWeight: 600, color: 'var(--accent-purple)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {ev.key}
+                  </div>
+                  <div style={{ fontFamily: 'monospace', fontSize: 12, color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {ev.value}
+                  </div>
+                  <div style={{ fontSize: 12, color: 'var(--text-tertiary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {ev.description || '-'}
+                  </div>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button className="btn-icon" onClick={() => handleEditClick(ev)} style={{ fontSize: 12 }}>📝</button>
+                    <button className="btn-icon" onClick={() => handleDeleteClick(ev.id)} style={{ color: 'var(--accent-red)', fontSize: 12 }}>✕</button>
+                  </div>
                 </div>
               </div>
-
-              <div className="divider" />
-
-              {pairs.length === 0 ? (
-                <div className="empty-state" style={{ flex: 1 }}>
-                  <div className="empty-state-icon" style={{ fontSize: 28 }}>📭</div>
-                  <div className="empty-state-title">{t('env.empty.noVars')}</div>
-                  <div className="empty-state-desc">{t('env.editor.subtitle')}</div>
-                  <button className="btn btn-ghost" onClick={addPair} style={{ fontSize: 12 }}>＋ {t('env.btn.newVar')}</button>
-                </div>
-              ) : (
-                <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  {pairs.map((pair, i) => (
-                    <div key={i} className="kv-row" style={{ display: 'grid', gridTemplateColumns: '1fr 16px 2fr auto', gap: 8, alignItems: 'center' }}>
-                      <input
-                        className="input"
-                        value={pair.k}
-                        placeholder={t('env.table.key')}
-                        onChange={e => updatePair(i, 'k', e.target.value)}
-                        style={{ fontFamily: 'monospace', fontSize: 12, color: 'var(--accent-purple)', padding: '7px 10px' }}
-                      />
-                      <span className="kv-eq">=</span>
-                      <input
-                        className="input"
-                        value={pair.v}
-                        placeholder={t('env.table.value')}
-                        onChange={e => updatePair(i, 'v', e.target.value)}
-                        style={{ fontFamily: 'monospace', fontSize: 12, padding: '7px 10px' }}
-                      />
-                      <button className="kv-remove" onClick={() => removePair(i)}>✕</button>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-        </div>
+            ))}
+          </div>
+        )}
       </div>
+
+      {showModal && (
+        <div className="modal-overlay" onClick={() => setShowModal(false)}>
+          <div className="modal" style={{ maxWidth: 460 }} onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <div className="modal-title">
+                {editingVar ? t('temp.card.btn.edit') : t('env.btn.newVar')}
+              </div>
+              <button className="btn-icon" onClick={() => setShowModal(false)}>✕</button>
+            </div>
+            <div className="modal-body">
+              <div className="form-group">
+                <label className="form-label">{t('env.table.key')} *</label>
+                <input
+                  className="input"
+                  placeholder="e.g. DATABASE_URL"
+                  value={modalKey}
+                  onChange={e => setModalKey(e.target.value)}
+                  style={{ fontFamily: 'monospace', fontSize: 12 }}
+                  autoFocus
+                />
+              </div>
+              <div className="form-group">
+                <label className="form-label">{t('env.table.value')}</label>
+                <input
+                  className="input"
+                  placeholder="e.g. postgres://localhost/db"
+                  value={modalValue}
+                  onChange={e => setModalValue(e.target.value)}
+                  style={{ fontFamily: 'monospace', fontSize: 12 }}
+                />
+              </div>
+              <div className="form-group">
+                <label className="form-label">{t('env.table.desc')}</label>
+                <input
+                  className="input"
+                  placeholder="e.g. Local development database connection string"
+                  value={modalDesc}
+                  onChange={e => setModalDesc(e.target.value)}
+                />
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-ghost" onClick={() => setShowModal(false)}>
+                {t('cat.modal.btn.cancel')}
+              </button>
+              <button className="btn btn-primary" onClick={handleSave} disabled={saving}>
+                {saving ? t('env.btn.saving') : t('temp.modal.btn.save')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

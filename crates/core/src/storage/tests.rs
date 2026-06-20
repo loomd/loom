@@ -57,15 +57,21 @@ fn test_serialization_fidelity() {
         name: "git status".to_string(),
         args: vec!["status".to_string(), "-sb".to_string()],
         env: template_env,
+        env_var_ids: Vec::new(),
         pwd: Some(PathBuf::from("/projects/my-app")),
         last_run: Some("1687258210".to_string()),
+        cmd_override: None,
     };
 
     let original = AppConfig {
         cli_tools: vec![tool],
         categories: vec![category],
         templates: vec![template],
+        env_vars: Vec::new(),
         language: "zh".to_string(),
+        theme: "dark".to_string(),
+        font_family: "Plus Jakarta Sans".to_string(),
+        font_size: "14px".to_string(),
     };
 
     // Serialize
@@ -170,3 +176,20 @@ fn test_crash_safety_on_failed_write() {
         let _ = fs::remove_dir(&temp_path);
     });
 }
+
+#[test]
+fn test_get_set_theme() {
+    run_test_with_temp_config(|_config_path| {
+        use super::manager::{get_theme, set_theme};
+        
+        // Default theme should be "dark"
+        let default_theme = get_theme().expect("Failed to get default theme");
+        assert_eq!(default_theme, "dark");
+        
+        // Set and get theme
+        set_theme("day".to_string()).expect("Failed to set theme");
+        let updated_theme = get_theme().expect("Failed to get updated theme");
+        assert_eq!(updated_theme, "day");
+    });
+}
+

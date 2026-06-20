@@ -7,7 +7,9 @@ import CategoriesPage from './pages/CategoriesPage';
 import TemplatesPage from './pages/TemplatesPage';
 import InstancesPage from './pages/InstancesPage';
 import EnvVarsPage from './pages/EnvVarsPage';
-import { getCliTools } from './api';
+import SettingsPage from './pages/SettingsPage';
+import { getCliTools, getTheme, setTheme, getFontFamily, getFontSize, setFontFamily as apiFontFamily, setFontSize as apiFontSize } from './api';
+import logoIcon from './assets/logo.png';
 import type { CliTool, Category, Template, RunningInstance } from './types';
 
 // ─── Simple icons (Unicode + SVG inline) ─────────────────────
@@ -17,10 +19,11 @@ const Icons = {
   tag: '◈',
   play: '▶',
   instance: '◉',
-  env: '⚙',
+  env: '⚡',
+  settings: '⚙',
 };
 
-type Page = 'dashboard' | 'categories' | 'templates' | 'instances' | 'env';
+type Page = 'dashboard' | 'categories' | 'templates' | 'instances' | 'env' | 'settings';
 
 interface NavItemProps {
   icon: string;
@@ -37,8 +40,9 @@ function NavItem({ icon, label, current, page, badge, onClick }: NavItemProps) {
       className={`nav-item${current === page ? ' active' : ''}`}
       onClick={onClick}
       style={{ width: '100%', textAlign: 'left', background: 'none', border: '1px solid transparent', cursor: 'pointer' }}
+      data-page={page}
     >
-      <span className="nav-icon" style={{ fontSize: 14 }}>{icon}</span>
+      <span className="nav-icon">{icon}</span>
       <span>{label}</span>
       {badge !== undefined && badge > 0 && (
         <span className="nav-badge">{badge}</span>
@@ -47,13 +51,57 @@ function NavItem({ icon, label, current, page, badge, onClick }: NavItemProps) {
   );
 }
 
+function applyFontToDocument(family: string, size: string) {
+  document.documentElement.style.setProperty('--font-family', family === 'System Default'
+    ? '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
+    : `'${family}', 'Plus Jakarta Sans', sans-serif`);
+  document.documentElement.style.setProperty('--font-size-base', size);
+  const sizeNum = parseFloat(size);
+  if (!isNaN(sizeNum)) {
+    document.documentElement.style.fontSize = size;
+  }
+}
+
 function App() {
-  const { language, setLanguage, t } = useI18n();
+  const { t } = useI18n();
   const [page, setPage] = useState<Page>('dashboard');
   const [tools, setTools] = useState<CliTool[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [selectedTool, setSelectedTool] = useState<CliTool | undefined>();
   const [instances, setInstances] = useState<RunningInstance[]>([]);
+  const [theme, setThemeState] = useState<'dark' | 'day'>('dark');
+  const [fontFamily, setFontFamilyState] = useState('Plus Jakarta Sans');
+  const [fontSize, setFontSizeState] = useState('14px');
+
+  const handleThemeChange = async (newTheme: 'dark' | 'day') => {
+    setThemeState(newTheme);
+    document.body.className = `theme-${newTheme}`;
+    try {
+      await setTheme(newTheme);
+    } catch (err) {
+      console.error('Failed to persist theme preference', err);
+    }
+  };
+
+  const handleFontFamilyChange = async (family: string) => {
+    setFontFamilyState(family);
+    applyFontToDocument(family, fontSize);
+    try {
+      await apiFontFamily(family);
+    } catch (err) {
+      console.error('Failed to persist font family', err);
+    }
+  };
+
+  const handleFontSizeChange = async (size: string) => {
+    setFontSizeState(size);
+    applyFontToDocument(fontFamily, size);
+    try {
+      await apiFontSize(size);
+    } catch (err) {
+      console.error('Failed to persist font size', err);
+    }
+  };
 
   const loadTools = useCallback(async () => {
     try {
@@ -88,6 +136,28 @@ function App() {
     loadTools();
   }, [loadTools]);
 
+  useEffect(() => {
+    getTheme()
+      .then((t) => {
+        if (t === 'dark' || t === 'day') {
+          setThemeState(t);
+          document.body.className = `theme-${t}`;
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  // Load persisted font settings on startup
+  useEffect(() => {
+    Promise.all([getFontFamily(), getFontSize()])
+      .then(([family, size]) => {
+        setFontFamilyState(family);
+        setFontSizeState(size);
+        applyFontToDocument(family, size);
+      })
+      .catch(() => {});
+  }, []);
+
   const handleCategoriesChange = useCallback(async () => {
     await refreshAll();
     import('@tauri-apps/api/core').then(({ invoke }) => {
@@ -117,40 +187,20 @@ function App() {
     <div className="app-shell">
       {/* ── Sidebar ─────────────────────────────────────── */}
       <aside className="sidebar">
-        <div className="sidebar-logo">
-          <div className="sidebar-logo-icon">⌘</div>
+        <div className="sidebar-logo" style={{ paddingBottom: '16px' }}>
+          <img src={logoIcon} style={{ width: 32, height: 32, borderRadius: 'var(--radius-sm)', objectFit: 'contain' }} alt="CliMaster" />
           <div style={{ flexGrow: 1 }}>
             <div className="sidebar-logo-text">CliMaster</div>
             <div className="sidebar-logo-badge">{t('nav.logoSubtitle')}</div>
           </div>
-          <select
-            id="lang-select"
-            value={language}
-            onChange={(e) => setLanguage(e.target.value as 'zh' | 'en')}
-            style={{
-              background: 'var(--bg-card)',
-              color: 'var(--text-primary)',
-              border: '1px solid var(--border-subtle)',
-              borderRadius: 'var(--radius-sm)',
-              fontSize: '11px',
-              padding: '2px 4px',
-              cursor: 'pointer',
-              marginLeft: '4px'
-            }}
-          >
-            <option value="zh">中文</option>
-            <option value="en">EN</option>
-          </select>
         </div>
 
-        <div className="nav-section-label">{t('nav.manage')}</div>
         <NavItem icon={Icons.terminal} label={t('nav.cliTools')} page="dashboard" current={page} badge={tools.length || undefined} onClick={() => setPage('dashboard')} />
         <NavItem icon={Icons.tag} label={t('nav.categories')} page="categories" current={page} badge={categories.length || undefined} onClick={() => setPage('categories')} />
         <NavItem icon={Icons.env} label={t('nav.envVars')} page="env" current={page} onClick={() => setPage('env')} />
-
-        <div className="nav-section-label" style={{ marginTop: 8 }}>{t('nav.run')}</div>
         <NavItem icon={Icons.play} label={t('nav.templates')} page="templates" current={page} onClick={() => setPage('templates')} />
         <NavItem icon={Icons.instance} label={t('nav.instances')} page="instances" current={page} badge={runningCount || undefined} onClick={() => setPage('instances')} />
+        <NavItem icon={Icons.settings} label={t('nav.settings')} page="settings" current={page} onClick={() => setPage('settings')} />
 
         {/* Bottom status */}
         <div style={{ marginTop: 'auto', paddingTop: 12, borderTop: '1px solid var(--border-subtle)' }}>
@@ -189,7 +239,7 @@ function App() {
           />
         )}
         {page === 'env' && (
-          <EnvVarsPage tools={tools} />
+          <EnvVarsPage />
         )}
         {page === 'templates' && (
           <TemplatesPage
@@ -201,6 +251,16 @@ function App() {
           <InstancesPage
             instances={instances}
             onInstancesChange={setInstances}
+          />
+        )}
+        {page === 'settings' && (
+          <SettingsPage
+            theme={theme}
+            onThemeChange={handleThemeChange}
+            fontFamily={fontFamily}
+            fontSize={fontSize}
+            onFontFamilyChange={handleFontFamilyChange}
+            onFontSizeChange={handleFontSizeChange}
           />
         )}
       </main>

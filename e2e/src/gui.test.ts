@@ -1388,5 +1388,205 @@ describe('climaster GUI Tauri Commands E2E tests', () => {
     const lang = await callCmd('get_language');
     expect(lang).toBe('en');
   });
+
+  // F8: Command Override GUI API Tests
+  test('test_gui_cmd_override_crud', async () => {
+    writeMockConfig({
+      cli_tools: [
+        { id: 'cli-1', name: 'git', path: MOCK_CLI_PATH, version: '2.40.0', category_id: null, custom_env: {} }
+      ],
+      categories: [],
+      templates: []
+    });
+
+    // 1. Create template with command override
+    const temp = await callCmd('create_template', {
+      cli_id: 'cli-1',
+      name: 'Status Tpl',
+      args: ['status'],
+      env: {},
+      pwd: '',
+      cmd_override: 'gitstatus'
+    });
+    expect(temp.cmd_override).toBe('gitstatus');
+
+    // Verify written config has the command override
+    let configData = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'));
+    expect(configData.templates[0].cmd_override).toBe('gitstatus');
+
+    // 2. Update template command override
+    const updated = await callCmd('update_template', {
+      template_id: temp.id,
+      name: 'Status Tpl Updated',
+      args: ['status', '-s'],
+      env: {},
+      pwd: '',
+      cmd_override: 'gits'
+    });
+    expect(updated.cmd_override).toBe('gits');
+
+    configData = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'));
+    expect(configData.templates[0].cmd_override).toBe('gits');
+    expect(configData.templates[0].name).toBe('Status Tpl Updated');
+  });
+
+  test('test_gui_cmd_override_validation_duplicate', async () => {
+    writeMockConfig({
+      cli_tools: [
+        { id: 'cli-1', name: 'git', path: MOCK_CLI_PATH, version: '2.40.0', category_id: null, custom_env: {} }
+      ],
+      categories: [],
+      templates: [
+        { id: 't-1', cli_id: 'cli-1', name: 'Status', args: ['status'], env: {}, pwd: null, cmd_override: 'gitstatus' }
+      ]
+    });
+
+    // Create a new template with the same override should fail
+    await expect(callCmd('create_template', {
+      cli_id: 'cli-1',
+      name: 'Status 2',
+      args: ['status'],
+      env: {},
+      pwd: '',
+      cmd_override: 'gitstatus'
+    })).rejects.toThrow();
+
+    // Create another template first, then update it to duplicate override should fail
+    await callCmd('create_template', {
+      cli_id: 'cli-1',
+      name: 'Status 3',
+      args: ['status'],
+      env: {},
+      pwd: '',
+      cmd_override: 'gitstatus-other'
+    });
+    const temps = await callCmd('get_templates');
+    const t3 = temps.find((t: any) => t.name === 'Status 3');
+
+    await expect(callCmd('update_template', {
+      template_id: t3.id,
+      name: 'Status 3',
+      args: ['status'],
+      env: {},
+      pwd: '',
+      cmd_override: 'gitstatus'
+    })).rejects.toThrow();
+  });
+
+  test('test_gui_cmd_override_validation_builtin_conflicts', async () => {
+    writeMockConfig({
+      cli_tools: [
+        { id: 'cli-1', name: 'git', path: MOCK_CLI_PATH, version: '2.40.0', category_id: null, custom_env: {} }
+      ],
+      categories: [],
+      templates: []
+    });
+
+    const builtins = ['list', 'search', 'mock-run', 'help', 'version'];
+    for (const b of builtins) {
+      await expect(callCmd('create_template', {
+        cli_id: 'cli-1',
+        name: `Tpl ${b}`,
+        args: ['status'],
+        env: {},
+        pwd: '',
+        cmd_override: b
+      })).rejects.toThrow();
+    }
+  });
+
+  // F9: Global Environment Variables GUI API Tests
+  test('test_gui_global_env_vars_crud', async () => {
+    writeMockConfig({
+      cli_tools: [],
+      categories: [],
+      templates: []
+    });
+
+    // 1. Create global env var
+    const newVar = await callCmd('create_global_env_var', {
+      key: 'MY_GLOBAL_VAR',
+      value: 'value-123',
+      description: 'A global variable test'
+    });
+    expect(newVar.key).toBe('MY_GLOBAL_VAR');
+    expect(newVar.value).toBe('value-123');
+    expect(newVar.description).toBe('A global variable test');
+
+    // Verify it is returned by get_global_env_vars
+    let vars = await callCmd('get_global_env_vars');
+    expect(vars.length).toBe(1);
+    expect(vars[0].key).toBe('MY_GLOBAL_VAR');
+
+    // 2. Update global env var
+    const updated = await callCmd('update_global_env_var', {
+      id: newVar.id,
+      key: 'MY_GLOBAL_VAR_NEW',
+      value: 'value-456',
+      description: 'A global variable test updated'
+    });
+    expect(updated.key).toBe('MY_GLOBAL_VAR_NEW');
+    expect(updated.value).toBe('value-456');
+
+    // Verify written config
+    let configData = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'));
+    expect(configData.env_vars[0].key).toBe('MY_GLOBAL_VAR_NEW');
+
+    // 3. Delete global env var
+    await callCmd('delete_global_env_var', { id: newVar.id });
+    vars = await callCmd('get_global_env_vars');
+    expect(vars.length).toBe(0);
+
+    configData = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'));
+    expect(configData.env_vars.length).toBe(0);
+  });
+
+  test('test_gui_template_associates_global_env_var', async () => {
+    writeMockConfig({
+      cli_tools: [
+        { id: 'cli-1', name: 'git', path: MOCK_CLI_PATH, version: '2.40.0', category_id: null, custom_env: {} }
+      ],
+      categories: [],
+      templates: []
+    });
+
+    // Create a global env var first
+    const gv = await callCmd('create_global_env_var', {
+      key: 'SHARED_KEY',
+      value: 'shared_val',
+      description: 'Shared var'
+    });
+
+    // Create template referencing global env var
+    const temp = await callCmd('create_template', {
+      cli_id: 'cli-1',
+      name: 'Status Tpl',
+      args: ['status'],
+      env: { LOCAL_KEY: 'local_val' },
+      env_var_ids: [gv.id],
+      pwd: '',
+      cmd_override: 'gitstatus'
+    });
+
+    expect(temp.env_var_ids).toEqual([gv.id]);
+
+    let configData = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'));
+    expect(configData.templates[0].env_var_ids).toEqual([gv.id]);
+
+    // Update template association
+    const updated = await callCmd('update_template', {
+      template_id: temp.id,
+      name: 'Status Tpl',
+      args: ['status'],
+      env: { LOCAL_KEY: 'local_val_new' },
+      env_var_ids: [],
+      pwd: '',
+      cmd_override: 'gitstatus'
+    });
+    expect(updated.env_var_ids).toEqual([]);
+
+    configData = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'));
+    expect(configData.templates[0].env_var_ids).toEqual([]);
+  });
 });
 

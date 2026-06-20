@@ -8,7 +8,7 @@ use tauri::{
     Manager,
 };
 use climaster_core::storage::{
-    CliTool, Category, Template,
+    CliTool, Category, Template, GlobalEnvVar,
     get_cli_tools as core_get_cli_tools,
     get_categories as core_get_categories,
     import_cli_tool as core_import_cli_tool,
@@ -28,6 +28,18 @@ use climaster_core::storage::{
     get_active_instances as core_get_active_instances,
     get_language as core_get_language,
     set_language as core_set_language,
+    get_theme as core_get_theme,
+    set_theme as core_set_theme,
+    get_global_env_vars as core_get_global_env_vars,
+    create_global_env_var as core_create_global_env_var,
+    update_global_env_var as core_update_global_env_var,
+    delete_global_env_var as core_delete_global_env_var,
+    update_category as core_update_category,
+    smart_classify as core_smart_classify,
+    get_font_family as core_get_font_family,
+    set_font_family as core_set_font_family,
+    get_font_size as core_get_font_size,
+    set_font_size as core_set_font_size,
 };
 
 #[tauri::command]
@@ -76,9 +88,11 @@ fn create_template(
     name: String,
     args: Vec<String>,
     env: HashMap<String, String>,
+    env_var_ids: Vec<String>,
     pwd: Option<String>,
+    cmd_override: Option<String>,
 ) -> Result<Template, String> {
-    core_create_template(cli_id, name, args, env, pwd).map_err(|e| e.to_string())
+    core_create_template(cli_id, name, args, env, env_var_ids, pwd, cmd_override).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -97,9 +111,31 @@ fn update_template(
     name: String,
     args: Vec<String>,
     env: HashMap<String, String>,
+    env_var_ids: Vec<String>,
     pwd: Option<String>,
+    cmd_override: Option<String>,
 ) -> Result<Template, String> {
-    core_update_template(template_id, name, args, env, pwd).map_err(|e| e.to_string())
+    core_update_template(template_id, name, args, env, env_var_ids, pwd, cmd_override).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn get_global_env_vars() -> Result<Vec<GlobalEnvVar>, String> {
+    core_get_global_env_vars().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn create_global_env_var(key: String, value: String, description: String) -> Result<GlobalEnvVar, String> {
+    core_create_global_env_var(key, value, description).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn update_global_env_var(id: String, key: String, value: String, description: String) -> Result<GlobalEnvVar, String> {
+    core_update_global_env_var(id, key, value, description).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn delete_global_env_var(id: String) -> Result<(), String> {
+    core_delete_global_env_var(id).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -134,6 +170,46 @@ fn get_language() -> Result<String, String> {
 #[tauri::command]
 fn set_language(lang: String) -> Result<(), String> {
     core_set_language(lang).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn get_theme() -> Result<String, String> {
+    core_get_theme().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn set_theme(theme: String) -> Result<(), String> {
+    core_set_theme(theme).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn update_category(cat_id: String, name: String, desc: String) -> Result<Category, String> {
+    core_update_category(cat_id, name, desc).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn smart_classify() -> Result<(usize, usize), String> {
+    core_smart_classify().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn get_font_family() -> Result<String, String> {
+    core_get_font_family().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn set_font_family(font: String) -> Result<(), String> {
+    core_set_font_family(font).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn get_font_size() -> Result<String, String> {
+    core_get_font_size().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn set_font_size(size: String) -> Result<(), String> {
+    core_set_font_size(size).map_err(|e| e.to_string())
 }
 
 
@@ -207,8 +283,17 @@ fn execute_test_command(cmd: &str, args_json: &str) -> Result<String, String> {
                 let v_str = v.as_str().ok_or_else(|| "Env value must be a string".to_string())?;
                 env.insert(k.clone(), v_str.to_string());
             }
+            let mut env_var_ids = Vec::new();
+            if let Some(arr) = args.get("env_var_ids").and_then(|a| a.as_array()) {
+                for id in arr {
+                    if let Some(s) = id.as_str() {
+                        env_var_ids.push(s.to_string());
+                    }
+                }
+            }
             let pwd = args["pwd"].as_str().map(|s| s.to_string());
-            let res = create_template(cli_id.to_string(), name.to_string(), cmd_args, env, pwd)?;
+            let cmd_override = args["cmd_override"].as_str().map(|s| s.to_string());
+            let res = core_create_template(cli_id.to_string(), name.to_string(), cmd_args, env, env_var_ids, pwd, cmd_override).map_err(|e| e.to_string())?;
             serde_json::to_string(&res).map_err(|e| e.to_string())
         }
         "get_templates" => {
@@ -239,8 +324,17 @@ fn execute_test_command(cmd: &str, args_json: &str) -> Result<String, String> {
                 let v_str = v.as_str().ok_or_else(|| "Env value must be a string".to_string())?;
                 env.insert(k.clone(), v_str.to_string());
             }
+            let mut env_var_ids = Vec::new();
+            if let Some(arr) = args.get("env_var_ids").and_then(|a| a.as_array()) {
+                for id in arr {
+                    if let Some(s) = id.as_str() {
+                        env_var_ids.push(s.to_string());
+                    }
+                }
+            }
             let pwd = args["pwd"].as_str().map(|s| s.to_string());
-            let res = update_template(template_id.to_string(), name.to_string(), cmd_args, env, pwd)?;
+            let cmd_override = args["cmd_override"].as_str().map(|s| s.to_string());
+            let res = core_update_template(template_id.to_string(), name.to_string(), cmd_args, env, env_var_ids, pwd, cmd_override).map_err(|e| e.to_string())?;
             serde_json::to_string(&res).map_err(|e| e.to_string())
         }
         "delete_cli_tool" => {
@@ -293,6 +387,79 @@ fn execute_test_command(cmd: &str, args_json: &str) -> Result<String, String> {
             let lang = args["lang"].as_str()
                 .ok_or_else(|| "Missing argument 'lang'".to_string())?;
             set_language(lang.to_string())?;
+            Ok("null".to_string())
+        }
+        "get_theme" => {
+            let res = get_theme()?;
+            serde_json::to_string(&res).map_err(|e| e.to_string())
+        }
+        "set_theme" => {
+            let theme = args["theme"].as_str()
+                .ok_or_else(|| "Missing argument 'theme'".to_string())?;
+            set_theme(theme.to_string())?;
+            Ok("null".to_string())
+        }
+        "update_category" => {
+            let cat_id = args["cat_id"].as_str()
+                .ok_or_else(|| "Missing argument 'cat_id'".to_string())?;
+            let name = args["name"].as_str()
+                .ok_or_else(|| "Missing argument 'name'".to_string())?;
+            let desc = args["desc"].as_str().unwrap_or("");
+            let res = update_category(cat_id.to_string(), name.to_string(), desc.to_string())?;
+            serde_json::to_string(&res).map_err(|e| e.to_string())
+        }
+        "smart_classify" => {
+            let res = smart_classify()?;
+            serde_json::to_string(&res).map_err(|e| e.to_string())
+        }
+        "get_font_family" => {
+            let res = get_font_family()?;
+            serde_json::to_string(&res).map_err(|e| e.to_string())
+        }
+        "set_font_family" => {
+            let font = args["font"].as_str()
+                .ok_or_else(|| "Missing argument 'font'".to_string())?;
+            set_font_family(font.to_string())?;
+            Ok("null".to_string())
+        }
+        "get_font_size" => {
+            let res = get_font_size()?;
+            serde_json::to_string(&res).map_err(|e| e.to_string())
+        }
+        "set_font_size" => {
+            let size = args["size"].as_str()
+                .ok_or_else(|| "Missing argument 'size'".to_string())?;
+            set_font_size(size.to_string())?;
+            Ok("null".to_string())
+        }
+        "get_global_env_vars" => {
+            let res = get_global_env_vars()?;
+            serde_json::to_string(&res).map_err(|e| e.to_string())
+        }
+        "create_global_env_var" => {
+            let key = args["key"].as_str()
+                .ok_or_else(|| "Missing argument 'key'".to_string())?;
+            let value = args["value"].as_str()
+                .ok_or_else(|| "Missing argument 'value'".to_string())?;
+            let description = args["description"].as_str().unwrap_or("");
+            let res = create_global_env_var(key.to_string(), value.to_string(), description.to_string())?;
+            serde_json::to_string(&res).map_err(|e| e.to_string())
+        }
+        "update_global_env_var" => {
+            let id = args["id"].as_str()
+                .ok_or_else(|| "Missing argument 'id'".to_string())?;
+            let key = args["key"].as_str()
+                .ok_or_else(|| "Missing argument 'key'".to_string())?;
+            let value = args["value"].as_str()
+                .ok_or_else(|| "Missing argument 'value'".to_string())?;
+            let description = args["description"].as_str().unwrap_or("");
+            let res = update_global_env_var(id.to_string(), key.to_string(), value.to_string(), description.to_string())?;
+            serde_json::to_string(&res).map_err(|e| e.to_string())
+        }
+        "delete_global_env_var" => {
+            let id = args["id"].as_str()
+                .ok_or_else(|| "Missing argument 'id'".to_string())?;
+            delete_global_env_var(id.to_string())?;
             Ok("null".to_string())
         }
         _ => Err(format!("Unknown command '{}'", cmd)),
@@ -387,6 +554,18 @@ fn main() {
             kill_cli_instance,
             get_language,
             set_language,
+            get_theme,
+            set_theme,
+            get_global_env_vars,
+            create_global_env_var,
+            update_global_env_var,
+            delete_global_env_var,
+            update_category,
+            smart_classify,
+            get_font_family,
+            set_font_family,
+            get_font_size,
+            set_font_size,
             log_frontend
         ])
         .run(tauri::generate_context!())

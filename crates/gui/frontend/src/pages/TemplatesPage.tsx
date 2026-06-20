@@ -1,6 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { getTemplates, createTemplate, updateTemplate, deleteTemplate, runCliTemplate } from '../api';
-import type { CliTool, Template } from '../types';
+import {
+  getTemplates,
+  createTemplate,
+  updateTemplate,
+  deleteTemplate,
+  runCliTemplate,
+  getGlobalEnvVars
+} from '../api';
+import type { CliTool, Template, GlobalEnvVar } from '../types';
 import { useToast } from '../ToastContext';
 import { useI18n } from '../I18nContext';
 
@@ -22,6 +29,9 @@ function TemplateModal({
   const [name, setName] = useState(template?.name ?? '');
   const [argsStr, setArgsStr] = useState(template?.args.join(' ') ?? '');
   const [pwd, setPwd] = useState(template?.pwd ?? '');
+  const [cmdOverride, setCmdOverride] = useState(template?.cmd_override ?? '');
+  const [globalVars, setGlobalVars] = useState<GlobalEnvVar[]>([]);
+  const [selectedGlobalVarIds, setSelectedGlobalVarIds] = useState<string[]>(template?.env_var_ids ?? []);
   const [envPairs, setEnvPairs] = useState<{ k: string; v: string }[]>(
     Object.entries(template?.env ?? {}).map(([k, v]) => ({ k, v }))
   );
@@ -33,6 +43,10 @@ function TemplateModal({
   const updateEnv = (i: number, field: 'k' | 'v', val: string) =>
     setEnvPairs(p => p.map((e, idx) => idx === i ? { ...e, [field]: val } : e));
 
+  useEffect(() => {
+    getGlobalEnvVars().then(setGlobalVars).catch(console.error);
+  }, []);
+
   const handleSave = async () => {
     if (!name.trim()) { toast.error(t('temp.toast.fieldsRequired')); return; }
     if (!cliId) { toast.error(t('temp.modal.selectTool')); return; }
@@ -43,10 +57,11 @@ function TemplateModal({
       for (const { k, v } of envPairs) {
         if (k.trim()) env[k.trim()] = v;
       }
+      const overrideVal = cmdOverride.trim() || undefined;
       if (template) {
-        await updateTemplate(template.id, name.trim(), args, env, pwd.trim() || undefined);
+        await updateTemplate(template.id, name.trim(), args, env, selectedGlobalVarIds, pwd.trim() || undefined, overrideVal);
       } else {
-        await createTemplate(cliId, name.trim(), args, env, pwd.trim() || undefined);
+        await createTemplate(cliId, name.trim(), args, env, selectedGlobalVarIds, pwd.trim() || undefined, overrideVal);
       }
       onSave();
       onClose();
@@ -83,6 +98,61 @@ function TemplateModal({
           <div className="form-group">
             <label className="form-label">{t('temp.modal.pwd')}</label>
             <input className="input" placeholder={t('temp.modal.pwdPlaceholder')} value={pwd} onChange={e => setPwd(e.target.value)} />
+          </div>
+
+          {/* Command Override */}
+          <div className="form-group">
+            <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              {t('temp.modal.cmdOverride')}
+              <span style={{ fontSize: 10, color: 'var(--text-tertiary)', fontWeight: 400, fontFamily: 'monospace' }}>climaster &lt;name&gt;</span>
+            </label>
+            <input
+              className="input"
+              placeholder={t('temp.modal.cmdOverridePlaceholder')}
+              value={cmdOverride}
+              onChange={e => setCmdOverride(e.target.value)}
+              style={{ fontFamily: 'monospace', fontSize: 12 }}
+            />
+          </div>
+
+          {/* Global Env vars checklist */}
+          <div className="form-group">
+            <label className="form-label" style={{ marginBottom: 4 }}>
+              {t('temp.modal.globalEnvs')}
+            </label>
+            <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginBottom: 8 }}>
+              {t('temp.modal.globalEnvsDesc')}
+            </div>
+            {globalVars.length === 0 ? (
+              <div style={{ fontSize: 12, color: 'var(--text-tertiary)', background: 'var(--bg-elevated)', padding: '10px 12px', borderRadius: 'var(--radius-md)', border: '1px dashed var(--border-subtle)' }}>
+                {t('temp.modal.noGlobalEnvs')}
+              </div>
+            ) : (
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 12px', background: 'var(--bg-elevated)', padding: '12px 14px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-subtle)', maxHeight: '150px', overflowY: 'auto' }}>
+                {globalVars.map(gv => {
+                  const checked = selectedGlobalVarIds.includes(gv.id);
+                  return (
+                    <label key={gv.id} className="flex items-center gap-2" style={{ cursor: 'pointer', fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={`${gv.key}=${gv.value} (${gv.description || ''})`}>
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() => {
+                          if (checked) {
+                            setSelectedGlobalVarIds(p => p.filter(id => id !== gv.id));
+                          } else {
+                            setSelectedGlobalVarIds(p => [...p, gv.id]);
+                          }
+                        }}
+                        style={{ cursor: 'pointer' }}
+                      />
+                      <span style={{ fontFamily: 'monospace', fontWeight: 600, color: checked ? 'var(--accent-purple)' : 'var(--text-secondary)' }}>
+                        {gv.key}
+                      </span>
+                    </label>
+                  );
+                })}
+              </div>
+            )}
           </div>
 
           {/* Env vars */}
@@ -177,6 +247,11 @@ export default function TemplatesPage({ tools, onInstanceLaunched }: Props) {
                     <div className="flex items-center gap-2 min-w-0">
                       <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)' }}>{tpl.name}</span>
                       <span className="badge badge-purple" style={{ fontSize: 10 }}>{getToolName(tpl.cli_id)}</span>
+                      {tpl.cmd_override && (
+                        <span className="badge badge-emerald" style={{ fontSize: 10 }} title={t('temp.card.cmdOverride')}>
+                          {tpl.cmd_override}
+                        </span>
+                      )}
                     </div>
                     <div className="flex items-center gap-2">
                       <button
@@ -193,7 +268,13 @@ export default function TemplatesPage({ tools, onInstanceLaunched }: Props) {
                     </div>
                   </div>
 
-                  <div style={{ display: 'flex', gap: 20, fontSize: 12, color: 'var(--text-tertiary)' }}>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px 20px', fontSize: 12, color: 'var(--text-tertiary)' }}>
+                    {tpl.cmd_override && (
+                      <span style={{ fontFamily: 'monospace', fontSize: 11 }}>
+                        <span style={{ color: 'var(--accent-purple)', marginRight: 4 }}>{t('temp.card.cmdOverride')}:</span>
+                        climaster {tpl.cmd_override}
+                      </span>
+                    )}
                     {tpl.args.length > 0 && (
                       <span style={{ fontFamily: 'monospace', fontSize: 11 }}>
                         <span style={{ color: 'var(--accent-emerald)', marginRight: 4 }}>{t('temp.card.args')}:</span>

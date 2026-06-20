@@ -3,37 +3,62 @@
    Vibe: OLED black, purple/emerald orbs, glass morphism
    ============================================================ */
 
-@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&family=Inter:wght@300;400;500;600;700&family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Fira+Code:wght@400;500;600&display=swap');
+
+@font-face {
+  font-family: 'HarmonyOS Sans SC';
+  src: url('./assets/fonts/HarmonyOS_Sans_SC_Regular.ttf') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'HarmonyOS Sans SC';
+  src: url('./assets/fonts/HarmonyOS_Sans_SC_Medium.ttf') format('truetype');
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'HarmonyOS Sans SC';
+  src: url('./assets/fonts/HarmonyOS_Sans_SC_Bold.ttf') format('truetype');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
 
 /* ─── Reset ─────────────────────────────────────────────── */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-html { font-size: 16px; -webkit-font-smoothing: antialiased; }
+html { font-size: var(--fs-16); -webkit-font-smoothing: antialiased; }
 body {
-  font-family: 'Plus Jakarta Sans', sans-serif;
-  background: #050505;
-  color: #e8e8e8;
+  font-family: var(--font-family, 'Plus Jakarta Sans'), sans-serif;
+  background: var(--bg-base);
+  color: var(--text-primary);
   overflow: hidden;
   height: 100vh;
+  transition: background-color 300ms var(--ease-spring), color 300ms var(--ease-spring);
 }
 #root { height: 100vh; display: flex; flex-direction: column; }
 
 /* ─── CSS Variables ──────────────────────────────────────── */
 :root {
-  --bg-base:       #050505;
-  --bg-surface:    rgba(255,255,255,0.04);
-  --bg-elevated:   rgba(255,255,255,0.07);
-  --bg-hover:      rgba(255,255,255,0.09);
+  --bg-base:       #0d0d10; /* Softer, low-glare dark background */
+  --bg-surface:    rgba(255,255,255,0.035);
+  --bg-elevated:   rgba(255,255,255,0.06);
+  --bg-hover:      rgba(255,255,255,0.08);
 
-  --border-subtle: rgba(255,255,255,0.07);
-  --border-mid:    rgba(255,255,255,0.12);
-  --border-bright: rgba(255,255,255,0.18);
+  --border-subtle: rgba(255,255,255,0.06);
+  --border-mid:    rgba(255,255,255,0.11);
+  --border-bright: rgba(255,255,255,0.17);
 
-  --text-primary:  #f0f0f0;
-  --text-secondary:#9a9a9a;
-  --text-tertiary: #5a5a5a;
+  --text-primary:  #e3e3e9; /* Softer text color for readability */
+  --text-secondary:#8d8d96; /* Softer secondary text */
+  --text-tertiary: #54545d;
 
-  --accent-purple: #8b5cf6;
-  --accent-purple-dim: rgba(139,92,246,0.15);
+  --accent-purple: #9061f9; /* Softer accent purple */
+  --accent-purple-dim: rgba(144,97,249,0.15);
   --accent-emerald:#10b981;
   --accent-emerald-dim: rgba(16,185,129,0.12);
   --accent-red:    #ef4444;
@@ -46,12 +71,73 @@ body {
   --radius-xl:  28px;
   --radius-pill: 999px;
 
-  --shadow-glow-purple: 0 0 40px rgba(139,92,246,0.08);
-  --shadow-glow-emerald: 0 0 40px rgba(16,185,129,0.06);
-  --shadow-card: 0 4px 24px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.06);
+  --shadow-glow-purple: 0 0 35px rgba(144,97,249,0.07);
+  --shadow-glow-emerald: 0 0 35px rgba(16,185,129,0.05);
+  --shadow-card: 0 4px 24px rgba(0,0,0,0.45), inset 0 1px 0 rgba(255,255,255,0.05);
 
   --ease-spring: cubic-bezier(0.32, 0.72, 0, 1);
   --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+
+  /* ─── Font Variables ─── */
+  --font-family: 'Plus Jakarta Sans';
+  --font-size-base: 14px;
+  --fs-9:  calc(var(--font-size-base) - 5px);
+  --fs-10: calc(var(--font-size-base) - 4px);
+  --fs-11: calc(var(--font-size-base) - 3px);
+  --fs-12: calc(var(--font-size-base) - 2px);
+  --fs-13: calc(var(--font-size-base) - 1px);
+  --fs-14: var(--font-size-base);
+  --fs-15: calc(var(--font-size-base) + 1px);
+  --fs-16: calc(var(--font-size-base) + 2px);
+  --fs-18: calc(var(--font-size-base) + 4px);
+  --fs-20: calc(var(--font-size-base) + 6px);
+
+  /* ─── Semantic Theme variables ─── */
+  --bg-sidebar:    rgba(255,255,255,0.02);
+  --bg-card-outer: rgba(255,255,255,0.03);
+  --bg-card-inner: rgba(255,255,255,0.04);
+  --bg-modal:      #0e0e12;
+  --border-inset:  rgba(255,255,255,0.08);
+  --shadow-card-inset: inset 0 1px 0 rgba(255,255,255,0.06);
+
+  --ambient-orb-purple: radial-gradient(circle, rgba(144,97,249,0.06) 0%, transparent 70%);
+  --ambient-orb-emerald: radial-gradient(circle, rgba(16,185,129,0.04) 0%, transparent 70%);
+}
+
+/* ─── Day/Light Theme Override ─── */
+body.theme-day {
+  --bg-base:       #f5f5f8; /* Soft light gray, low glare */
+  --bg-surface:    rgba(0,0,0,0.025);
+  --bg-elevated:   rgba(0,0,0,0.045);
+  --bg-hover:      rgba(0,0,0,0.065);
+
+  --border-subtle: rgba(0,0,0,0.06);
+  --border-mid:    rgba(0,0,0,0.11);
+  --border-bright: rgba(0,0,0,0.16);
+
+  --text-primary:  #1e1e21; /* Soft near-black for comfortable reading */
+  --text-secondary:#6b6b72; /* Muted gray text */
+  --text-tertiary: #8b8b93;
+
+  --accent-purple: #7c3aed; /* Deeper purple for readability */
+  --accent-purple-dim: rgba(124,58,237,0.09);
+  --accent-emerald:#059669; /* Deeper emerald for readability */
+  --accent-emerald-dim: rgba(5,150,105,0.09);
+  --accent-blue:   #1d4ed8;
+
+  --bg-sidebar:    rgba(0,0,0,0.015);
+  --bg-card-outer: rgba(0,0,0,0.012);
+  --bg-card-inner: rgba(0,0,0,0.02);
+  --bg-modal:      #ffffff;
+  --border-inset:  rgba(0,0,0,0.04);
+  --shadow-card-inset: inset 0 1px 0 rgba(255,255,255,0.85);
+
+  --shadow-glow-purple: 0 0 35px rgba(124,58,237,0.04);
+  --shadow-glow-emerald: 0 0 35px rgba(5,150,105,0.03);
+  --shadow-card: 0 4px 20px rgba(0,0,0,0.06), inset 0 1px 0 rgba(255,255,255,0.7);
+
+  --ambient-orb-purple: radial-gradient(circle, rgba(124,58,237,0.03) 0%, transparent 70%);
+  --ambient-orb-emerald: radial-gradient(circle, rgba(5,150,105,0.02) 0%, transparent 70%);
 }
 
 /* ─── Scrollbar ──────────────────────────────────────────── */
@@ -76,7 +162,7 @@ body {
   position: fixed;
   top: -200px; left: -100px;
   width: 600px; height: 600px;
-  background: radial-gradient(circle, rgba(139,92,246,0.08) 0%, transparent 70%);
+  background: var(--ambient-orb-purple);
   pointer-events: none;
   z-index: 0;
 }
@@ -85,7 +171,7 @@ body {
   position: fixed;
   bottom: -150px; right: -100px;
   width: 500px; height: 500px;
-  background: radial-gradient(circle, rgba(16,185,129,0.06) 0%, transparent 70%);
+  background: var(--ambient-orb-emerald);
   pointer-events: none;
   z-index: 0;
 }
@@ -98,7 +184,8 @@ body {
   flex-direction: column;
   padding: 20px 12px;
   border-right: 1px solid var(--border-subtle);
-  background: rgba(255,255,255,0.02);
+  background: var(--bg-sidebar);
+  transition: background-color 300ms var(--ease-spring), border-color 300ms var(--ease-spring);
   backdrop-filter: blur(20px);
   gap: 4px;
   overflow-y: auto;
@@ -117,18 +204,18 @@ body {
   border-radius: var(--radius-sm);
   background: linear-gradient(135deg, var(--accent-purple), #6d28d9);
   display: flex; align-items: center; justify-content: center;
-  font-size: 16px;
+  font-size: var(--fs-16);
   box-shadow: 0 0 20px rgba(139,92,246,0.3);
   flex-shrink: 0;
 }
 .sidebar-logo-text {
-  font-size: 14px;
+  font-size: var(--fs-14);
   font-weight: 700;
   letter-spacing: -0.02em;
   color: var(--text-primary);
 }
 .sidebar-logo-badge {
-  font-size: 9px;
+  font-size: var(--fs-9);
   font-weight: 500;
   letter-spacing: 0.12em;
   text-transform: uppercase;
@@ -137,7 +224,7 @@ body {
 }
 
 .nav-section-label {
-  font-size: 9px;
+  font-size: var(--fs-9);
   font-weight: 600;
   letter-spacing: 0.15em;
   text-transform: uppercase;
@@ -152,7 +239,7 @@ body {
   padding: 9px 12px;
   border-radius: var(--radius-md);
   cursor: pointer;
-  font-size: 13px;
+  font-size: var(--fs-13);
   font-weight: 500;
   color: var(--text-secondary);
   transition: all 300ms var(--ease-spring);
@@ -174,16 +261,28 @@ body {
 .nav-item.active .nav-icon { color: var(--accent-purple); }
 
 .nav-icon {
-  width: 16px; height: 16px;
+  width: 18px; height: 18px;
   flex-shrink: 0;
   opacity: 0.7;
   transition: opacity 300ms;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--fs-15);
+  line-height: 1;
+  transform: translateY(1px);
 }
 .nav-item:hover .nav-icon, .nav-item.active .nav-icon { opacity: 1; }
+.nav-item[data-page="dashboard"] .nav-icon {
+  transform: translateY(2.5px);
+}
+.nav-item[data-page="categories"] .nav-icon {
+  transform: translateY(2px);
+}
 
 .nav-badge {
   margin-left: auto;
-  font-size: 10px;
+  font-size: var(--fs-10);
   font-weight: 600;
   padding: 2px 7px;
   border-radius: var(--radius-pill);
@@ -217,13 +316,13 @@ body {
   gap: 16px;
 }
 .page-title {
-  font-size: 18px;
+  font-size: var(--fs-18);
   font-weight: 700;
   letter-spacing: -0.03em;
   color: var(--text-primary);
 }
 .page-subtitle {
-  font-size: 12px;
+  font-size: var(--fs-12);
   color: var(--text-tertiary);
   margin-top: 2px;
 }
@@ -236,17 +335,19 @@ body {
 
 /* ─── Glass Card (Double-Bezel) ──────────────────────────── */
 .card-outer {
-  background: rgba(255,255,255,0.03);
+  background: var(--bg-card-outer);
+  transition: background-color 300ms var(--ease-spring), border-color 300ms var(--ease-spring);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-xl);
   padding: 3px;
   box-shadow: var(--shadow-card);
 }
 .card-inner {
-  background: rgba(255,255,255,0.04);
+  background: var(--bg-card-inner);
   border-radius: calc(var(--radius-xl) - 3px);
-  box-shadow: inset 0 1px 0 rgba(255,255,255,0.08);
+  box-shadow: var(--shadow-card-inset);
   overflow: hidden;
+  transition: background-color 300ms var(--ease-spring), box-shadow 300ms var(--ease-spring);
 }
 
 /* Plain card (no double bezel) */
@@ -270,7 +371,7 @@ body {
   padding: 8px 16px;
   border-radius: var(--radius-pill);
   font-family: inherit;
-  font-size: 13px;
+  font-size: var(--fs-13);
   font-weight: 600;
   cursor: pointer;
   border: none;
@@ -335,7 +436,7 @@ body {
   color: var(--text-secondary);
   cursor: pointer;
   transition: all 250ms var(--ease-spring);
-  font-size: 14px;
+  font-size: var(--fs-14);
 }
 .btn-icon:hover {
   background: var(--bg-elevated);
@@ -353,7 +454,7 @@ body {
   border-radius: var(--radius-md);
   padding: 9px 14px;
   font-family: inherit;
-  font-size: 13px;
+  font-size: var(--fs-13);
   color: var(--text-primary);
   outline: none;
   transition: border-color 250ms var(--ease-spring), box-shadow 250ms var(--ease-spring);
@@ -379,7 +480,7 @@ body {
   transform: translateY(-50%);
   color: var(--text-tertiary);
   pointer-events: none;
-  font-size: 14px;
+  font-size: var(--fs-14);
 }
 .search-input-wrap .input {
   padding-left: 36px;
@@ -394,9 +495,22 @@ select.input {
   padding-right: 32px;
 }
 
+/* Fix dropdown options visibility in dark mode */
+select.input option {
+  background: var(--bg-modal, #0e0e12);
+  color: var(--text-primary, #e3e3e9);
+  padding: 6px 12px;
+}
+
+/* Ensure options are readable in day theme too */
+body.theme-day select.input option {
+  background: var(--bg-modal, #ffffff);
+  color: var(--text-primary, #1e1e21);
+}
+
 .form-group { display: flex; flex-direction: column; gap: 6px; }
 .form-label {
-  font-size: 11px;
+  font-size: var(--fs-11);
   font-weight: 600;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -411,7 +525,7 @@ select.input {
   gap: 5px;
   padding: 3px 10px;
   border-radius: var(--radius-pill);
-  font-size: 11px;
+  font-size: var(--fs-11);
   font-weight: 600;
   letter-spacing: 0.02em;
 }
@@ -460,7 +574,7 @@ select.input {
 
 .tool-info { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
 .tool-name {
-  font-size: 13px;
+  font-size: var(--fs-13);
   font-weight: 600;
   color: var(--text-primary);
   white-space: nowrap;
@@ -468,7 +582,7 @@ select.input {
   text-overflow: ellipsis;
 }
 .tool-path {
-  font-size: 11px;
+  font-size: var(--fs-11);
   color: var(--text-tertiary);
   white-space: nowrap;
   overflow: hidden;
@@ -490,9 +604,9 @@ select.input {
   color: var(--text-tertiary);
   text-align: center;
 }
-.empty-state-icon { font-size: 40px; opacity: 0.3; }
-.empty-state-title { font-size: 15px; font-weight: 600; color: var(--text-secondary); }
-.empty-state-desc { font-size: 13px; max-width: 280px; line-height: 1.6; }
+.empty-state-icon { font-size: calc(var(--font-size-base) * 2.85); opacity: 0.3; }
+.empty-state-title { font-size: var(--fs-15); font-weight: 600; color: var(--text-secondary); }
+.empty-state-desc { font-size: var(--fs-13); max-width: 280px; line-height: 1.6; }
 
 /* ─── Modal / Overlay ────────────────────────────────────── */
 .modal-overlay {
@@ -507,14 +621,15 @@ select.input {
   animation: fadeIn 200ms ease both;
 }
 .modal {
-  background: #0e0e0e;
+  background: var(--bg-modal);
   border: 1px solid var(--border-mid);
   border-radius: var(--radius-xl);
   padding: 28px;
   width: 100%;
   max-width: 480px;
-  box-shadow: 0 24px 80px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.06);
+  box-shadow: 0 24px 80px rgba(0,0,0,0.35), var(--shadow-card-inset);
   animation: slideUp 300ms var(--ease-out-expo) both;
+  transition: background-color 300ms var(--ease-spring), border-color 300ms var(--ease-spring), box-shadow 300ms var(--ease-spring);
 }
 .modal-header {
   display: flex;
@@ -523,7 +638,7 @@ select.input {
   margin-bottom: 20px;
 }
 .modal-title {
-  font-size: 16px;
+  font-size: var(--fs-16);
   font-weight: 700;
   letter-spacing: -0.02em;
   color: var(--text-primary);
@@ -545,7 +660,7 @@ select.input {
   border-radius: var(--radius-md);
   padding: 14px 16px;
   font-family: 'Courier New', Courier, monospace;
-  font-size: 12px;
+  font-size: var(--fs-12);
   line-height: 1.7;
   overflow-y: auto;
   color: #c8c8c8;
@@ -575,7 +690,7 @@ select.input {
   gap: 16px;
 }
 .detail-section-title {
-  font-size: 11px;
+  font-size: var(--fs-11);
   font-weight: 600;
   letter-spacing: 0.1em;
   text-transform: uppercase;
@@ -591,7 +706,7 @@ select.input {
   background: var(--bg-surface);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-sm);
-  font-size: 12px;
+  font-size: var(--fs-12);
 }
 .kv-key { color: var(--accent-purple); font-family: monospace; flex-shrink: 0; }
 .kv-eq { color: var(--text-tertiary); }
@@ -599,7 +714,7 @@ select.input {
 .kv-remove {
   margin-left: auto;
   background: none; border: none; cursor: pointer;
-  color: var(--text-tertiary); font-size: 14px; padding: 2px;
+  color: var(--text-tertiary); font-size: var(--fs-14); padding: 2px;
   transition: color 200ms;
   flex-shrink: 0;
 }
@@ -641,7 +756,7 @@ select.input {
   flex: 1;
   padding: 7px 14px;
   border-radius: calc(var(--radius-md) - 3px);
-  font-size: 12px;
+  font-size: var(--fs-12);
   font-weight: 600;
   color: var(--text-tertiary);
   cursor: pointer;
@@ -681,7 +796,7 @@ select.input {
   gap: 10px;
   padding: 12px 16px;
   border-radius: var(--radius-md);
-  font-size: 13px;
+  font-size: var(--fs-13);
   font-weight: 500;
   min-width: 240px;
   max-width: 360px;

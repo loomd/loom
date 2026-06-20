@@ -15,14 +15,23 @@ export interface Category {
   description: string;
 }
 
+export interface GlobalEnvVar {
+  id: string;
+  key: string;
+  value: string;
+  description: string;
+}
+
 export interface Template {
   id: string;
   cli_id: string;
   name: string;
   args: string[];
   env: Record<string, string>;
+  env_var_ids: string[];
   pwd?: string;
   last_run?: string;
+  cmd_override?: string;
 }
 
 export interface ActiveInstance {

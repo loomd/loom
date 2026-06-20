@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { killCliInstance, onLogEvent, onStatusEvent } from '../api';
-import type { RunningInstance, LogEvent, StatusEvent } from '../types';
+import { killCliInstance } from '../api';
+import type { RunningInstance } from '../types';
 import { useToast } from '../ToastContext';
 import { useI18n } from '../I18nContext';
 
@@ -15,32 +15,7 @@ export default function InstancesPage({ instances, onInstancesChange }: Props) {
   const logEndRef = useRef<HTMLDivElement>(null);
   const toast = useToast();
 
-  // Subscribe to Tauri events
-  useEffect(() => {
-    let unsubLog: (() => void) | undefined;
-    let unsubStatus: (() => void) | undefined;
 
-    onLogEvent((event: LogEvent) => {
-      onInstancesChange(prev => prev.map(inst =>
-        inst.instance_id === event.instance_id
-          ? { ...inst, logs: [...inst.logs, event] }
-          : inst
-      ));
-    }).then(unsub => { unsubLog = unsub; });
-
-    onStatusEvent((event: StatusEvent) => {
-      onInstancesChange(prev => prev.map(inst =>
-        inst.instance_id === event.instance_id
-          ? { ...inst, status: event.status, exit_code: event.exit_code }
-          : inst
-      ));
-    }).then(unsub => { unsubStatus = unsub; });
-
-    return () => {
-      unsubLog?.();
-      unsubStatus?.();
-    };
-  }, []);
 
   // Auto-scroll terminal
   useEffect(() => {

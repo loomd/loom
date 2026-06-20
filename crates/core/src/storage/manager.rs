@@ -1,5 +1,5 @@
 use crate::storage::error::{StorageError, Result};
-use crate::storage::models::{AppConfig, CliTool, Category, Template, CliMasterStorage};
+use crate::storage::models::{AppConfig, CliTool, Category, Template, CliMasterStorage, GlobalEnvVar};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::env;
@@ -478,7 +478,9 @@ pub fn create_template(
     name: String,
     args: Vec<String>,
     env: HashMap<String, String>,
+    env_var_ids: Vec<String>,
     pwd: Option<String>,
+    cmd_override: Option<String>,
 ) -> Result<Template> {
     if name.is_empty() {
         return Err(StorageError::Validation("Template name cannot be empty".to_string()));
@@ -491,6 +493,16 @@ pub fn create_template(
 
     if config.templates.iter().any(|t| t.cli_id == cli_id && t.name == name) {
         return Err(StorageError::Validation(format!("Template with name {} already exists for this CLI", name)));
+    }
+
+    let normalized_override = cmd_override.map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
+    if let Some(ref override_name) = normalized_override {
+        if config.templates.iter().any(|t| t.cmd_override.as_ref() == Some(override_name)) {
+            return Err(StorageError::Validation(format!("Command override '{}' already exists", override_name)));
+        }
+        if ["list", "search", "mock-run", "help", "version"].contains(&override_name.as_str()) {
+            return Err(StorageError::Validation(format!("Command override '{}' conflicts with built-in commands", override_name)));
+        }
     }
 
     let pwd_path = pwd.map(PathBuf::from);
@@ -509,8 +521,10 @@ pub fn create_template(
         name,
         args,
         env,
+        env_var_ids,
         pwd: pwd_path,
         last_run: None,
+        cmd_override: normalized_override,
     };
 
     config.templates.push(new_template.clone());
@@ -539,7 +553,9 @@ pub fn update_template(
     name: String,
     args: Vec<String>,
     env: HashMap<String, String>,
+    env_var_ids: Vec<String>,
     pwd: Option<String>,
+    cmd_override: Option<String>,
 ) -> Result<Template> {
     let mut config = load_config()?;
     let template_idx = config.templates.iter().position(|t| t.id == template_id)
@@ -547,6 +563,16 @@ pub fn update_template(
 
     if name.is_empty() {
         return Err(StorageError::Validation("Template name cannot be empty".to_string()));
+    }
+
+    let normalized_override = cmd_override.map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
+    if let Some(ref override_name) = normalized_override {
+        if config.templates.iter().any(|t| t.id != template_id && t.cmd_override.as_ref() == Some(override_name)) {
+            return Err(StorageError::Validation(format!("Command override '{}' already exists", override_name)));
+        }
+        if ["list", "search", "mock-run", "help", "version"].contains(&override_name.as_str()) {
+            return Err(StorageError::Validation(format!("Command override '{}' conflicts with built-in commands", override_name)));
+        }
     }
 
     let pwd_path = pwd.map(PathBuf::from);
@@ -562,7 +588,9 @@ pub fn update_template(
     config.templates[template_idx].name = name;
     config.templates[template_idx].args = args;
     config.templates[template_idx].env = env;
+    config.templates[template_idx].env_var_ids = env_var_ids;
     config.templates[template_idx].pwd = pwd_path;
+    config.templates[template_idx].cmd_override = normalized_override;
 
     let updated = config.templates[template_idx].clone();
     save_config(&config)?;
@@ -628,6 +656,11 @@ pub fn run_cli_template(
 
     for (k, v) in &tool.custom_env {
         cmd.env(k, v);
+    }
+    for var_id in &template.env_var_ids {
+        if let Some(global_var) = config.env_vars.iter().find(|ev| &ev.id == var_id) {
+            cmd.env(&global_var.key, &global_var.value);
+        }
     }
     for (k, v) in &template.env {
         cmd.env(k, v);
@@ -811,6 +844,206 @@ pub fn get_language() -> Result<String> {
 pub fn set_language(lang: String) -> Result<()> {
     let mut config = load_config()?;
     config.language = lang;
+    save_config(&config)?;
+    Ok(())
+}
+
+pub fn get_theme() -> Result<String> {
+    let config = load_config()?;
+    Ok(config.theme.clone())
+}
+
+pub fn set_theme(theme: String) -> Result<()> {
+    let mut config = load_config()?;
+    config.theme = theme;
+    save_config(&config)?;
+    Ok(())
+}
+
+pub fn update_category(cat_id: String, name: String, desc: String) -> Result<Category> {
+    if name.is_empty() {
+        return Err(StorageError::Validation("Category name cannot be empty".to_string()));
+    }
+    if name.len() > 255 {
+        return Err(StorageError::Validation("Category name is too long".to_string()));
+    }
+
+    let mut config = load_config()?;
+    let cat_idx = config.categories.iter().position(|c| c.id == cat_id)
+        .ok_or_else(|| StorageError::CategoryNotFound(cat_id.clone()))?;
+
+    if config.categories.iter().enumerate().any(|(i, c)| i != cat_idx && c.name == name) {
+        return Err(StorageError::Validation(format!("Category with name {} already exists", name)));
+    }
+
+    config.categories[cat_idx].name = name;
+    config.categories[cat_idx].description = desc;
+
+    let updated = config.categories[cat_idx].clone();
+    save_config(&config)?;
+    Ok(updated)
+}
+
+pub fn smart_classify() -> Result<(usize, usize)> {
+    let mut config = load_config()?;
+    let lang = config.language.clone();
+
+    let (sys_name, dev_name) = if lang == "zh" {
+        ("系统", "开发")
+    } else {
+        ("System", "Development")
+    };
+
+    let sys_cat_id = if let Some(cat) = config.categories.iter().find(|c| c.name == sys_name) {
+        cat.id.clone()
+    } else {
+        let new_id = Uuid::new_v4().to_string();
+        config.categories.push(Category {
+            id: new_id.clone(),
+            name: sys_name.to_string(),
+            description: if lang == "zh" { "系统指令与工具".to_string() } else { "System commands and tools".to_string() },
+        });
+        new_id
+    };
+
+    let dev_cat_id = if let Some(cat) = config.categories.iter().find(|c| c.name == dev_name) {
+        cat.id.clone()
+    } else {
+        let new_id = Uuid::new_v4().to_string();
+        config.categories.push(Category {
+            id: new_id.clone(),
+            name: dev_name.to_string(),
+            description: if lang == "zh" { "开发工具与编译器".to_string() } else { "Development tools and compilers".to_string() },
+        });
+        new_id
+    };
+
+    let sys_cmds = [
+        "cmd", "powershell", "pwsh", "ping", "ipconfig", "systeminfo", "netstat", "explorer",
+        "taskkill", "tasklist", "sc", "reg", "shutdown", "chkdsk", "attrib", "robocopy", "xcopy",
+        "nslookup", "tracert", "arp", "route", "net", "wmic", "sfc", "dism", "gpupdate", "gpresult",
+        "cipher", "compact", "format", "diskpart", "hostname", "whoami", "taskmgr", "control",
+        "mstsc", "regedit", "dxdiag", "cleanmgr"
+    ];
+
+    let dev_cmds = [
+        "java", "javac", "rustc", "cargo", "git", "npm", "node", "yarn", "pnpm", "python", "pip",
+        "go", "gcc", "g++", "clang", "docker", "mvn", "gradle", "php", "ruby", "gem", "composer",
+        "dotnet", "make", "cmake", "git-lfs", "gh", "code", "rustup", "bun", "deno", "subl", "vim",
+        "nano", "bash", "sh", "zsh", "ssh", "scp", "sftp", "curl", "wget"
+    ];
+
+    let mut sys_count = 0;
+    let mut dev_count = 0;
+
+    for tool in &mut config.cli_tools {
+        let tool_stem = tool.path.file_stem()
+            .map(|s| s.to_string_lossy().to_lowercase())
+            .unwrap_or_else(|| tool.name.to_lowercase());
+
+        if sys_cmds.contains(&tool_stem.as_str()) {
+            if tool.category_id.as_ref() != Some(&sys_cat_id) {
+                tool.category_id = Some(sys_cat_id.clone());
+                sys_count += 1;
+            }
+        } else if dev_cmds.contains(&tool_stem.as_str()) {
+            if tool.category_id.as_ref() != Some(&dev_cat_id) {
+                tool.category_id = Some(dev_cat_id.clone());
+                dev_count += 1;
+            }
+        }
+    }
+
+    // Always save config to ensure categories themselves are stored
+    save_config(&config)?;
+
+    Ok((sys_count, dev_count))
+}
+
+pub fn get_font_family() -> Result<String> {
+    let config = load_config()?;
+    Ok(config.font_family.clone())
+}
+
+pub fn set_font_family(font: String) -> Result<()> {
+    let mut config = load_config()?;
+    config.font_family = font;
+    save_config(&config)?;
+    Ok(())
+}
+
+pub fn get_font_size() -> Result<String> {
+    let config = load_config()?;
+    Ok(config.font_size.clone())
+}
+
+pub fn set_font_size(size: String) -> Result<()> {
+    let mut config = load_config()?;
+    config.font_size = size;
+    save_config(&config)?;
+    Ok(())
+}
+
+pub fn get_global_env_vars() -> Result<Vec<GlobalEnvVar>> {
+    let config = load_config()?;
+    Ok(config.env_vars.clone())
+}
+
+pub fn create_global_env_var(key: String, value: String, description: String) -> Result<GlobalEnvVar> {
+    let mut config = load_config()?;
+    let key_trimmed = key.trim().to_string();
+    if key_trimmed.is_empty() {
+        return Err(StorageError::Validation("Environment variable key cannot be empty".to_string()));
+    }
+    if config.env_vars.iter().any(|ev| ev.key == key_trimmed) {
+        return Err(StorageError::Validation(format!("Environment variable '{}' already exists", key_trimmed)));
+    }
+    let new_var = GlobalEnvVar {
+        id: uuid::Uuid::new_v4().to_string(),
+        key: key_trimmed,
+        value,
+        description,
+    };
+    config.env_vars.push(new_var.clone());
+    save_config(&config)?;
+    Ok(new_var)
+}
+
+pub fn update_global_env_var(id: String, key: String, value: String, description: String) -> Result<GlobalEnvVar> {
+    let mut config = load_config()?;
+    let key_trimmed = key.trim().to_string();
+    if key_trimmed.is_empty() {
+        return Err(StorageError::Validation("Environment variable key cannot be empty".to_string()));
+    }
+    let idx = config.env_vars.iter().position(|ev| ev.id == id)
+        .ok_or_else(|| StorageError::Validation(format!("Environment variable not found")))?;
+    
+    if config.env_vars.iter().any(|ev| ev.id != id && ev.key == key_trimmed) {
+        return Err(StorageError::Validation(format!("Environment variable '{}' already exists", key_trimmed)));
+    }
+    
+    config.env_vars[idx].key = key_trimmed;
+    config.env_vars[idx].value = value;
+    config.env_vars[idx].description = description;
+    
+    let updated = config.env_vars[idx].clone();
+    save_config(&config)?;
+    Ok(updated)
+}
+
+pub fn delete_global_env_var(id: String) -> Result<()> {
+    let mut config = load_config()?;
+    let initial_len = config.env_vars.len();
+    config.env_vars.retain(|ev| ev.id != id);
+    if config.env_vars.len() == initial_len {
+        return Err(StorageError::Validation(format!("Environment variable not found")));
+    }
+    
+    // Also remove from any template referencing it
+    for tpl in &mut config.templates {
+        tpl.env_var_ids.retain(|x| x != &id);
+    }
+    
     save_config(&config)?;
     Ok(())
 }

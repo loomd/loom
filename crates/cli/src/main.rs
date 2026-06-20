@@ -1,6 +1,7 @@
 use std::env;
 use std::process;
-use climaster_core::storage::get_cli_tools;
+use std::path::PathBuf;
+use climaster_core::storage::{get_cli_tools, get_templates, get_global_env_vars};
 
 fn print_help() {
     println!("climaster - CLI Tool Manager");
@@ -14,10 +15,86 @@ fn print_help() {
     println!("Commands:");
     println!("  list            List all registered CLI tools");
     println!("  search <query>  Search for registered CLI tools by query");
+    println!();
+    println!("You can also run a CLI tool or template directly by its command override:");
+    println!("  climaster <override-name> [extra args...]");
 }
 
 fn print_version() {
     println!("climaster {}", env!("CARGO_PKG_VERSION"));
+}
+
+/// Try to run a command by looking up cmd_override in templates, or name in cli_tools.
+/// Returns Ok(exit_code) if found and executed, or Err if not found.
+fn try_run_override(subcmd: &str, extra_args: &[String]) -> Result<i32, String> {
+    let tools = get_cli_tools().map_err(|e| e.to_string())?;
+    let templates = get_templates().map_err(|e| e.to_string())?;
+    let global_env_vars = get_global_env_vars().map_err(|e| e.to_string())?;
+
+    // First: look for a template whose cmd_override matches
+    if let Some(tpl) = templates.iter().find(|t| t.cmd_override.as_deref() == Some(subcmd)) {
+        let tool = tools.iter().find(|t| t.id == tpl.cli_id)
+            .ok_or_else(|| format!("CLI tool for template '{}' not found", tpl.name))?;
+
+        let tool_path: PathBuf = tool.path.clone().into();
+        let mut cmd = process::Command::new(&tool_path);
+
+        // Add template args, then extra args passed on command line
+        cmd.args(&tpl.args);
+        cmd.args(extra_args);
+
+        // Working directory
+        if let Some(ref pwd) = tpl.pwd {
+            let p: PathBuf = pwd.clone().into();
+            if !p.as_os_str().is_empty() {
+                cmd.current_dir(&p);
+            }
+        }
+
+        // Env: first the tool's custom_env, then the global env, then the template's env (template wins)
+        for (k, v) in &tool.custom_env {
+            cmd.env(k, v);
+        }
+        for var_id in &tpl.env_var_ids {
+            if let Some(global_var) = global_env_vars.iter().find(|ev| &ev.id == var_id) {
+                cmd.env(&global_var.key, &global_var.value);
+            }
+        }
+        for (k, v) in &tpl.env {
+            cmd.env(k, v);
+        }
+
+        // Inherit stdin/stdout/stderr from the parent process
+        cmd.stdin(process::Stdio::inherit());
+        cmd.stdout(process::Stdio::inherit());
+        cmd.stderr(process::Stdio::inherit());
+
+        let status = cmd.status().map_err(|e| format!("Failed to execute '{}': {}", tool_path.display(), e))?;
+        return Ok(status.code().unwrap_or(1));
+    }
+
+    // Second: look for a CLI tool whose name matches
+    if let Some(tool) = tools.iter().find(|t| t.name == subcmd) {
+        let tool_path: PathBuf = tool.path.clone().into();
+        let mut cmd = process::Command::new(&tool_path);
+
+        // Pass all extra args
+        cmd.args(extra_args);
+
+        // Inject the tool's custom env vars
+        for (k, v) in &tool.custom_env {
+            cmd.env(k, v);
+        }
+
+        cmd.stdin(process::Stdio::inherit());
+        cmd.stdout(process::Stdio::inherit());
+        cmd.stderr(process::Stdio::inherit());
+
+        let status = cmd.status().map_err(|e| format!("Failed to execute '{}': {}", tool_path.display(), e))?;
+        return Ok(status.code().unwrap_or(1));
+    }
+
+    Err(format!("Unknown command '{}'", subcmd))
 }
 
 fn main() {
@@ -216,10 +293,17 @@ fn main() {
             }
             process::exit(0);
         }
-        _ => {
-            eprintln!("Error: Unknown command '{}'", first_arg);
-            print_help();
-            process::exit(1);
+        subcmd => {
+            // Try to dispatch via cmd_override or direct tool name
+            let extra_args: Vec<String> = args[2..].to_vec();
+            match try_run_override(subcmd, &extra_args) {
+                Ok(exit_code) => process::exit(exit_code),
+                Err(err) => {
+                    eprintln!("Error: {}", err);
+                    print_help();
+                    process::exit(1);
+                }
+            }
         }
     }
 }

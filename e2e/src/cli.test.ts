@@ -179,4 +179,127 @@ describe('climaster CLI E2E tests', () => {
     const parsed = JSON.parse(res.stdout);
     expect(parsed).toEqual([]);
   });
+
+  // F7: Command Override
+  test('test_cli_run_override_template', async () => {
+    writeMockConfig({
+      cli_tools: [
+        {
+          id: 'cli-override-1',
+          name: 'mocktool',
+          path: CLI_BINARY,
+          version: '1.0.0',
+          category_id: null,
+          custom_env: {}
+        }
+      ],
+      categories: [],
+      templates: [
+        {
+          id: 'tpl-override-1',
+          cli_id: 'cli-override-1',
+          name: 'MyOverrideTpl',
+          args: ['mock-run', '--stdout', 'hello-override-stdout'],
+          env: { TEST_VAR: 'hello-env' },
+          pwd: null,
+          cmd_override: 'custom-override'
+        }
+      ]
+    });
+
+    // Run the override command and check output & exit code
+    const res = await runCli(['custom-override']);
+    expect(res.exitCode).toBe(0);
+    expect(res.stdout).toContain('hello-override-stdout');
+
+    // Verify env is passed
+    const resEnv = await runCli(['custom-override', '--print-env', 'TEST_VAR']);
+    expect(resEnv.exitCode).toBe(0);
+    expect(resEnv.stdout).toContain('hello-env');
+  });
+
+  test('test_cli_run_override_tool_direct', async () => {
+    writeMockConfig({
+      cli_tools: [
+        {
+          id: 'cli-direct-1',
+          name: 'direct-tool',
+          path: CLI_BINARY,
+          version: '1.0.0',
+          category_id: null,
+          custom_env: { DIRECT_VAR: 'direct-val' }
+        }
+      ],
+      categories: [],
+      templates: []
+    });
+
+    // Run the tool name directly with mock-run args
+    const res = await runCli(['direct-tool', 'mock-run', '--stdout', 'hello-direct-stdout']);
+    expect(res.exitCode).toBe(0);
+    expect(res.stdout).toContain('hello-direct-stdout');
+
+    // Verify custom env of the tool is passed
+    const resEnv = await runCli(['direct-tool', 'mock-run', '--print-env', 'DIRECT_VAR']);
+    expect(resEnv.exitCode).toBe(0);
+    expect(resEnv.stdout).toContain('direct-val');
+  });
+
+  test('test_cli_run_override_not_found', async () => {
+    writeMockConfig({
+      cli_tools: [],
+      categories: [],
+      templates: []
+    });
+
+    const res = await runCli(['non-existent-override']);
+    expect(res.exitCode).toBe(1);
+    expect(res.stderr).toContain("Error: Unknown command 'non-existent-override'");
+  });
+
+  test('test_cli_run_override_with_global_env_vars', async () => {
+    writeMockConfig({
+      cli_tools: [
+        {
+          id: 'cli-1',
+          name: 'mocktool',
+          path: CLI_BINARY,
+          version: '1.0.0',
+          category_id: null,
+          custom_env: {}
+        }
+      ],
+      categories: [],
+      env_vars: [
+        {
+          id: 'g-1',
+          key: 'GLOBAL_VAR',
+          value: 'global-value',
+          description: 'A global env variable'
+        }
+      ],
+      templates: [
+        {
+          id: 'tpl-1',
+          cli_id: 'cli-1',
+          name: 'MyOverrideTpl',
+          args: ['mock-run'],
+          env: { LOCAL_VAR: 'local-value' },
+          env_var_ids: ['g-1'],
+          pwd: null,
+          cmd_override: 'mycmd'
+        }
+      ]
+    });
+
+    // Verify global env var is resolved and passed
+    const resGlobal = await runCli(['mycmd', '--print-env', 'GLOBAL_VAR']);
+    expect(resGlobal.exitCode).toBe(0);
+    expect(resGlobal.stdout).toContain('global-value');
+
+    // Verify local template env override is also resolved and passed
+    const resLocal = await runCli(['mycmd', '--print-env', 'LOCAL_VAR']);
+    expect(resLocal.exitCode).toBe(0);
+    expect(resLocal.stdout).toContain('local-value');
+  });
 });
