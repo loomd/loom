@@ -1,6 +1,6 @@
 {
   "name": "climaster-e2e",
-  "version": "1.0.0",
+  "version": "0.1.0",
   "description": "E2E tests for CliMaster",
   "scripts": {
     "test": "vitest run"
