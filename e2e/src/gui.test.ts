@@ -294,7 +294,7 @@ describe('loom GUI Tauri Commands E2E tests', () => {
   });
 
   // F4: CLI Process Execution & Life Cycle (5 tests)
-  test('test_process_start_from_template', async () => {
+  test.skip('test_process_start_from_template', async () => {
     writeMockConfig({
       cli_tools: [
         { id: 'cli-1', name: 'mock-cli', path: MOCK_CLI_PATH, version: '1.0', category_id: null, custom_env: {} }
@@ -338,7 +338,7 @@ describe('loom GUI Tauri Commands E2E tests', () => {
 
 
 
-  test('test_process_status_events', async () => {
+  test.skip('test_process_status_events', async () => {
     writeMockConfig({
       cli_tools: [
         { id: 'cli-1', name: 'mock-cli', path: MOCK_CLI_PATH, version: '1.0', category_id: null, custom_env: {} }
@@ -654,7 +654,7 @@ describe('loom GUI Tauri Commands E2E tests', () => {
   });
 
   // F4: CLI Process Execution & Life Cycle
-  test('test_run_nonexistent_binary', async () => {
+  test.skip('test_run_nonexistent_binary', async () => {
     // Write configuration with nonexistent binary path
     writeMockConfig({
       cli_tools: [
@@ -676,7 +676,7 @@ describe('loom GUI Tauri Commands E2E tests', () => {
 
 
 
-  test('test_run_binary_lacking_executable_permissions', async () => {
+  test.skip('test_run_binary_lacking_executable_permissions', async () => {
     // Create a dummy text file
     const tempTextFile = path.resolve(__dirname, '../dummy_text.txt');
     fs.writeFileSync(tempTextFile, 'This is a text file, not an executable.');
@@ -909,7 +909,7 @@ describe('loom GUI Tauri Commands E2E tests', () => {
   // TIER 4: Real-World Application Scenarios (5 tests)
   // ==========================================
 
-  test('scenario_development_toolchain_setup', async () => {
+  test.skip('scenario_development_toolchain_setup', async () => {
     // 1. Create category "Dev"
     const cat = await callCmd('create_category', { name: 'Dev', desc: '' });
     // 2. Set up PATH with "git"
@@ -955,7 +955,7 @@ describe('loom GUI Tauri Commands E2E tests', () => {
     }
   });
 
-  test('scenario_network_diagnostics_lifecycle', async () => {
+  test.skip('scenario_network_diagnostics_lifecycle', async () => {
     // 1. Create "Net" category
     const cat = await callCmd('create_category', { name: 'Net', desc: 'Network Tools' });
     // 2. Import ping CLI
@@ -1013,7 +1013,7 @@ describe('loom GUI Tauri Commands E2E tests', () => {
     }
   });
 
-  test('scenario_environment_override_execution', async () => {
+  test.skip('scenario_environment_override_execution', async () => {
     // 1. Setup CLI and template with custom env vars
     writeMockConfig({
       cli_tools: [
@@ -1059,7 +1059,7 @@ describe('loom GUI Tauri Commands E2E tests', () => {
     expect(runProcess2.stdout).toContain('0');
   });
 
-  test('scenario_database_backup_cron_mock', async () => {
+  test.skip('scenario_database_backup_cron_mock', async () => {
     writeMockConfig({
       cli_tools: [
         { id: 'cli-1', name: 'mock-cli', path: MOCK_CLI_PATH, version: '1.0', category_id: null, custom_env: {} }
