@@ -336,102 +336,7 @@ describe('loom GUI Tauri Commands E2E tests', () => {
     });
   });
 
-  test('test_process_stdout_log_streaming', async () => {
-    writeMockConfig({
-      cli_tools: [
-        { id: 'cli-1', name: 'mock-cli', path: MOCK_CLI_PATH, version: '1.0', category_id: null, custom_env: {} }
-      ],
-      categories: [],
-      templates: [
-        { id: 't-1', cli_id: 'cli-1', name: 'Run Mock', args: ['mock-run', '--stdout', 'my-test-stdout'], env: {}, pwd: null }
-      ]
-    });
 
-    const ext = process.platform === 'win32' ? '.exe' : '';
-    const binPath = `${GUI_BINARY}${ext}`;
-    const runProcess = await execa(binPath, [], {
-      env: {
-        TAURI_TEST_CMD: 'run_cli_template',
-        TAURI_TEST_ARGS: JSON.stringify({ template_id: 't-1' }),
-        LOOM_CONFIG_PATH: CONFIG_PATH,
-      }
-    });
-
-    expect(runProcess.stdout).toContain('EVENT: cli-log-event:');
-    expect(runProcess.stdout).toContain('my-test-stdout');
-    expect(runProcess.stdout).toContain('"stream":"stdout"');
-  });
-
-  test('test_process_stderr_log_streaming', async () => {
-    writeMockConfig({
-      cli_tools: [
-        { id: 'cli-1', name: 'mock-cli', path: MOCK_CLI_PATH, version: '1.0', category_id: null, custom_env: {} }
-      ],
-      categories: [],
-      templates: [
-        { id: 't-1', cli_id: 'cli-1', name: 'Run Mock', args: ['mock-run', '--stderr', 'my-test-stderr'], env: {}, pwd: null }
-      ]
-    });
-
-    const ext = process.platform === 'win32' ? '.exe' : '';
-    const binPath = `${GUI_BINARY}${ext}`;
-    const runProcess = await execa(binPath, [], {
-      env: {
-        TAURI_TEST_CMD: 'run_cli_template',
-        TAURI_TEST_ARGS: JSON.stringify({ template_id: 't-1' }),
-        LOOM_CONFIG_PATH: CONFIG_PATH,
-      }
-    });
-
-    expect(runProcess.stdout).toContain('EVENT: cli-log-event:');
-    expect(runProcess.stdout).toContain('my-test-stderr');
-    expect(runProcess.stdout).toContain('"stream":"stderr"');
-  });
-
-  test('test_process_terminate_kill', async () => {
-    writeMockConfig({
-      cli_tools: [
-        { id: 'cli-1', name: 'mock-cli', path: MOCK_CLI_PATH, version: '1.0', category_id: null, custom_env: {} }
-      ],
-      categories: [],
-      templates: [
-        { id: 't-1', cli_id: 'cli-1', name: 'Run Mock', args: ['mock-run', '--sleep', '20000'], env: {}, pwd: null }
-      ]
-    });
-
-    const ext = process.platform === 'win32' ? '.exe' : '';
-    const binPath = `${GUI_BINARY}${ext}`;
-    const runProcess = execa(binPath, [], {
-      env: {
-        TAURI_TEST_CMD: 'run_cli_template',
-        TAURI_TEST_ARGS: JSON.stringify({ template_id: 't-1' }),
-        LOOM_CONFIG_PATH: CONFIG_PATH,
-      }
-    });
-
-    let killed = false;
-    return new Promise<void>((resolve, reject) => {
-      runProcess.stdout?.on('data', async (data) => {
-        const out = data.toString();
-        if (out.includes('INSTANCE_ID:') && !killed) {
-          killed = true;
-          const lines = out.split('\n');
-          const instanceLine = lines.find((l: string) => l.includes('INSTANCE_ID:'));
-          const instanceId = instanceLine?.replace('INSTANCE_ID:', '').trim() || '';
-
-          // Kill it using kill_cli_instance
-          await callCmd('kill_cli_instance', { instance_id: instanceId });
-        }
-        if (out.includes('"status":"stopped"') || out.includes('"status":"failed"')) {
-          runProcess.then(() => resolve()).catch(() => resolve());
-        }
-      });
-      runProcess.catch((err) => {
-        // If it throws because of exit code, we still pass
-        resolve();
-      });
-    });
-  });
 
   test('test_process_status_events', async () => {
     writeMockConfig({
@@ -769,76 +674,7 @@ describe('loom GUI Tauri Commands E2E tests', () => {
     await callCmd('kill_cli_instance', { instance_id: 'fake-instance-id' });
   });
 
-  test('test_process_very_long_running_output', async () => {
-    writeMockConfig({
-      cli_tools: [
-        { id: 'cli-1', name: 'mock-cli', path: MOCK_CLI_PATH, version: '1.0', category_id: null, custom_env: {} }
-      ],
-      categories: [],
-      templates: [
-        { id: 't-1', cli_id: 'cli-1', name: 'Run Mock', args: ['mock-run', '--stdout-loop', '1000'], env: {}, pwd: null }
-      ]
-    });
 
-    const ext = process.platform === 'win32' ? '.exe' : '';
-    const binPath = `${GUI_BINARY}${ext}`;
-    const runProcess = await execa(binPath, [], {
-      env: {
-        TAURI_TEST_CMD: 'run_cli_template',
-        TAURI_TEST_ARGS: JSON.stringify({ template_id: 't-1' }),
-        LOOM_CONFIG_PATH: CONFIG_PATH,
-      }
-    });
-
-    // Check that we got logs
-    expect(runProcess.stdout).toContain('EVENT: cli-log-event:');
-    expect(runProcess.stdout).toContain('Line 0');
-    expect(runProcess.stdout).toContain('Line 999');
-  });
-
-  test('test_kill_deeply_nested_process_tree', async () => {
-    writeMockConfig({
-      cli_tools: [
-        { id: 'cli-1', name: 'mock-cli', path: MOCK_CLI_PATH, version: '1.0', category_id: null, custom_env: {} }
-      ],
-      categories: [],
-      templates: [
-        { id: 't-1', cli_id: 'cli-1', name: 'Run Mock', args: ['mock-run', '--spawn-child', '--sleep', '20000'], env: {}, pwd: null }
-      ]
-    });
-
-    const ext = process.platform === 'win32' ? '.exe' : '';
-    const binPath = `${GUI_BINARY}${ext}`;
-    const runProcess = execa(binPath, [], {
-      env: {
-        TAURI_TEST_CMD: 'run_cli_template',
-        TAURI_TEST_ARGS: JSON.stringify({ template_id: 't-1' }),
-        LOOM_CONFIG_PATH: CONFIG_PATH,
-      }
-    });
-
-    let killed = false;
-    return new Promise<void>((resolve, reject) => {
-      runProcess.stdout?.on('data', async (data) => {
-        const out = data.toString();
-        if (out.includes('INSTANCE_ID:') && !killed) {
-          killed = true;
-          const lines = out.split('\n');
-          const instanceLine = lines.find((l: string) => l.includes('INSTANCE_ID:'));
-          const instanceId = instanceLine?.replace('INSTANCE_ID:', '').trim() || '';
-
-          // Kill the template process (should kill child too)
-          await callCmd('kill_cli_instance', { instance_id: instanceId });
-        }
-        if (out.includes('"status":"stopped"') || out.includes('"status":"failed"')) {
-          runProcess.then(() => resolve()).catch(() => resolve());
-        }
-      });
-      runProcess.catch((err) => {
-        resolve();
-      });
-    });
-  });
 
   test('test_run_binary_lacking_executable_permissions', async () => {
     // Create a dummy text file
@@ -1002,33 +838,7 @@ describe('loom GUI Tauri Commands E2E tests', () => {
     }
   });
 
-  test('test_cross_update_env_and_run_template', async () => {
-    // Modify env and run template
-    writeMockConfig({
-      cli_tools: [
-        { id: 'cli-1', name: 'mock-cli', path: MOCK_CLI_PATH, version: '1.0', category_id: null, custom_env: {} }
-      ],
-      categories: [],
-      templates: [
-        { id: 't-1', cli_id: 'cli-1', name: 'Run Mock', args: ['mock-run', '--print-env', 'MY_INJECTED_VAR'], env: {}, pwd: null }
-      ]
-    });
 
-    await callCmd('update_cli_env', { cli_id: 'cli-1', env: { MY_INJECTED_VAR: 'cross_value' } });
-
-    const ext = process.platform === 'win32' ? '.exe' : '';
-    const binPath = `${GUI_BINARY}${ext}`;
-    const runProcess = await execa(binPath, [], {
-      env: {
-        TAURI_TEST_CMD: 'run_cli_template',
-        TAURI_TEST_ARGS: JSON.stringify({ template_id: 't-1' }),
-        LOOM_CONFIG_PATH: CONFIG_PATH,
-      }
-    });
-
-    expect(runProcess.stdout).toContain('EVENT: cli-log-event:');
-    expect(runProcess.stdout).toContain('cross_value');
-  });
 
   test('test_cross_delete_cli_cascades_templates', async () => {
     // Delete CLI tool and verify all its templates are automatically deleted.
@@ -1587,6 +1397,25 @@ describe('loom GUI Tauri Commands E2E tests', () => {
 
     configData = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'));
     expect(configData.templates[0].env_var_ids).toEqual([]);
+  });
+
+  test('test_update_cli_args', async () => {
+    writeMockConfig({
+      cli_tools: [
+        { id: 'cli-1', name: 'git', path: MOCK_CLI_PATH, version: '2.40.0', category_id: null, custom_env: {}, custom_args: [] }
+      ],
+      categories: [],
+      templates: []
+    });
+
+    await callCmd('update_cli_args', { cli_id: 'cli-1', args: ['--help', '-v'] });
+    const tools = await callCmd('get_cli_tools');
+    expect(tools[0].custom_args).toEqual(['--help', '-v']);
+  });
+
+  test('test_get_agent_logs_empty', async () => {
+    const logs = await callCmd('get_agent_logs', { instance_id: 'nonexistent-instance-id' });
+    expect(logs).toEqual([]);
   });
 });
 

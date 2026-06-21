@@ -7,6 +7,7 @@ export interface CliTool {
   version: string;
   category_id?: string;
   custom_env: Record<string, string>;
+  custom_args?: string[];
 }
 
 export interface Category {

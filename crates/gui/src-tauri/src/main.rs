@@ -17,6 +17,7 @@ use loom_core::storage::{
     create_category as core_create_category,
     assign_cli_category as core_assign_cli_category,
     update_cli_env as core_update_cli_env,
+    update_cli_args as core_update_cli_args,
     create_template as core_create_template,
     get_templates as core_get_templates,
     delete_template as core_delete_template,
@@ -48,6 +49,7 @@ use loom_core::storage::{
     spawn_project_agent as core_spawn_project_agent,
     sync_running_processes as core_sync_running_processes,
     get_active_instances_list as core_get_active_instances_list,
+    read_agent_logs as core_read_agent_logs,
 };
 
 #[tauri::command]
@@ -88,6 +90,11 @@ fn assign_cli_category(cli_id: String, cat_id: Option<String>) -> Result<(), Str
 #[tauri::command]
 fn update_cli_env(cli_id: String, env: HashMap<String, String>) -> Result<(), String> {
     core_update_cli_env(cli_id, env).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn update_cli_args(cli_id: String, args: Vec<String>) -> Result<(), String> {
+    core_update_cli_args(cli_id, args).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -248,6 +255,11 @@ fn get_project_agents(project_id: String) -> Result<Vec<AgentInstance>, String> 
 }
 
 #[tauri::command]
+fn get_agent_logs(instance_id: String) -> Result<Vec<String>, String> {
+    core_read_agent_logs(instance_id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 fn spawn_project_agent(
     app_handle: tauri::AppHandle,
     project_id: String,
@@ -255,12 +267,13 @@ fn spawn_project_agent(
     args: Vec<String>,
     env_mode: String,
     custom_envs: HashMap<String, String>,
+    pwd: Option<String>,
 ) -> Result<String, String> {
     use tauri::Emitter;
     let on_event = std::sync::Arc::new(move |event_name: String, payload: serde_json::Value| {
         let _ = app_handle.emit(&event_name, payload);
     });
-    core_spawn_project_agent(project_id, command, args, env_mode, custom_envs, Some(on_event)).map_err(|e| e.to_string())
+    core_spawn_project_agent(project_id, command, args, env_mode, custom_envs, pwd, Some(on_event)).map_err(|e| e.to_string())
 }
 
 #[cfg(target_os = "windows")]
@@ -666,7 +679,8 @@ fn execute_test_command(cmd: &str, args_json: &str) -> Result<String, String> {
                     custom_envs.insert(k.clone(), v_str.to_string());
                 }
             }
-            let instance_id = core_spawn_project_agent(project_id.to_string(), command.to_string(), cmd_args, env_mode, custom_envs, None).map_err(|e| e.to_string())?;
+            let pwd = args.get("pwd").and_then(|p| p.as_str()).map(|s| s.to_string());
+            let instance_id = core_spawn_project_agent(project_id.to_string(), command.to_string(), cmd_args, env_mode, custom_envs, pwd, None).map_err(|e| e.to_string())?;
             Ok(serde_json::json!(instance_id).to_string())
         }
         "kill_agent_process" => {
@@ -679,6 +693,24 @@ fn execute_test_command(cmd: &str, args_json: &str) -> Result<String, String> {
             let instance_id = args["instance_id"].as_str()
                 .ok_or_else(|| "Missing argument 'instance_id'".to_string())?;
             let res = bring_agent_to_foreground(instance_id.to_string())?;
+            serde_json::to_string(&res).map_err(|e| e.to_string())
+        }
+        "update_cli_args" => {
+            let cli_id = args["cli_id"].as_str()
+                .ok_or_else(|| "Missing argument 'cli_id'".to_string())?;
+            let args_arr = args["args"].as_array()
+                .ok_or_else(|| "Missing or invalid argument 'args'".to_string())?;
+            let mut cmd_args = Vec::new();
+            for a in args_arr {
+                cmd_args.push(a.as_str().ok_or_else(|| "Arg must be a string".to_string())?.to_string());
+            }
+            update_cli_args(cli_id.to_string(), cmd_args)?;
+            Ok("null".to_string())
+        }
+        "get_agent_logs" => {
+            let instance_id = args["instance_id"].as_str()
+                .ok_or_else(|| "Missing argument 'instance_id'".to_string())?;
+            let res = get_agent_logs(instance_id.to_string())?;
             serde_json::to_string(&res).map_err(|e| e.to_string())
         }
         "select_directory" => {
@@ -768,6 +800,7 @@ fn main() {
             create_category,
             assign_cli_category,
             update_cli_env,
+            update_cli_args,
             create_template,
             get_templates,
             delete_template,
@@ -797,6 +830,7 @@ fn main() {
             reorder_projects,
             get_project_agents,
             spawn_project_agent,
+            get_agent_logs,
             kill_agent_process,
             bring_agent_to_foreground,
             select_directory

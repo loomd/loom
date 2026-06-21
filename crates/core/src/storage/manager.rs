@@ -66,7 +66,9 @@ pub fn kill_process_tree(pid: u32) -> std::io::Result<()> {
     cmd.stdout(Stdio::null());
     cmd.stderr(Stdio::null());
     let mut child = cmd.spawn()?;
-    let _ = child.wait();
+    std::thread::spawn(move || {
+        let _ = child.wait();
+    });
     Ok(())
 }
 
@@ -77,7 +79,9 @@ pub fn kill_process_tree(pid: u32) -> std::io::Result<()> {
     cmd.stdout(Stdio::null());
     cmd.stderr(Stdio::null());
     let mut child = cmd.spawn()?;
-    let _ = child.wait();
+    std::thread::spawn(move || {
+        let _ = child.wait();
+    });
     Ok(())
 }
 
@@ -131,6 +135,185 @@ pub fn get_config_path() -> PathBuf {
         path
     } else {
         PathBuf::from("loom.json")
+    }
+}
+
+pub fn get_instance_log_path(instance_id: &str) -> PathBuf {
+    let mut path = get_config_path();
+    path.pop(); // Remove "loom.json"
+    let logs_dir = path.join("logs");
+    let _ = fs::create_dir_all(&logs_dir);
+    logs_dir.join(format!("{}.log", instance_id))
+}
+
+pub fn append_to_instance_log(instance_id: &str, line: &str) {
+    let path = get_instance_log_path(instance_id);
+    if let Ok(mut file) = fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&path)
+    {
+        use std::io::Write;
+        let _ = writeln!(file, "{}", line);
+    }
+}
+
+pub fn read_agent_logs(instance_id: String) -> Result<Vec<String>> {
+    let path = get_instance_log_path(&instance_id);
+    if !path.exists() {
+        return Ok(Vec::new());
+    }
+    let content = fs::read_to_string(path)?;
+    let lines = content.lines().map(|s| s.to_string()).collect();
+    Ok(lines)
+}
+
+pub fn spawn_in_new_terminal(
+    executable_path: &Path,
+    args: &[String],
+    working_dir: &Path,
+    env_mode: &str,
+    custom_envs: &HashMap<String, String>,
+    config: &AppConfig,
+    command: &str,
+) -> std::io::Result<Child> {
+    #[cfg(target_os = "windows")]
+    {
+        // Detect shell
+        let mut use_pwsh = false;
+        let mut use_powershell = false;
+
+        if Command::new("pwsh")
+            .arg("-Command")
+            .arg("exit")
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .is_ok()
+        {
+            use_pwsh = true;
+        } else if Command::new("powershell")
+            .arg("-Command")
+            .arg("exit")
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .is_ok()
+        {
+            use_powershell = true;
+        }
+
+        let mut cmd = if use_pwsh || use_powershell {
+            let shell_bin = if use_pwsh { "pwsh" } else { "powershell" };
+            let mut shell_cmd = Command::new(shell_bin);
+            shell_cmd.arg("-Command");
+
+            let cd_cmd = if !working_dir.as_os_str().is_empty() {
+                format!("Set-Location '{}'; ", working_dir.to_string_lossy().replace("'", "''"))
+            } else {
+                "".to_string()
+            };
+            let escaped_exe = executable_path.to_string_lossy().replace("'", "''");
+            let escaped_args: Vec<String> = args.iter().map(|a| format!("'{}'", a.replace("'", "''"))).collect();
+
+            let command_str = format!(
+                "{}& '{}' {}",
+                cd_cmd,
+                escaped_exe,
+                escaped_args.join(" ")
+            );
+            shell_cmd.arg(&command_str);
+            shell_cmd
+        } else {
+            let mut shell_cmd = Command::new("cmd");
+            shell_cmd.arg("/c");
+
+            let cd_cmd = if !working_dir.as_os_str().is_empty() {
+                format!("cd /d \"{}\" && ", working_dir.to_string_lossy().replace("\"", "\"\""))
+            } else {
+                "".to_string()
+            };
+            let escaped_exe = executable_path.to_string_lossy().replace("\"", "\"\"");
+            let escaped_args: Vec<String> = args.iter().map(|a| format!("\"{}\"", a.replace("\"", "\"\""))).collect();
+
+            let command_str = format!(
+                "{}\"{}\" {}",
+                cd_cmd,
+                escaped_exe,
+                escaped_args.join(" ")
+            );
+            shell_cmd.arg(&command_str);
+            shell_cmd
+        };
+
+        if !working_dir.as_os_str().is_empty() {
+            cmd.current_dir(working_dir);
+        }
+
+        // Set envs
+        if env_mode == "isolated" {
+            cmd.env_clear();
+            let preserves = [
+                "SystemRoot", "SystemDrive", "PATHEXT", "TEMP", "TMP", 
+                "COMSPEC", "USERNAME", "USERPROFILE", "APPDATA", "LOCALAPPDATA", 
+                "PROGRAMFILES", "PROGRAMFILES(X86)", "COMMONPROGRAMFILES", "PATH"
+            ];
+            for var in &preserves {
+                if let Ok(val) = env::var(var) {
+                    cmd.env(var, val);
+                }
+            }
+        }
+
+        if let Some(tool) = config.cli_tools.iter().find(|t| t.id == command || t.name == command) {
+            for (k, v) in &tool.custom_env {
+                cmd.env(k, v);
+            }
+        }
+
+        for (k, v) in custom_envs {
+            cmd.env(k, v);
+        }
+
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x00000010 | 0x00000200); // CREATE_NEW_CONSOLE | CREATE_NEW_PROCESS_GROUP
+
+        cmd.stdout(Stdio::inherit());
+        cmd.stderr(Stdio::inherit());
+        cmd.stdin(Stdio::inherit());
+
+        cmd.spawn()
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        let mut cmd = Command::new(executable_path);
+        cmd.args(args);
+        if !working_dir.as_os_str().is_empty() {
+            cmd.current_dir(working_dir);
+        }
+
+        if env_mode == "isolated" {
+            cmd.env_clear();
+            if let Ok(path) = env::var("PATH") {
+                cmd.env("PATH", path);
+            }
+            if let Ok(home) = env::var("HOME") {
+                cmd.env("HOME", home);
+            }
+        }
+
+        if let Some(tool) = config.cli_tools.iter().find(|t| t.id == command || t.name == command) {
+            for (k, v) in &tool.custom_env {
+                cmd.env(k, v);
+            }
+        }
+
+        for (k, v) in custom_envs {
+            cmd.env(k, v);
+        }
+
+        cmd.spawn()
     }
 }
 
@@ -275,6 +458,7 @@ pub fn import_cli_tool(path: String) -> Result<CliTool> {
         version: "1.0.0".to_string(),
         category_id: None,
         custom_env: HashMap::new(),
+        custom_args: Vec::new(),
     };
     config.cli_tools.push(new_tool.clone());
     save_config(&config)?;
@@ -346,6 +530,7 @@ pub fn scan_path_env() -> Result<Vec<CliTool>> {
                                 version: "1.0.0".to_string(),
                                 category_id: None,
                                 custom_env: HashMap::new(),
+                                custom_args: Vec::new(),
                             };
                             config.cli_tools.push(new_tool.clone());
                             new_tool
@@ -440,6 +625,7 @@ pub fn scan_directory(path: String) -> Result<Vec<CliTool>> {
                                 version: "1.0.0".to_string(),
                                 category_id: None,
                                 custom_env: HashMap::new(),
+                                custom_args: Vec::new(),
                             };
                             config.cli_tools.push(new_tool.clone());
                             new_tool
@@ -513,6 +699,16 @@ pub fn update_cli_env(cli_id: String, env: HashMap<String, String>) -> Result<()
     }
 
     config.cli_tools[tool_index].custom_env = env;
+    save_config(&config)?;
+    Ok(())
+}
+
+pub fn update_cli_args(cli_id: String, args: Vec<String>) -> Result<()> {
+    let mut config = load_config()?;
+    let tool_index = config.cli_tools.iter().position(|t| t.id == cli_id)
+        .ok_or_else(|| StorageError::CliToolNotFound(cli_id.clone()))?;
+
+    config.cli_tools[tool_index].custom_args = args;
     save_config(&config)?;
     Ok(())
 }
@@ -693,33 +889,46 @@ pub fn run_cli_template(
         return Err(StorageError::Validation(format!("CLI tool path does not exist: {}", tool.path.display())));
     }
 
-    let mut cmd = Command::new(&tool.path);
-    cmd.args(&template.args);
+    let working_dir = if let Some(ref pwd) = template.pwd {
+        pwd.clone()
+    } else {
+        PathBuf::new()
+    };
 
-    if let Some(ref pwd) = template.pwd {
-        if !pwd.as_os_str().is_empty() {
-            cmd.current_dir(pwd);
-        }
-    }
-
-    for (k, v) in &tool.custom_env {
-        cmd.env(k, v);
-    }
+    let mut custom_envs = HashMap::new();
     for var_id in &template.env_var_ids {
         if let Some(global_var) = config.env_vars.iter().find(|ev| &ev.id == var_id) {
-            cmd.env(&global_var.key, &global_var.value);
+            custom_envs.insert(global_var.key.clone(), global_var.value.clone());
         }
     }
     for (k, v) in &template.env {
-        cmd.env(k, v);
+        custom_envs.insert(k.clone(), v.clone());
     }
 
-    cmd.stdout(Stdio::piped());
-    cmd.stderr(Stdio::piped());
+    let env_mode = template.env_mode.clone().unwrap_or_else(|| "inherit".to_string());
 
-    let child = cmd.spawn()?;
+    let mut final_args = tool.custom_args.clone();
+    final_args.extend(template.args.clone());
+
+    let child = spawn_in_new_terminal(
+        &tool.path,
+        &final_args,
+        &working_dir,
+        &env_mode,
+        &custom_envs,
+        &config,
+        &template.cli_id,
+    )?;
     let instance_id = Uuid::new_v4().to_string();
     let pid = child.id();
+
+    // Log startup command details
+    append_to_instance_log(&instance_id, &format!("[SPAWN] Command: {:?}", tool.path));
+    append_to_instance_log(&instance_id, &format!("[SPAWN] Args: {:?}", template.args));
+    if let Some(ref pwd) = template.pwd {
+        append_to_instance_log(&instance_id, &format!("[SPAWN] Working Dir: {:?}", pwd));
+    }
+    println!("[Template Spawn] Command: {} {:?}", tool.path.display(), template.args);
 
     let mut list = get_active_instances_list();
     list.push(ActiveInstance {
@@ -764,6 +973,7 @@ pub fn run_cli_template(
                         cb("cli-log-event".to_string(), log_payload.clone());
                     }
                     println!("EVENT: cli-log-event:{}", serde_json::to_string(&log_payload).unwrap_or_default());
+                    append_to_instance_log(&instance_id_clone, &format!("[STDOUT] {}", l));
                 }
             }
         }
@@ -791,6 +1001,7 @@ pub fn run_cli_template(
                         cb("cli-log-event".to_string(), log_payload.clone());
                     }
                     println!("EVENT: cli-log-event:{}", serde_json::to_string(&log_payload).unwrap_or_default());
+                    append_to_instance_log(&instance_id_clone_err, &format!("[STDERR] {}", l));
                 }
             }
         }
@@ -830,6 +1041,8 @@ pub fn run_cli_template(
             "stopped"
         };
 
+        append_to_instance_log(&instance_id_clone_mon, &format!("[EXIT] Status: {}, Exit Code: {:?}", status_str, exit_code));
+
         let status_payload = serde_json::json!({
             "instance_id": instance_id_clone_mon,
             "status": status_str,
@@ -862,25 +1075,6 @@ pub fn run_cli_template(
 }
 
 pub fn kill_cli_instance(instance_id: String) -> Result<()> {
-    let child_arc_opt = get_active_instances().lock().unwrap().get(&instance_id).cloned();
-    if let Some(child_arc) = child_arc_opt {
-        let pid = {
-            if let Ok(guard) = child_arc.lock() {
-                guard.id()
-            } else {
-                return Err(StorageError::Validation("Failed to lock process child".to_string()));
-            }
-        };
-        let _ = kill_process_tree(pid);
-    }
-
-    let mut list = get_active_instances_list();
-    if let Some(pos) = list.iter().position(|x| x.instance_id == instance_id) {
-        let entry = list.remove(pos);
-        save_active_instances_list(&list);
-        let _ = kill_process_tree(entry.pid);
-    }
-
     if let Ok(mut cfg) = load_config() {
         if let Some(inst) = cfg.agent_instances.iter_mut().find(|i| i.id == instance_id) {
             inst.status = "interrupted".to_string();
@@ -892,6 +1086,28 @@ pub fn kill_cli_instance(instance_id: String) -> Result<()> {
             let _ = save_config(&cfg);
         }
     }
+
+    let instance_id_clone = instance_id.clone();
+    std::thread::spawn(move || {
+        let child_arc_opt = get_active_instances().lock().unwrap().get(&instance_id_clone).cloned();
+        if let Some(child_arc) = child_arc_opt {
+            let pid = {
+                if let Ok(guard) = child_arc.lock() {
+                    guard.id()
+                } else {
+                    return;
+                }
+            };
+            let _ = kill_process_tree(pid);
+        }
+
+        let mut list = get_active_instances_list();
+        if let Some(pos) = list.iter().position(|x| x.instance_id == instance_id_clone) {
+            let entry = list.remove(pos);
+            save_active_instances_list(&list);
+            let _ = kill_process_tree(entry.pid);
+        }
+    });
 
     Ok(())
 }
@@ -1182,6 +1398,7 @@ pub fn spawn_project_agent(
     args: Vec<String>,
     env_mode: String,
     custom_envs: HashMap<String, String>,
+    pwd: Option<String>,
     on_event: Option<Arc<dyn Fn(String, serde_json::Value) + Send + Sync + 'static>>,
 ) -> Result<String> {
     let config = load_config()?;
@@ -1195,40 +1412,44 @@ pub fn spawn_project_agent(
         PathBuf::from(&command)
     };
 
-    let mut cmd = Command::new(&executable_path);
-    cmd.args(&args);
-    cmd.current_dir(&project.root_path);
-
-    if env_mode == "isolated" {
-        cmd.env_clear();
-        let preserves = [
-            "SystemRoot", "SystemDrive", "PATHEXT", "TEMP", "TMP", 
-            "COMSPEC", "USERNAME", "USERPROFILE", "APPDATA", "LOCALAPPDATA", 
-            "PROGRAMFILES", "PROGRAMFILES(X86)", "COMMONPROGRAMFILES", "PATH"
-        ];
-        for var in &preserves {
-            if let Ok(val) = env::var(var) {
-                cmd.env(var, val);
-            }
+    let working_dir = if let Some(ref p_str) = pwd {
+        let p = Path::new(p_str);
+        if p.is_absolute() {
+            p.to_path_buf()
+        } else {
+            project.root_path.join(p)
         }
+    } else {
+        project.root_path.clone()
+    };
+
+    let mut final_args = Vec::new();
+    if let Some(tool) = config.cli_tools.iter().find(|t| t.id == command || t.name == command) {
+        final_args.extend(tool.custom_args.clone());
     }
+    final_args.extend(args.clone());
 
-    for (k, v) in &custom_envs {
-        cmd.env(k, v);
-    }
-
-    #[cfg(target_os = "windows")]
-    {
-        use std::os::windows::process::CommandExt;
-        cmd.creation_flags(0x00000200); // CREATE_NEW_PROCESS_GROUP
-    }
-
-    cmd.stdout(Stdio::piped());
-    cmd.stderr(Stdio::piped());
-
-    let child = cmd.spawn()?;
+    let child = spawn_in_new_terminal(
+        &executable_path,
+        &final_args,
+        &working_dir,
+        &env_mode,
+        &custom_envs,
+        &config,
+        &command,
+    )?;
     let instance_id = Uuid::new_v4().to_string();
     let pid = child.id();
+
+    // Log startup command details
+    append_to_instance_log(&instance_id, &format!("[SPAWN] Command: {:?}", executable_path));
+    append_to_instance_log(&instance_id, &format!("[SPAWN] Args: {:?}", args));
+    append_to_instance_log(&instance_id, &format!("[SPAWN] Working Dir: {:?}", working_dir));
+    append_to_instance_log(&instance_id, &format!("[SPAWN] Env Mode: {}", env_mode));
+    println!("[Agent Spawn] Command: {} {:?}", executable_path.display(), args);
+    println!("[Agent Spawn] Working Dir: {:?}", working_dir);
+    println!("[Agent Spawn] Env Mode: {}", env_mode);
+
     let start_time = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs().to_string())
@@ -1292,6 +1513,8 @@ pub fn spawn_project_agent(
                     if let Some(ref cb) = on_event_stdout {
                         cb("cli-log-event".to_string(), log_payload.clone());
                     }
+                    println!("[Agent Stdout] [{}]: {}", instance_id_clone, l);
+                    append_to_instance_log(&instance_id_clone, &format!("[STDOUT] {}", l));
                 }
             }
         }
@@ -1318,6 +1541,8 @@ pub fn spawn_project_agent(
                     if let Some(ref cb) = on_event_stderr {
                         cb("cli-log-event".to_string(), log_payload.clone());
                     }
+                    eprintln!("[Agent Stderr] [{}]: {}", instance_id_clone_err, l);
+                    append_to_instance_log(&instance_id_clone_err, &format!("[STDERR] {}", l));
                 }
             }
         }
@@ -1356,6 +1581,9 @@ pub fn spawn_project_agent(
             "failed"
         };
 
+        println!("[Agent Exit] [{}]: Status: {}, Exit Code: {:?}", instance_id_clone_mon, status_str, exit_code);
+        append_to_instance_log(&instance_id_clone_mon, &format!("[EXIT] Status: {}, Exit Code: {:?}", status_str, exit_code));
+
         let status_payload = serde_json::json!({
             "instance_id": instance_id_clone_mon,
             "status": status_str,
@@ -1373,7 +1601,9 @@ pub fn spawn_project_agent(
 
         if let Ok(mut cfg) = load_config() {
             if let Some(inst) = cfg.agent_instances.iter_mut().find(|i| i.id == instance_id_clone_mon) {
-                inst.status = status_str.to_string();
+                if inst.status != "interrupted" {
+                    inst.status = status_str.to_string();
+                }
                 let now_str = std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
                     .map(|d| d.as_secs().to_string())

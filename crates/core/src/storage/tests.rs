@@ -40,6 +40,7 @@ fn test_serialization_fidelity() {
         version: "2.40.1".to_string(),
         category_id: Some("category-dev".to_string()),
         custom_env,
+        custom_args: Vec::new(),
     };
 
     let category = Category {
@@ -119,6 +120,7 @@ fn test_atomic_save_load_roundtrip() {
             version: "1.0.0".to_string(),
             category_id: None,
             custom_env: HashMap::new(),
+            custom_args: Vec::new(),
         };
         config.cli_tools.push(new_tool);
         
@@ -155,6 +157,7 @@ fn test_crash_safety_on_failed_write() {
             version: "1.0.0".to_string(),
             category_id: None,
             custom_env: HashMap::new(),
+            custom_args: Vec::new(),
         });
         save_config(&original_config).expect("failed to save original config");
         

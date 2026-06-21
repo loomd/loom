@@ -114,7 +114,7 @@ export default function ProjectWorkspace({ project, onUnregisterProject }: Props
 
       // Spawn it in the project path as a project agent!
       const envMode = tpl.env_mode || 'inherit';
-      await spawnProjectAgent(project.id, tool.id, tpl.args, envMode, customEnvs);
+      await spawnProjectAgent(project.id, tool.id, tpl.args, envMode, customEnvs, tpl.pwd);
       toast.success(t('temp.toast.launched') + ': ' + tpl.name);
       
       refreshAgents();

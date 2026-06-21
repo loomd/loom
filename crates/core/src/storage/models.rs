@@ -13,6 +13,8 @@ pub struct CliTool {
     pub category_id: Option<String>,
     #[serde(default)]
     pub custom_env: HashMap<String, String>,
+    #[serde(default)]
+    pub custom_args: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

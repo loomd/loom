@@ -17,16 +17,17 @@ interface Props {
 }
 
 export function TemplateModal({
-  tools, template, onClose, onSave,
+  tools, template, defaultCliId, onClose, onSave,
 }: {
   tools: CliTool[];
   template?: Template;
+  defaultCliId?: string;
   onClose: () => void;
   onSave: () => void;
 }) {
   const { t } = useI18n();
   const [activeTab, setActiveTab] = useState<'general' | 'args' | 'env'>('general');
-  const [cliId, setCliId] = useState(template?.cli_id ?? (tools[0]?.id ?? ''));
+  const [cliId, setCliId] = useState(template?.cli_id ?? defaultCliId ?? (tools[0]?.id ?? ''));
   const [name, setName] = useState(template?.name ?? '');
   const [argsStr, setArgsStr] = useState(template?.args.join(' ') ?? '');
   const [pwd, setPwd] = useState(template?.pwd ?? '');

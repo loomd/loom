@@ -10,7 +10,8 @@ import {
   getCliTools,
   onStatusEvent,
   onLogEvent,
-  selectDirectory
+  selectDirectory,
+  getAgentLogs
 } from '../api';
 import type { Project, AgentInstance, CliTool } from '../types';
 import { useToast } from '../ToastContext';
@@ -34,6 +35,8 @@ export default function ProjectsPage() {
   // Spawn launcher states
   const [spawnCommand, setSpawnCommand] = useState('');
   const [spawnArgs, setSpawnArgs] = useState('');
+  const [isCustom, setIsCustom] = useState(false);
+  const [customCommand, setCustomCommand] = useState('');
   const [envMode, setEnvMode] = useState<'inherit' | 'isolated'>('inherit');
   const [customEnvsText, setCustomEnvsText] = useState('{\n  "ENV_VAR_NAME": "value"\n}');
   const [spawning, setSpawning] = useState(false);
@@ -61,11 +64,11 @@ export default function ProjectsPage() {
     try {
       const tools = await getCliTools();
       setCliTools(tools);
-      if (tools.length > 0 && !spawnCommand) {
+      if (tools.length > 0 && !spawnCommand && !isCustom) {
         setSpawnCommand(tools[0].name);
       }
     } catch { /* ignore */ }
-  }, [spawnCommand]);
+  }, [spawnCommand, isCustom]);
 
   // Refresh agents for active project
   const refreshAgents = useCallback(async () => {
@@ -187,7 +190,8 @@ export default function ProjectsPage() {
   const handleSpawn = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedProjectId) return;
-    if (!spawnCommand.trim()) {
+    const finalCommand = isCustom ? customCommand : spawnCommand;
+    if (!finalCommand.trim()) {
       toast.error('Command cannot be empty');
       return;
     }
@@ -207,7 +211,7 @@ export default function ProjectsPage() {
     const args = spawnArgs.trim() ? spawnArgs.trim().split(/\s+/) : [];
 
     try {
-      await spawnProjectAgent(selectedProjectId, spawnCommand.trim(), args, envMode, parsedEnvs);
+      await spawnProjectAgent(selectedProjectId, finalCommand.trim(), args, envMode, parsedEnvs);
       toast.success('Agent spawned successfully');
       setSpawnArgs('');
       refreshAgents();
@@ -344,8 +348,16 @@ export default function ProjectsPage() {
                   <label style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Command / CLI Tool</label>
                   <div style={{ display: 'flex', gap: '8px' }}>
                     <select
-                      value={spawnCommand}
-                      onChange={(e) => setSpawnCommand(e.target.value)}
+                      value={isCustom ? 'custom' : spawnCommand}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        if (val === 'custom') {
+                          setIsCustom(true);
+                        } else {
+                          setIsCustom(false);
+                          setSpawnCommand(val);
+                        }
+                      }}
                       style={{ 
                         backgroundColor: 'var(--bg-input)', 
                         color: 'var(--text-primary)', 
@@ -361,12 +373,12 @@ export default function ProjectsPage() {
                       ))}
                       <option value="custom">-- Custom Command --</option>
                     </select>
-                    {spawnCommand === 'custom' && (
+                    {isCustom && (
                       <input 
                         type="text"
                         placeholder={t('proj.launcher.cmdPlaceholder')}
-                        value={spawnCommand === 'custom' ? '' : spawnCommand}
-                        onChange={(e) => setSpawnCommand(e.target.value)}
+                        value={customCommand}
+                        onChange={(e) => setCustomCommand(e.target.value)}
                         style={{ 
                           backgroundColor: 'var(--bg-input)', 
                           color: 'var(--text-primary)', 
@@ -494,7 +506,12 @@ export default function ProjectsPage() {
                         cursor: 'pointer'
                       }}
                       onClick={async () => {
-                        setSelectedAgentLogs({ id: agent.id, command: `${agent.command} ${agent.arguments.join(' ')}`, logs: [] });
+                        try {
+                          const historical = await getAgentLogs(agent.id);
+                          setSelectedAgentLogs({ id: agent.id, command: `${agent.command} ${agent.arguments.join(' ')}`, logs: historical });
+                        } catch (err) {
+                          setSelectedAgentLogs({ id: agent.id, command: `${agent.command} ${agent.arguments.join(' ')}`, logs: [`[SYSTEM] Failed to load logs: ${err}`] });
+                        }
                         try {
                           await bringAgentToForeground(agent.id);
                         } catch (err) {
@@ -540,7 +557,12 @@ export default function ProjectsPage() {
                         <button
                           className="btn-secondary"
                           onClick={async () => {
-                            setSelectedAgentLogs({ id: agent.id, command: `${agent.command} ${agent.arguments.join(' ')}`, logs: [] });
+                            try {
+                              const historical = await getAgentLogs(agent.id);
+                              setSelectedAgentLogs({ id: agent.id, command: `${agent.command} ${agent.arguments.join(' ')}`, logs: historical });
+                            } catch (err) {
+                              setSelectedAgentLogs({ id: agent.id, command: `${agent.command} ${agent.arguments.join(' ')}`, logs: [`[SYSTEM] Failed to load logs: ${err}`] });
+                            }
                             try {
                               await bringAgentToForeground(agent.id);
                             } catch (err) {

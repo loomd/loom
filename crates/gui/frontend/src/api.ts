@@ -25,6 +25,12 @@ export const updateCliEnv = (
 ): Promise<void> =>
   invoke('update_cli_env', { cliId, env });
 
+export const updateCliArgs = (
+  cliId: string,
+  args: string[]
+): Promise<void> =>
+  invoke('update_cli_args', { cliId, args });
+
 // ─── Categories ───────────────────────────────────────────
 export const createCategory = (name: string, desc: string): Promise<Category> =>
   invoke('create_category', { name, desc });
@@ -164,9 +170,13 @@ export const spawnProjectAgent = (
   command: string,
   args: string[],
   envMode: 'inherit' | 'isolated',
-  customEnvs: Record<string, string>
+  customEnvs: Record<string, string>,
+  pwd?: string
 ): Promise<string> =>
-  invoke('spawn_project_agent', { projectId, command, args, envMode, customEnvs });
+  invoke('spawn_project_agent', { projectId, command, args, envMode, customEnvs, pwd });
+
+export const getAgentLogs = (instanceId: string): Promise<string[]> =>
+  invoke('get_agent_logs', { instanceId });
 
 export const killAgentProcess = (instanceId: string): Promise<void> =>
   invoke('kill_agent_process', { instanceId });

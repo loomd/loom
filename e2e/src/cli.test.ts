@@ -50,11 +50,11 @@ describe('loom CLI E2E tests', () => {
   test('test_cli_version_info', async () => {
     const res = await runCli(['--version']);
     expect(res.exitCode).toBe(0);
-    expect(res.stdout).toContain('loom 0.1.4');
+    expect(res.stdout).toContain('loom 0.1.5');
 
     const resShort = await runCli(['-v']);
     expect(resShort.exitCode).toBe(0);
-    expect(resShort.stdout).toContain('loom 0.1.4');
+    expect(resShort.stdout).toContain('loom 0.1.5');
   });
 
   test('test_cli_list_default_table', async () => {
