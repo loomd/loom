@@ -180,7 +180,7 @@ export default function ProjectWorkspace({ project, isVisible, onUnregisterProje
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', padding: '24px' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', padding: '24px', overflow: 'hidden' }}>
 
       {/* ── Project Title & Path Header ────────────────────────── */}
       <div className="header-card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: 'transparent', padding: '2px 0', border: 'none', marginBottom: '8px' }}>

@@ -32,6 +32,7 @@ export function TerminalTab({ sessionId, cwd, command, args, env, isVisible }: T
       const el = e.currentTarget as HTMLElement;
       if (el) {
         el.scrollLeft = 0;
+        el.scrollTop = 0;
       }
     };
 
@@ -277,7 +278,8 @@ export function TerminalTab({ sessionId, cwd, command, args, env, isVisible }: T
         padding: '12px',
         borderRadius: 'var(--radius-md, 8px)',
         border: '1px solid var(--border-subtle, #27272a)',
-        overflow: 'hidden'
+        overflow: 'hidden',
+        position: 'relative'
       }}
     >
       <style>{`
@@ -290,6 +292,7 @@ export function TerminalTab({ sessionId, cwd, command, args, env, isVisible }: T
         .xterm-helpers {
           left: 0 !important;
           top: 0 !important;
+          z-index: 10 !important;
         }
         .xterm-helper-textarea {
           font-family: Consolas, "Courier New", monospace !important;
@@ -303,6 +306,7 @@ export function TerminalTab({ sessionId, cwd, command, args, env, isVisible }: T
           color: transparent !important;
           background: transparent !important;
           opacity: 0.01 !important;
+          z-index: 10 !important;
         }
       `}</style>
       <div
@@ -310,7 +314,8 @@ export function TerminalTab({ sessionId, cwd, command, args, env, isVisible }: T
         style={{
           width: '100%',
           height: '100%',
-          overflow: 'hidden'
+          overflow: 'hidden',
+          position: 'relative'
         }}
       />
     </div>

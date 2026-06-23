@@ -397,7 +397,7 @@ function App() {
 
       {/* ── Main Content ─────────────────────────────────── */}
       <main className="main-content">
-        <div style={{ display: page === 'workspace' ? 'flex' : 'none', flexDirection: 'column', flex: 1, minHeight: 0 }}>
+        <div style={{ display: page === 'workspace' ? 'flex' : 'none', flexDirection: 'column', flex: 1, minHeight: 0, overflow: 'hidden' }}>
           {projects.length === 0 ? (
             <div className="empty-state-card" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '16px', padding: '60px', backgroundColor: 'var(--bg-card)', borderRadius: 'var(--radius-md)', border: '1px dashed var(--border-subtle)', textAlign: 'center', margin: '40px auto', maxWidth: '600px' }}>
               <div style={{ fontSize: '3rem' }}>📁</div>
@@ -417,7 +417,8 @@ function App() {
                   display: p.id === selectedProjectId ? 'flex' : 'none',
                   flexDirection: 'column',
                   flex: 1,
-                  minHeight: 0
+                  minHeight: 0,
+                  overflow: 'hidden'
                 }}
               >
                 <ProjectWorkspace 
