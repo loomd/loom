@@ -180,7 +180,7 @@ export default function InstancesPage({ instances, onInstancesChange }: Props) {
                       {selected.instance_id.slice(0, 12)}… · {selected.logs.length} lines
                     </span>
                   </div>
-                  <div className="terminal" style={{ flex: 1, height: 'auto', minHeight: 0 }}>
+                  <div className="log-terminal" style={{ flex: 1, height: 'auto', minHeight: 0 }}>
                     {selected.logs.length === 0 ? (
                       <span style={{ color: 'var(--text-tertiary)', fontSize: 11, fontStyle: 'italic' }}>
                         {selected.status === 'running' ? 'Waiting for output…' : t('inst.terminal.noLogs')}

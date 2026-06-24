@@ -56,6 +56,40 @@ use loom_core::storage::{
 };
 
 #[tauri::command]
+fn update_ime_position(window: tauri::Window, x: f64, y: f64) {
+    #[cfg(target_os = "windows")]
+    {
+        use raw_window_handle::{HasWindowHandle, RawWindowHandle};
+        use winapi::shared::windef::{HWND, POINT, RECT};
+        use winapi::um::imm::{
+            ImmGetContext, ImmReleaseContext, ImmSetCompositionWindow, COMPOSITIONFORM, CFS_POINT,
+        };
+
+        let scale_factor = window.scale_factor().unwrap_or(1.0);
+        let physical_x = (x * scale_factor) as i32;
+        let physical_y = (y * scale_factor) as i32;
+
+        if let Ok(handle_wrapper) = window.window_handle() {
+            if let RawWindowHandle::Win32(win32_handle) = handle_wrapper.as_raw() {
+                let hwnd = win32_handle.hwnd.get() as *mut std::ffi::c_void as HWND;
+                unsafe {
+                    let himc = ImmGetContext(hwnd);
+                    if !himc.is_null() {
+                        let mut form = COMPOSITIONFORM {
+                            dwStyle: CFS_POINT,
+                            ptCurrentPos: POINT { x: physical_x, y: physical_y },
+                            rcArea: RECT { left: 0, top: 0, right: 0, bottom: 0 },
+                        };
+                        ImmSetCompositionWindow(himc, &mut form);
+                        ImmReleaseContext(hwnd, himc);
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[tauri::command]
 fn get_cli_tools() -> Result<Vec<CliTool>, String> {
     core_get_cli_tools().map_err(|e| e.to_string())
 }
@@ -866,6 +900,7 @@ fn main() {
             }
         })
         .invoke_handler(tauri::generate_handler![
+            update_ime_position,
             get_cli_tools,
             get_categories,
             import_cli_tool,

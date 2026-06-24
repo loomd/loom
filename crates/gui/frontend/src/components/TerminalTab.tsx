@@ -1,9 +1,9 @@
 import { useEffect, useRef } from 'react';
-import { Terminal } from 'xterm';
+import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
-import 'xterm/css/xterm.css';
+import '@xterm/xterm/css/xterm.css';
 
 interface TerminalTabProps {
   sessionId: string;
@@ -21,6 +21,11 @@ export function TerminalTab({ sessionId, cwd, command, args, env, isVisible }: T
   const fitAddonRef = useRef<FitAddon | null>(null);
   const initialized = useRef<boolean>(false);
   const spawnSuccessRef = useRef<boolean>(false);
+
+  const isVisibleRef = useRef(isVisible);
+  useEffect(() => {
+    isVisibleRef.current = isVisible;
+  }, [isVisible]);
 
   useEffect(() => {
     if (!containerRef.current || initialized.current) return;
@@ -42,6 +47,45 @@ export function TerminalTab({ sessionId, cwd, command, args, env, isVisible }: T
         }
         termRef.current.write(concatenated);
         ptyBuffer.length = 0;
+      }
+    };
+
+    const getCellDimensions = () => {
+      const measureEl = containerRef.current?.querySelector('.xterm-char-measure-element');
+      if (measureEl) {
+        const rect = measureEl.getBoundingClientRect();
+        if (rect.width > 0 && rect.height > 0) {
+          return { width: rect.width, height: rect.height };
+        }
+      }
+      const core = (termRef.current as any)?._core;
+      if (core?._renderService?.dimensions?.css?.cell) {
+        const cell = core._renderService.dimensions.css.cell;
+        if (cell.width > 0 && cell.height > 0) {
+          return { width: cell.width, height: cell.height };
+        }
+      }
+      return { width: 7.15, height: 15.17 };
+    };
+
+    const syncTextareaPosition = () => {
+      const term = termRef.current;
+      const textarea = term?.textarea;
+      if (term && textarea) {
+        const { width, height } = getCellDimensions();
+        const cursorX = term.buffer.active.cursorX;
+        const cursorY = term.buffer.active.cursorY;
+        
+        textarea.style.left = `${cursorX * width}px`;
+        textarea.style.top = `${cursorY * height}px`;
+
+        const rect = textarea.getBoundingClientRect();
+        invoke('update_ime_position', {
+          x: rect.left,
+          y: rect.bottom
+        }).catch(err => {
+          console.warn("Failed to update native IME position:", err);
+        });
       }
     };
 
@@ -143,6 +187,7 @@ export function TerminalTab({ sessionId, cwd, command, args, env, isVisible }: T
           termEl.classList.add('is-composing');
           textarea.scrollLeft = 0;
           textarea.scrollTop = 0;
+          syncTextareaPosition();
           console.log('IME Log: compositionstart - data:', e.data);
           logState('start');
         };
@@ -151,6 +196,7 @@ export function TerminalTab({ sessionId, cwd, command, args, env, isVisible }: T
           termEl.classList.remove('is-composing');
           textarea.scrollLeft = 0;
           textarea.scrollTop = 0;
+          syncTextareaPosition();
           console.log('IME Log: compositionend - data:', e.data);
           logState('end');
           flushPtyBuffer();
@@ -158,6 +204,7 @@ export function TerminalTab({ sessionId, cwd, command, args, env, isVisible }: T
         const handleUpdate = (e: any) => {
           textarea.scrollLeft = 0;
           textarea.scrollTop = 0;
+          syncTextareaPosition();
           console.log('IME Log: compositionupdate - data:', e.data);
           logState('update');
         };
@@ -243,6 +290,17 @@ export function TerminalTab({ sessionId, cwd, command, args, env, isVisible }: T
           });
           if (!termRef.current) return () => {};
           spawnSuccessRef.current = true;
+          // Sync size right after spawn completes
+          try {
+            fitAddon.fit();
+            invoke('pty_resize', {
+              sessionId,
+              cols: term.cols,
+              rows: term.rows
+            }).catch(e => console.warn("Initial pty_resize failed:", e));
+          } catch (e) {
+            console.warn("Initial fit failed:", e);
+          }
         } catch (err) {
           if (!termRef.current) return () => {};
           term.write(`\r\n\x1b[31mFailed to spawn terminal process: ${err}\x1b[0m\r\n`);
@@ -320,18 +378,20 @@ export function TerminalTab({ sessionId, cwd, command, args, env, isVisible }: T
 
     // Size observer for resize sync
     const resizeObserver = new ResizeObserver(() => {
-      if (isVisible && termRef.current && fitAddonRef.current && spawnSuccessRef.current) {
+      if (isVisible && termRef.current && fitAddonRef.current) {
         const timer = setTimeout(() => {
-          if (!termRef.current || !fitAddonRef.current || !spawnSuccessRef.current) return;
+          if (!termRef.current || !fitAddonRef.current) return;
           const container = containerRef.current;
           if (container && container.clientWidth > 0 && container.clientHeight > 0) {
             try {
               fitAddonRef.current.fit();
-              invoke('pty_resize', {
-                sessionId,
-                cols: termRef.current.cols,
-                rows: termRef.current.rows
-              }).catch(err => console.warn("Resize update failed:", err));
+              if (spawnSuccessRef.current) {
+                invoke('pty_resize', {
+                  sessionId,
+                  cols: termRef.current.cols,
+                  rows: termRef.current.rows
+                }).catch(err => console.warn("Resize update failed:", err));
+              }
             } catch (e) {
               console.warn("Resize error:", e);
             }
@@ -400,27 +460,33 @@ export function TerminalTab({ sessionId, cwd, command, args, env, isVisible }: T
         width: '100%',
         height: '100%',
         backgroundColor: '#121214',
-        padding: '12px',
-        borderRadius: 'var(--radius-md, 8px)',
-        border: '1px solid var(--border-subtle, #27272a)',
+        padding: '4px',
+        margin: '0px',
         overflow: 'hidden',
-        position: 'relative'
+        position: 'relative',
+        borderRadius: '6px',
+        border: '1px solid var(--border-subtle, #27272a)',
+        boxSizing: 'border-box'
       }}
     >
       <style>{`
         .xterm {
+          width: 100%;
           height: 100%;
         }
         .xterm-viewport {
+          width: 100% !important;
           height: 100% !important;
         }
         .xterm .xterm-helpers {
           left: 0;
+          overflow: hidden;
         }
         .xterm.is-composing .xterm-helpers {
           z-index: 10 !important;
         }
         .xterm.is-composing .xterm-helper-textarea {
+          position: absolute !important;
           font-family: Consolas, "Courier New", monospace !important;
           font-size: 13px !important;
           line-height: 1.2 !important;
@@ -433,7 +499,7 @@ export function TerminalTab({ sessionId, cwd, command, args, env, isVisible }: T
           background: transparent !important;
           caret-color: transparent !important;
           opacity: 1 !important;
-          width: 1000px !important;
+          white-space: nowrap !important;
           z-index: 10 !important;
         }
       `}</style>

@@ -675,7 +675,7 @@ body.theme-day select.input option {
 }
 
 /* ─── Terminal / Console ─────────────────────────────────── */
-.terminal {
+.log-terminal {
   background: #000;
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-md);

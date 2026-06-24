@@ -180,10 +180,10 @@ export default function ProjectWorkspace({ project, isVisible, onUnregisterProje
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', padding: '24px', overflow: 'hidden' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
 
       {/* ── Project Title & Path Header ────────────────────────── */}
-      <div className="header-card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: 'transparent', padding: '2px 0', border: 'none', marginBottom: '8px' }}>
+      <div className="header-card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: 'transparent', padding: '24px 24px 8px 24px', border: 'none', marginBottom: '0px' }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
           <h2 style={{ fontSize: '1.05rem', fontWeight: 600, color: 'var(--text-primary)', margin: 0, display: 'flex', alignItems: 'center', gap: '4px' }}>
             {project.name}
@@ -217,8 +217,8 @@ export default function ProjectWorkspace({ project, isVisible, onUnregisterProje
         alignItems: 'center',
         justifyContent: 'space-between',
         borderBottom: '1px solid var(--border-subtle, #27272a)',
-        paddingBottom: '4px',
-        marginBottom: '8px',
+        padding: '4px 24px 8px 24px',
+        marginBottom: '0px',
         gap: '12px'
       }}>
         <div style={{ display: 'flex', gap: '4px', overflowX: 'auto', flex: 1 }}>
@@ -316,7 +316,7 @@ export default function ProjectWorkspace({ project, isVisible, onUnregisterProje
 
         {/* Overview Tab Content */}
         {activeTabId === 'overview' && !showGrid && (
-          <div style={{ flexGrow: 1, minHeight: 0, display: 'flex', flexDirection: 'column', gap: '20px', overflowY: 'auto' }}>
+          <div style={{ flexGrow: 1, minHeight: 0, display: 'flex', flexDirection: 'column', gap: '20px', overflowY: 'auto', padding: '24px' }}>
             {/* Quick Spawn Launcher Panel */}
             <div className="launcher-card" style={{ backgroundColor: 'transparent', padding: '12px 0', display: 'flex', flexDirection: 'column', gap: '16px' }}>
               <h3 style={{ margin: 0, fontSize: '1.1rem', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -367,7 +367,14 @@ export default function ProjectWorkspace({ project, isVisible, onUnregisterProje
         )}
 
         {/* Terminals Viewport (Tabbed or Tiled Grid) */}
-        <div style={{ ...getGridStyle(), flex: 1, minHeight: 0 }}>
+        <div style={{
+          ...getGridStyle(),
+          flex: 1,
+          minHeight: 0,
+          paddingRight: '6px',
+          paddingBottom: '6px',
+          boxSizing: 'border-box'
+        }}>
           {terminals.map((tab, idx) => {
             const isTabVisible = showGrid ? (idx < 2) : (tab.id === activeTabId);
             const isTerminalVisible = isVisible && isTabVisible;
@@ -376,9 +383,9 @@ export default function ProjectWorkspace({ project, isVisible, onUnregisterProje
                 key={tab.id}
                 style={{
                   display: isTabVisible ? 'block' : 'none',
-                  flex: showGrid ? 1 : undefined,
-                  width: showGrid ? '0px' : '100%',
-                  height: '100%'
+                  flex: 1,
+                  height: '100%',
+                  minWidth: 0
                 }}
               >
                 <TerminalTab

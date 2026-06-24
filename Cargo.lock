@@ -2104,6 +2104,7 @@ version = "0.1.10"
 dependencies = [
  "loom-core",
  "portable-pty",
+ "raw-window-handle",
  "rfd",
  "serde",
  "serde_json",

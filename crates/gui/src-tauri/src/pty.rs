@@ -127,7 +127,59 @@ pub struct PtySession {
 #[derive(Default)]
 pub struct PtyState {
     pub sessions: Arc<Mutex<HashMap<String, Arc<PtySession>>>>,
-}// Core PTY spawn function
+}
+
+/// Builds the terminal shell arguments to execute the command on startup
+/// while keeping the shell open and interactive afterwards.
+pub fn build_shell_args(
+    shell_path: &str,
+    cmd_to_run: Option<&str>,
+    cmd_args: Option<&[String]>,
+) -> Vec<String> {
+    let mut args = Vec::new();
+    if let Some(target_cmd) = cmd_to_run {
+        let path_lower = shell_path.to_lowercase();
+        let is_pwsh = path_lower.contains("pwsh") || path_lower.contains("powershell");
+        let is_cmd = path_lower.contains("cmd.exe") || path_lower.ends_with("cmd");
+
+        if is_pwsh {
+            let escaped_exe = target_cmd.replace("'", "''");
+            let escaped_args: Vec<String> = cmd_args
+                .unwrap_or(&[])
+                .iter()
+                .map(|a| format!("'{}'", a.replace("'", "''")))
+                .collect();
+            let command_str = format!("& '{}' {}", escaped_exe, escaped_args.join(" "));
+            args.push("-NoExit".to_string());
+            args.push("-Command".to_string());
+            args.push(command_str);
+        } else if is_cmd {
+            let escaped_exe = target_cmd.replace("\"", "\"\"");
+            let escaped_args: Vec<String> = cmd_args
+                .unwrap_or(&[])
+                .iter()
+                .map(|a| format!("\"{}\"", a.replace("\"", "\"\"")))
+                .collect();
+            let command_str = format!("\"{}\" {}", escaped_exe, escaped_args.join(" "));
+            args.push("/K".to_string());
+            args.push(command_str);
+        } else {
+            // Unix fallback (bash/zsh/sh/etc): execute the command, then exec a new shell to keep PTY interactive
+            let escaped_exe = target_cmd.replace("'", "'\\''");
+            let escaped_args: Vec<String> = cmd_args
+                .unwrap_or(&[])
+                .iter()
+                .map(|a| format!("'{}'", a.replace("'", "'\\''")))
+                .collect();
+            let command_str = format!("'{}' {}; exec {}", escaped_exe, escaped_args.join(" "), shell_path);
+            args.push("-c".to_string());
+            args.push(command_str);
+        }
+    }
+    args
+}
+
+// Core PTY spawn function
 pub fn spawn_pty_session(
     app: AppHandle,
     state: &PtyState,
@@ -154,42 +206,44 @@ pub fn spawn_pty_session(
         .openpty(size)
         .map_err(|e| format!("Failed to open PTY: {}", e))?;
 
-    // Determine shell execution path on Windows, PWSH -> Powershell -> CMD
-    let shell_exe = command.unwrap_or_else(|| {
-        let system32_powershell = "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe";
-        let system32_cmd = "C:\\Windows\\System32\\cmd.exe";
-        
-        // 1. Try standard absolute paths for PowerShell 7+ (pwsh.exe) first
-        let pwsh_7_path = "C:\\Program Files\\PowerShell\\7\\pwsh.exe";
-        let pwsh_6_path = "C:\\Program Files\\PowerShell\\6\\pwsh.exe";
-        if std::path::Path::new(pwsh_7_path).exists() {
-            return pwsh_7_path.to_string();
-        }
-        if std::path::Path::new(pwsh_6_path).exists() {
-            return pwsh_6_path.to_string();
-        }
+    // Always spawn the default system shell instead of running the tool executable directly.
+    let shell_exe = {
+        #[cfg(target_os = "windows")]
+        {
+            let system32_powershell = "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe";
+            let system32_cmd = "C:\\Windows\\System32\\cmd.exe";
 
-        // 2. Try resolving via PATH, filtering out WindowsApps store aliases
-        if let Ok(pwsh_path) = which::which("pwsh") {
-            let path_str = pwsh_path.to_string_lossy().to_string();
-            let path_lower = path_str.to_lowercase();
-            if !path_lower.contains("windowsapps") {
-                return path_str;
+            // 1. Try standard absolute paths for PowerShell 7+ (pwsh.exe) first
+            let pwsh_7_path = "C:\\Program Files\\PowerShell\\7\\pwsh.exe";
+            let pwsh_6_path = "C:\\Program Files\\PowerShell\\6\\pwsh.exe";
+            if std::path::Path::new(pwsh_7_path).exists() {
+                pwsh_7_path.to_string()
+            } else if std::path::Path::new(pwsh_6_path).exists() {
+                pwsh_6_path.to_string()
+            } else if let Ok(pwsh_path) = which::which("pwsh") {
+                let path_str = pwsh_path.to_string_lossy().to_string();
+                let path_lower = path_str.to_lowercase();
+                if !path_lower.contains("windowsapps") {
+                    path_str
+                } else if std::path::Path::new(system32_powershell).exists() {
+                    system32_powershell.to_string()
+                } else {
+                    system32_cmd.to_string()
+                }
+            } else if std::path::Path::new(system32_powershell).exists() {
+                system32_powershell.to_string()
+            } else {
+                system32_cmd.to_string()
             }
         }
-        
-        // 3. Fallback to native system PowerShell (v5.1)
-        if std::path::Path::new(system32_powershell).exists() {
-            system32_powershell.to_string()
-        } else if std::path::Path::new(system32_cmd).exists() {
-            system32_cmd.to_string()
-        } else {
-            system32_cmd.to_string()
+        #[cfg(not(target_os = "windows"))]
+        {
+            std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".to_string())
         }
-    });
+    };
 
-    let mut cmd_builder = CommandBuilder::new(shell_exe);
-    
+    let mut cmd_builder = CommandBuilder::new(&shell_exe);
+
     // Explicitly inherit all parent environment variables to avoid missing DLL crashes on Windows
     for (key, val) in std::env::vars() {
         cmd_builder.env(key, val);
@@ -202,9 +256,12 @@ pub fn spawn_pty_session(
         }
     }
 
-    if let Some(cmd_args) = args {
-        cmd_builder.args(cmd_args);
+    // Resolve parameter arguments inside the interactive shell
+    let shell_args = build_shell_args(&shell_exe, command.as_deref(), args.as_deref());
+    if !shell_args.is_empty() {
+        cmd_builder.args(shell_args);
     }
+
     if let Some(ref dir) = cwd {
         if !dir.is_empty() {
             let clean_dir = dir.replace("/", "\\");
