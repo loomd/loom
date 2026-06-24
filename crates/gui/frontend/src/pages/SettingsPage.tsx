@@ -28,6 +28,7 @@ interface Props {
   fontSize: string;
   onFontFamilyChange: (family: string) => Promise<void>;
   onFontSizeChange: (size: string) => Promise<void>;
+  updateInfo?: { hasUpdate: boolean; latestVersion: string; url: string; error?: boolean } | null;
 }
 
 const PRESETS = [
@@ -48,7 +49,8 @@ export default function SettingsPage({
   fontFamily,
   fontSize,
   onFontFamilyChange,
-  onFontSizeChange
+  onFontSizeChange,
+  updateInfo
 }: Props) {
   const { t, language, setLanguage } = useI18n();
   const toast = useToast();
@@ -643,9 +645,70 @@ export default function SettingsPage({
                   {t('settings.version.desc')}
                 </div>
 
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px', color: 'var(--text-primary)' }}>
+                 <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '8px', fontSize: '14px', color: 'var(--text-primary)' }}>
                   <span style={{ fontWeight: 600 }}>Loom v{appVersion}</span>
                   <span style={{ color: 'var(--text-tertiary)', fontSize: '0.85rem' }}>(Stable)</span>
+                  {updateInfo && updateInfo.hasUpdate && (
+                    <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '13px', marginLeft: '8px' }}>
+                      <span style={{ 
+                        backgroundColor: 'rgba(235, 94, 40, 0.15)', 
+                        color: '#eb5e28', 
+                        padding: '2px 8px', 
+                        borderRadius: '12px', 
+                        fontWeight: 600,
+                        fontSize: '0.75rem',
+                        border: '1px solid rgba(235, 94, 40, 0.25)'
+                      }}>
+                        {t('settings.version.newUpdate')}
+                      </span>
+                      <a 
+                        href={updateInfo.url} 
+                        target="_blank" 
+                        rel="noopener noreferrer"
+                        style={{ 
+                          color: 'var(--accent-purple, #9b5de5)', 
+                          textDecoration: 'underline',
+                          fontWeight: 500
+                        }}
+                      >
+                        {t('settings.version.download')}
+                      </a>
+                    </div>
+                  )}
+                  {updateInfo && !updateInfo.hasUpdate && !updateInfo.error && (
+                    <span style={{ 
+                      backgroundColor: 'rgba(46, 196, 182, 0.12)', 
+                      color: '#2ec4b6', 
+                      padding: '2px 8px', 
+                      borderRadius: '12px', 
+                      fontWeight: 600,
+                      fontSize: '0.75rem',
+                      border: '1px solid rgba(46, 196, 182, 0.22)',
+                      marginLeft: '8px',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '4px'
+                    }}>
+                      ✓ {t('settings.version.upToDate')}
+                    </span>
+                  )}
+                  {updateInfo && updateInfo.error && (
+                    <span style={{ 
+                      backgroundColor: 'rgba(230, 57, 70, 0.12)', 
+                      color: '#e63946', 
+                      padding: '2px 8px', 
+                      borderRadius: '12px', 
+                      fontWeight: 600,
+                      fontSize: '0.75rem',
+                      border: '1px solid rgba(230, 57, 70, 0.22)',
+                      marginLeft: '8px',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '4px'
+                    }}>
+                      ⚠ {t('settings.version.checkFailed')}
+                    </span>
+                  )}
                 </div>
               </div>
             </div>

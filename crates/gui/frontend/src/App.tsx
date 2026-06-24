@@ -69,6 +69,73 @@ function App() {
   const [theme, setThemeState] = useState<'dark' | 'day'>('dark');
   const [fontFamily, setFontFamilyState] = useState('Plus Jakarta Sans');
   const [fontSize, setFontSizeState] = useState('14px');
+  const [updateInfo, setUpdateInfo] = useState<{ hasUpdate: boolean; latestVersion: string; url: string; error?: boolean } | null>(null);
+
+  // Silent auto-update check on startup
+  useEffect(() => {
+    const performUpdateCheck = async () => {
+      try {
+        const { getVersion } = await import('@tauri-apps/api/app');
+        const currentVersion = await getVersion();
+        
+        const response = await fetch('https://api.github.com/repos/GoldTest/Loom/releases/latest', {
+          headers: {
+            'Accept': 'application/vnd.github.v3+json'
+          }
+        });
+        if (response.ok) {
+          const data = await response.json();
+          const latestVersion = data.tag_name;
+          const url = data.html_url;
+          
+          const cleanV1 = currentVersion.replace(/^v/, '');
+          const cleanV2 = latestVersion.replace(/^v/, '');
+          const parts1 = cleanV1.split('.').map((p: string) => parseInt(p, 10) || 0);
+          const parts2 = cleanV2.split('.').map((p: string) => parseInt(p, 10) || 0);
+          
+          let hasNew = false;
+          const maxLength = Math.max(parts1.length, parts2.length);
+          for (let i = 0; i < maxLength; i++) {
+            const num1 = parts1[i] || 0;
+            const num2 = parts2[i] || 0;
+            if (num2 > num1) {
+              hasNew = true;
+              break;
+            } else if (num2 < num1) {
+              break;
+            }
+          }
+          
+          setUpdateInfo({
+            hasUpdate: hasNew,
+            latestVersion,
+            url
+          });
+        } else {
+          setUpdateInfo({
+            hasUpdate: false,
+            latestVersion: '',
+            url: '',
+            error: true
+          });
+        }
+      } catch (err) {
+        console.error('Failed to perform silent update check:', err);
+        setUpdateInfo({
+          hasUpdate: false,
+          latestVersion: '',
+          url: '',
+          error: true
+        });
+      }
+    };
+    
+    const timer = setTimeout(() => {
+      performUpdateCheck();
+    }, 2000);
+    
+    return () => clearTimeout(timer);
+  }, []);
 
   // Register project modal states
   const [showModal, setShowModal] = useState(false);
@@ -460,6 +527,7 @@ function App() {
             fontSize={fontSize}
             onFontFamilyChange={handleFontFamilyChange}
             onFontSizeChange={handleFontSizeChange}
+            updateInfo={updateInfo}
           />
         </div>
       </main>
