@@ -249,9 +249,6 @@ export function TerminalTab({ sessionId, cwd, command, args, env, isVisible }: T
 
         const handleStart = (e: any) => {
           isComposing = true;
-          if (textarea) {
-            textarea.value = '';
-          }
           termEl.classList.add('is-composing');
           textarea.scrollLeft = 0;
           textarea.scrollTop = 0;
@@ -268,13 +265,6 @@ export function TerminalTab({ sessionId, cwd, command, args, env, isVisible }: T
           console.log('IME Log: compositionend - data:', e.data);
           logState('end');
           flushPtyBuffer();
-
-          // Clear the textarea value in the next event loop tick to let xterm.js process the input first
-          setTimeout(() => {
-            if (textarea) {
-              textarea.value = '';
-            }
-          }, 0);
         };
         const handleUpdate = (e: any) => {
           textarea.scrollLeft = 0;
@@ -395,6 +385,7 @@ export function TerminalTab({ sessionId, cwd, command, args, env, isVisible }: T
 
         // 4. Hook up user keyboard input
         const dataSub = term.onData((text) => {
+          console.log('[IME onData] text:', JSON.stringify(text), 'length:', text.length, 'isComposing:', isComposing);
           const encoder = new TextEncoder();
           const bytes = encoder.encode(text);
           invoke('pty_write', { sessionId, data: Array.from(bytes) }).catch(err => {
