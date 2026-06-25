@@ -121,6 +121,18 @@ export function TerminalTab({ sessionId, cwd, command, args, env, isVisible }: T
         container.style.setProperty('--ime-top', topPx);
         textarea.style.left = leftPx;
         textarea.style.top = topPx;
+
+        // Log coordinate values to the backend debug file
+        const isHidden = !!(term as any)?._core?.coreService?.isCursorHidden;
+        invoke('update_ime_position', {
+          x: target.x * width,
+          y: target.y * height,
+          cursorX: target.x,
+          cursorY: target.y,
+          cellW: width,
+          cellH: height,
+          isCursorHidden: isHidden
+        }).catch(() => {});
       }
     };
 

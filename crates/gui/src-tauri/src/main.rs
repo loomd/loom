@@ -58,16 +58,27 @@ use loom_core::storage::{
 #[tauri::command]
 fn update_ime_position(
     _window: tauri::Window,
-    _x: f64,
-    _y: f64,
-    _cursor_x: i32,
-    _cursor_y: i32,
-    _cell_w: f64,
-    _cell_h: f64,
-    _is_cursor_hidden: bool,
+    x: f64,
+    y: f64,
+    cursor_x: i32,
+    cursor_y: i32,
+    cell_w: f64,
+    cell_h: f64,
+    is_cursor_hidden: bool,
 ) {
-    // Stub implementation: positioning is now handled natively by WebView2
-    // using unclipped, sized CSS overrides on the textarea during composition.
+    if let Ok(mut file) = std::fs::OpenOptions::new()
+        .create(true)
+        .write(true)
+        .append(true)
+        .open("d:\\Develop\\loom\\ime_debug.log")
+    {
+        use std::io::Write;
+        let _ = writeln!(
+            file,
+            "x={:.2}, y={:.2}, cursor_x={}, cursor_y={}, cell_w={:.2}, cell_h={:.2}, hidden={}",
+            x, y, cursor_x, cursor_y, cell_w, cell_h, is_cursor_hidden
+        );
+    }
 }
 
 #[tauri::command]
