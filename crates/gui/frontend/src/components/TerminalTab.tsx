@@ -112,8 +112,10 @@ export function TerminalTab({ sessionId, cwd, command, args, env, isVisible }: T
         const leftPx = `${target.x * width}px`;
         const topPx = `${target.y * height}px`;
         
-        textarea.style.setProperty('--ime-left', leftPx);
-        textarea.style.setProperty('--ime-top', topPx);
+        // Set CSS variables on the container wrapping the terminal to prevent 
+        // xterm.js internal updates from wiping them out.
+        container.style.setProperty('--ime-left', leftPx);
+        container.style.setProperty('--ime-top', topPx);
         textarea.style.left = leftPx;
         textarea.style.top = topPx;
       }
@@ -520,7 +522,7 @@ export function TerminalTab({ sessionId, cwd, command, args, env, isVisible }: T
         }
         .xterm .xterm-helpers {
           left: 0;
-          overflow: hidden;
+          overflow: visible !important;
         }
         .xterm.is-composing .xterm-helper-textarea {
           position: absolute !important;
