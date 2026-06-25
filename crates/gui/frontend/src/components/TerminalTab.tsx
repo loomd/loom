@@ -285,6 +285,15 @@ export function TerminalTab({ sessionId, cwd, command, args, env, isVisible }: T
             console.log('IME Log: backspace/delete keydown (capture)!', e.key);
             logState('keydown delete');
           }
+          // Clear residue text before composition starts or during normal input
+          const isIME = e.keyCode === 229 || e.key === 'Process';
+          const isChar = e.key && e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey;
+          if ((isIME || isChar) && !isComposing) {
+            if (textarea && textarea.value !== '') {
+              console.log('IME Log: keydown - clearing residue textarea value:', JSON.stringify(textarea.value));
+              textarea.value = '';
+            }
+          }
         };
         const handleFocus = () => {
           console.log('IME Log: textarea focus event');
