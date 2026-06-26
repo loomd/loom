@@ -104,7 +104,7 @@ export function TemplateModal({
 
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="modal" style={{ maxWidth: 580, maxHeight: '90vh', display: 'flex', flexDirection: 'column' }} onClick={e => e.stopPropagation()}>
+      <div className="modal" style={{ maxWidth: 580, maxHeight: '90vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }} onClick={e => e.stopPropagation()}>
         <div className="modal-header">
           <div className="modal-title">{template ? t('temp.modal.editTitle') : t('temp.modal.newTitle')}</div>
           <button className="btn-icon" onClick={onClose}>✕</button>

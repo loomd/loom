@@ -118,7 +118,7 @@ export default function EnvVarsPage() {
         </button>
       </div>
 
-      <div className="page-body" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <div className="page-body" style={{ display: 'flex', flexDirection: 'column', gap: 12, flexGrow: 1, minHeight: 0 }}>
         <div className="search-input-wrap" style={{ width: '100%', maxWidth: '320px', marginBottom: 4, flex: 'none' }}>
           <span className="search-icon">🔍</span>
           <input
@@ -137,7 +137,7 @@ export default function EnvVarsPage() {
             {search && <div className="empty-state-desc">{t('env.empty.noSearchResult')}</div>}
           </div>
         ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12, flexGrow: 1, minHeight: 0, overflowY: 'auto', paddingRight: '4px' }}>
             {groupEntries.map(([key, values], idx) => (
               <div key={key} className="card-outer" style={{ animationDelay: `${idx * 40}ms` }}>
                 <div className="card-inner" style={{ padding: '14px 18px' }}>

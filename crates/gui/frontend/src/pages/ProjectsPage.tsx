@@ -337,7 +337,7 @@ export default function ProjectsPage() {
             {/* Quick Spawn Launcher Panel */}
             <form onSubmit={handleSpawn} className="launcher-card" style={{ backgroundColor: 'var(--bg-card)', padding: '20px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-subtle)', display: 'flex', flexDirection: 'column', gap: '16px' }}>
               <h3 style={{ margin: 0, fontSize: '1.1rem', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                🚀 {t('proj.launcher.title')}
+                {t('proj.launcher.title')}
               </h3>
 
               <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap' }}>

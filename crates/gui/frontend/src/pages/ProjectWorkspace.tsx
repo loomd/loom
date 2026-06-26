@@ -567,9 +567,9 @@ export default function ProjectWorkspace({ project, isVisible, onUnregisterProje
             padding: '0px 24px 24px 24px',
             overflow: 'hidden'
           }}>
-            {/* Left Column: Quick Derive Templates (25% width) */}
+            {/* Left Column: Quick Derive Templates (20% width) */}
             <div style={{
-              width: '25%',
+              width: '20%',
               minWidth: '180px',
               display: 'flex',
               flexDirection: 'column',
@@ -578,7 +578,7 @@ export default function ProjectWorkspace({ project, isVisible, onUnregisterProje
               overflowY: 'auto'
             }}>
               <h3 style={{ margin: 0, fontSize: '1.0rem', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                🚀 {t('proj.launcher.title') || 'Quick Spawn'}
+                {t('proj.launcher.title') || 'Quick Spawn'}
               </h3>
               {templates.length === 0 ? (
                 <div style={{ color: 'var(--text-tertiary)', fontSize: '0.85rem', fontStyle: 'italic', padding: '8px 0' }}>
@@ -625,9 +625,9 @@ export default function ProjectWorkspace({ project, isVisible, onUnregisterProje
               )}
             </div>
 
-            {/* Right Column: File Explorer (75% width) */}
+            {/* Right Column: File Explorer (80% width) */}
             <div style={{
-              width: '75%',
+              width: '80%',
               display: 'flex',
               flexDirection: 'column',
               gap: '16px',

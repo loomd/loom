@@ -519,7 +519,7 @@ function App() {
           )}
         </div>
         
-        <div style={{ display: page === 'settings' ? 'flex' : 'none', flexDirection: 'column', flex: 1, minHeight: 0 }}>
+        <div style={{ display: page === 'settings' ? 'flex' : 'none', flexDirection: 'column', flex: 1, minHeight: 0, overflow: 'hidden' }}>
           <SettingsPage
             theme={theme}
             onThemeChange={handleThemeChange}

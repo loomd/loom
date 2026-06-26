@@ -293,7 +293,7 @@ export default function SettingsPage({
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', gap: '16px' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', gap: '16px', overflow: 'hidden' }}>
       
       {/* ── Page Header ──────────────────────────────────── */}
       <div className="page-header" style={{ paddingBottom: '0px' }}>
@@ -1086,7 +1086,7 @@ function CliToolConfigModal({ tool, onClose, onSave }: CliToolConfigModalProps) 
 
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="modal" style={{ maxWidth: 580, maxHeight: '90vh', display: 'flex', flexDirection: 'column' }} onClick={e => e.stopPropagation()}>
+      <div className="modal" style={{ maxWidth: 580, maxHeight: '90vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }} onClick={e => e.stopPropagation()}>
         <div className="modal-header">
           <div className="modal-title">{t('db.tool.configTitle') || 'Configure CLI Tool'}</div>
           <button className="btn-icon" onClick={onClose}>✕</button>
