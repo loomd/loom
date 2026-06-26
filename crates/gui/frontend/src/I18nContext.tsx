@@ -157,6 +157,9 @@ const zhDict: Dictionary = {
   'temp.modal.btn.saving': '保存中…',
   'temp.modal.cmdOverride': '指令覆盖（可选）',
   'temp.modal.cmdOverridePlaceholder': '例如：gemini1（设置后可用 loom gemini1 运行）',
+  'temp.modal.general': '常规配置',
+  'temp.modal.argsTab': '执行参数与工作目录',
+  'temp.modal.envTab': '环境变量',
   'temp.card.cmdOverride': '指令覆盖',
   'temp.toast.fieldsRequired': '所有字段均为必填项',
   'temp.toast.created': '模板创建成功',
@@ -230,6 +233,7 @@ const zhDict: Dictionary = {
 
   // Projects & Agents
   'proj.title': '项目工作区',
+  'proj.explorer.title': '项目文件',
   'proj.desc': '注册并切换本地项目工作区，管理项目内的活跃 Agent 进程。',
   'proj.btn.new': '注册新项目',
   'proj.modal.newTitle': '注册新项目',
@@ -276,6 +280,14 @@ const zhDict: Dictionary = {
   'workspace.tab.env': '环境配置',
   'workspace.tab.instances': '实例监控',
   'proj.sidebar.add': '注册项目',
+
+  // File Editor
+  'editor.loading': '正在加载文件内容...',
+  'editor.error': '加载文件失败: ',
+  'editor.save': '保存 (Ctrl+S)',
+  'editor.toast.saved': '文件保存成功',
+  'editor.toast.saveFailed': '保存失败: ',
+  'editor.confirm.close': '文件有未保存的更改，确定要关闭吗？',
 };
 
 const enDict: Dictionary = {
@@ -431,6 +443,9 @@ const enDict: Dictionary = {
   'temp.modal.btn.saving': 'Saving…',
   'temp.modal.cmdOverride': 'Command Override (optional)',
   'temp.modal.cmdOverridePlaceholder': 'e.g. gemini1 (allows running via loom gemini1)',
+  'temp.modal.general': 'General Config',
+  'temp.modal.argsTab': 'Arguments & Working Directory',
+  'temp.modal.envTab': 'Environment Variables',
   'temp.card.cmdOverride': 'Command Override',
   'temp.toast.fieldsRequired': 'All fields are required',
   'temp.toast.created': 'Template created',
@@ -504,6 +519,7 @@ const enDict: Dictionary = {
 
   // Projects & Agents
   'proj.title': 'Projects Workspace',
+  'proj.explorer.title': 'Project Files',
   'proj.desc': 'Register and manage local project workspaces and supervise active CLI agents.',
   'proj.btn.new': 'Register Project',
   'proj.modal.newTitle': 'Register New Project',
@@ -550,6 +566,14 @@ const enDict: Dictionary = {
   'workspace.tab.env': 'Environment',
   'workspace.tab.instances': 'Instances',
   'proj.sidebar.add': 'Register Project',
+
+  // File Editor
+  'editor.loading': 'Loading file contents...',
+  'editor.error': 'Failed to load file: ',
+  'editor.save': 'Save (Ctrl+S)',
+  'editor.toast.saved': 'File saved successfully',
+  'editor.toast.saveFailed': 'Failed to save: ',
+  'editor.confirm.close': 'File has unsaved changes. Are you sure you want to close?',
 };
 
 const dictionaries: Record<Language, Dictionary> = {

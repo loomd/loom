@@ -299,11 +299,8 @@ export default function ProjectsPage() {
           {selectedProject && (
             <button 
               onClick={() => handleUnregisterProject(selectedProject)}
+              className="btn-delete-project"
               style={{
-                background: 'none',
-                border: 'none',
-                color: 'var(--accent-red)',
-                cursor: 'pointer',
                 fontSize: '0.85rem',
                 padding: '4px 8px'
               }}

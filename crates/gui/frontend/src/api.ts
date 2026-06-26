@@ -202,3 +202,24 @@ export const getAutostart = (): Promise<boolean> =>
 
 export const setAutostart = (enabled: boolean): Promise<void> =>
   invoke('set_autostart', { enabled });
+
+// ─── File Explorer ────────────────────────────────────────
+export interface FileEntry {
+  name: string;
+  path: string;
+  is_dir: boolean;
+  size: number;
+}
+
+export const listProjectFiles = (dirPath: string): Promise<FileEntry[]> =>
+  invoke('list_project_files', { dirPath });
+
+export const openFileWithSystem = (filePath: string): Promise<void> =>
+  invoke('open_file_with_system', { filePath });
+
+export const readTextFile = (filePath: string): Promise<string> =>
+  invoke('read_text_file', { filePath });
+
+export const writeTextFile = (filePath: string, content: string): Promise<void> =>
+  invoke('write_text_file', { filePath, content });
+

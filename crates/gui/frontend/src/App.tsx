@@ -378,7 +378,7 @@ function App() {
       <aside className="sidebar" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
         
         {/* Logo and Header */}
-        <div className="sidebar-logo" style={{ paddingBottom: '16px', borderBottom: 'none' }}>
+        <div className="sidebar-logo" style={{ padding: '0 8px 16px', borderBottom: 'none' }}>
           <img src={logoIcon} style={{ width: 32, height: 32, borderRadius: 'var(--radius-sm)', objectFit: 'contain' }} alt="Loom" />
           <div style={{ flexGrow: 1 }}>
             <div className="sidebar-logo-text">Loom</div>
@@ -427,7 +427,7 @@ function App() {
                     display: 'flex',
                     alignItems: 'center',
                     gap: '8px',
-                    padding: '8px 12px',
+                    padding: '8px 8px',
                     borderRadius: 'var(--radius-sm)',
                     opacity: isDragging ? 0.4 : 1,
                     transform: isDragging ? 'scale(0.96)' : 'none',

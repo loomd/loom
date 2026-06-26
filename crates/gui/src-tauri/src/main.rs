@@ -455,6 +455,107 @@ fn select_directory() -> Result<Option<String>, String> {
     Ok(result)
 }
 
+#[derive(serde::Serialize)]
+struct FileEntry {
+    name: String,
+    path: String,
+    is_dir: bool,
+    size: u64,
+}
+
+#[tauri::command]
+fn list_project_files(dir_path: String) -> Result<Vec<FileEntry>, String> {
+    let path = std::path::Path::new(&dir_path);
+    if !path.exists() {
+        return Err("Directory does not exist".to_string());
+    }
+    if !path.is_dir() {
+        return Err("Path is not a directory".to_string());
+    }
+
+    let entries = std::fs::read_dir(path)
+        .map_err(|e| format!("Failed to read directory: {}", e))?;
+
+    let mut file_entries = Vec::new();
+    for entry in entries {
+        if let Ok(entry) = entry {
+            let file_path = entry.path();
+            let name = file_path
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_default();
+            
+            if name.is_empty() || name == "." || name == ".." {
+                continue;
+            }
+
+            let is_dir = file_path.is_dir();
+            let size = if is_dir {
+                0
+            } else {
+                entry.metadata().map(|m| m.len()).unwrap_or(0)
+            };
+            
+            file_entries.push(FileEntry {
+                name,
+                path: file_path.to_string_lossy().to_string(),
+                is_dir,
+                size,
+            });
+        }
+    }
+
+    file_entries.sort_by(|a, b| {
+        if a.is_dir != b.is_dir {
+            b.is_dir.cmp(&a.is_dir)
+        } else {
+            a.name.to_lowercase().cmp(&b.name.to_lowercase())
+        }
+    });
+
+    Ok(file_entries)
+}
+
+#[tauri::command]
+fn open_file_with_system(file_path: String) -> Result<(), String> {
+    let path = std::path::Path::new(&file_path);
+    if !path.exists() {
+        return Err("File/Folder does not exist".to_string());
+    }
+
+    #[cfg(target_os = "windows")]
+    let res = std::process::Command::new("cmd")
+        .args(&["/C", "start", "", &file_path])
+        .status();
+
+    #[cfg(target_os = "macos")]
+    let res = std::process::Command::new("open")
+        .arg(&file_path)
+        .status();
+
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+    let res = std::process::Command::new("xdg-open")
+        .arg(&file_path)
+        .status();
+
+    match res {
+        Ok(status) if status.success() => Ok(()),
+        Ok(status) => Err(format!("Command exited with status: {}", status)),
+        Err(e) => Err(format!("Failed to run command: {}", e)),
+    }
+}
+
+#[tauri::command]
+fn read_text_file(file_path: String) -> Result<String, String> {
+    std::fs::read_to_string(&file_path).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn write_text_file(file_path: String, content: String) -> Result<(), String> {
+    std::fs::write(&file_path, content).map_err(|e| e.to_string())
+}
+
+
 
 fn execute_test_command(cmd: &str, args_json: &str) -> Result<String, String> {
     let args: serde_json::Value = serde_json::from_str(args_json)
@@ -928,6 +1029,10 @@ fn main() {
             kill_agent_process,
             bring_agent_to_foreground,
             select_directory,
+            list_project_files,
+            open_file_with_system,
+            read_text_file,
+            write_text_file,
             pty::pty_spawn,
             pty::pty_write,
             pty::pty_resize,
