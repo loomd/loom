@@ -16,7 +16,8 @@ pub use manager::{
     read_agent_logs, get_project_skills, toggle_project_skill, scan_project_agent_docs, create_project_agent_doc,
     get_global_skills, create_global_skill, update_global_skill, delete_global_skill,
     get_global_docs, create_global_doc, update_global_doc, delete_global_doc,
-    import_global_skill_to_project, import_global_doc_to_project, parse_local_skill_dir
+    import_global_skill_to_project, import_global_doc_to_project, parse_local_skill_dir,
+    get_autostart_enabled, set_autostart_enabled
 };
 
 #[cfg(test)]

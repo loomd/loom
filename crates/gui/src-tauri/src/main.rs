@@ -68,6 +68,8 @@ use loom_core::storage::{
     import_global_skill_to_project as core_import_global_skill_to_project,
     import_global_doc_to_project as core_import_global_doc_to_project,
     parse_local_skill_dir as core_parse_local_skill_dir,
+    get_autostart_enabled as core_get_autostart_enabled,
+    set_autostart_enabled as core_set_autostart_enabled,
 };
 
 #[tauri::command]
@@ -268,10 +270,12 @@ fn get_autostart(app: tauri::AppHandle) -> Result<bool, String> {
 fn set_autostart(app: tauri::AppHandle, enabled: bool) -> Result<(), String> {
     let autostart_manager = app.autolaunch();
     if enabled {
-        autostart_manager.enable().map_err(|e: tauri_plugin_autostart::Error| e.to_string())
+        autostart_manager.enable().map_err(|e: tauri_plugin_autostart::Error| e.to_string())?;
     } else {
-        autostart_manager.disable().map_err(|e: tauri_plugin_autostart::Error| e.to_string())
+        autostart_manager.disable().map_err(|e: tauri_plugin_autostart::Error| e.to_string())?;
     }
+    core_set_autostart_enabled(enabled).map_err(|e| e.to_string())?;
+    Ok(())
 }
 
 #[tauri::command]
@@ -1109,6 +1113,15 @@ fn main() {
             std::thread::spawn(|| {
                 let _ = core_sync_running_processes();
             });
+
+            // Restore autostart setting from config after version update
+            // The OS registry entry may be cleared during app update, but our config preserves the user's preference.
+            if let Ok(desired) = core_get_autostart_enabled() {
+                if desired {
+                    let autostart_manager = app.autolaunch();
+                    let _ = autostart_manager.enable();
+                }
+            }
 
             let quit_item = MenuItemBuilder::with_id("quit", "Quit / 退出").build(app)?;
             let show_item = MenuItemBuilder::with_id("show", "Show Loom / 显示主窗口").build(app)?;

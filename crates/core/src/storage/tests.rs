@@ -76,6 +76,9 @@ fn test_serialization_fidelity() {
         font_size: "14px".to_string(),
         projects: Vec::new(),
         agent_instances: Vec::new(),
+        global_skills: Vec::new(),
+        global_docs: Vec::new(),
+        autostart: false,
     };
 
     // Serialize

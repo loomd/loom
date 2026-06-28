@@ -1439,6 +1439,18 @@ pub fn set_theme(theme: String) -> Result<()> {
     Ok(())
 }
 
+pub fn get_autostart_enabled() -> Result<bool> {
+    let config = load_config()?;
+    Ok(config.autostart)
+}
+
+pub fn set_autostart_enabled(enabled: bool) -> Result<()> {
+    let mut config = load_config()?;
+    config.autostart = enabled;
+    save_config(&config)?;
+    Ok(())
+}
+
 pub fn update_category(cat_id: String, name: String, desc: String) -> Result<Category> {
     if name.is_empty() {
         return Err(StorageError::Validation("Category name cannot be empty".to_string()));

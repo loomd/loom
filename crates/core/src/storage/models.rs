@@ -140,6 +140,8 @@ pub struct LoomStorage {
     pub global_skills: Vec<GlobalSkillTemplate>,
     #[serde(default)]
     pub global_docs: Vec<GlobalDocTemplate>,
+    #[serde(default)]
+    pub autostart: bool,
 }
 
 impl Default for LoomStorage {
@@ -157,6 +159,7 @@ impl Default for LoomStorage {
             agent_instances: Vec::new(),
             global_skills: Vec::new(),
             global_docs: Vec::new(),
+            autostart: false,
         }
     }
 }
