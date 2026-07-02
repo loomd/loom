@@ -44,24 +44,54 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         # This compiles the app and packages it using the NSIS bundler configured in tauri.conf.json
 
-      - name: Create Portable ZIP Package
+      - name: Create Portable ZIP Package and generate updater latest.json
         shell: pwsh
         run: |
           $version = "${{ github.ref_name }}".Substring(1)  # strip leading 'v'
           New-Item -ItemType Directory -Force -Path target/release/portable
           New-Item -ItemType Directory -Force -Path target/release/portable/cli
-          
+
           # Copy and rename GUI binary to Loom.exe
           Copy-Item -Path target/release/loom-gui.exe -Destination target/release/portable/Loom.exe
-          
+
           # Copy CLI binary to cli/loom.exe
           Copy-Item -Path target/release/loom.exe -Destination target/release/portable/cli/loom.exe
-          
+
           # Copy README
           Copy-Item -Path README.md -Destination target/release/portable/README.md
-          
+
           # Compress with versioned filename
           Compress-Archive -Path target/release/portable/* -DestinationPath "target/release/Loom-${version}-portable-x64.zip"
+
+          # Locate execution installation file and its signature
+          $exeFile = Get-ChildItem -Path target/release/bundle/nsis/*.exe | Select-Object -First 1
+          if ($exeFile) {
+              $exeName = $exeFile.Name
+              $sigFile = Get-ChildItem -Path "target/release/bundle/nsis/${exeName}.sig" | Select-Object -First 1
+              if ($sigFile) {
+                  $signature = Get-Content -Path $sigFile.FullName -Raw
+                  $signature = $signature.Trim()
+                  $pubDate = (Get-Date -Format "yyyy-MM-ddTHH:mm:ssZ")
+
+                  $latestJson = @{
+                      version = $version
+                      notes = "Release v${version}"
+                      pub_date = $pubDate
+                      platforms = @{
+                          "windows-x86_64" = @{
+                              signature = $signature
+                              url = "https://github.com/GoldTest/Loom/releases/download/v${version}/${exeName}"
+                          }
+                      }
+                  }
+                  $latestJson | ConvertTo-Json -Depth 10 | Out-File -FilePath target/release/latest.json -Encoding utf8NoBOM
+                  Write-Output "Successfully generated latest.json"
+              } else {
+                  Write-Error "Signature file file not found for ${exeName}"
+              }
+          } else {
+              Write-Error "EXE bundle not found"
+          }
 
       - name: Upload Release Assets
         uses: softprops/action-gh-release@v2
@@ -69,6 +99,7 @@ jobs:
           files: |
             target/release/bundle/nsis/*.exe
             target/release/Loom-*-portable-x64.zip
+            target/release/latest.json
           draft: false
           prerelease: false
         env:

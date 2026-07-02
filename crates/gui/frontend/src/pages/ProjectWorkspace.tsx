@@ -739,33 +739,10 @@ export default function ProjectWorkspace({ project, isVisible, onUnregisterProje
             display: 'flex',
             flexDirection: 'row',
             gap: '24px',
-            padding: '36px 24px 24px 24px',
+            padding: '24px',
             position: 'relative',
             overflow: 'hidden'
           }}>
-
-          {/* Project Info Banner */}
-          <div style={{
-            position: 'absolute',
-            top: 0,
-            left: 0,
-            right: 0,
-            height: '36px',
-            display: 'flex',
-            alignItems: 'center',
-            padding: '0 24px',
-            gap: '12px',
-            backgroundColor: 'var(--bg-card-outer, rgba(255,255,255,0.02))',
-            borderBottom: '1px solid var(--border-subtle, #27272a)',
-            zIndex: 1
-          }}>
-            <span style={{ fontSize: '0.95rem', fontWeight: 600, color: 'var(--text-primary)', whiteSpace: 'nowrap' }}>
-              {project.name}
-            </span>
-            <span style={{ fontSize: '0.72rem', color: 'var(--text-tertiary)', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              {project.root_path}
-            </span>
-          </div>
             {/* Left Column: Quick Derive Templates (20% width) */}
             <div style={{
               width: '20%',

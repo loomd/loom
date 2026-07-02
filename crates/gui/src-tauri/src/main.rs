@@ -636,8 +636,9 @@ fn open_in_manager(item_path: String) -> Result<(), String> {
 
     #[cfg(target_os = "windows")]
     {
+        let win_path = item_path.replace("/", "\\");
         std::process::Command::new("explorer")
-            .args(&["/select", &item_path])
+            .arg(format!("/select,{}", win_path))
             .spawn()
             .map_err(|e| e.to_string())?;
     }
@@ -1330,6 +1331,7 @@ fn main() {
             Some(vec!["--minimized"]),
         ))
         .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         .setup(|app| {
             if let Some(window) = app.get_webview_window("main") {
                 let state_path = get_window_state_path();
