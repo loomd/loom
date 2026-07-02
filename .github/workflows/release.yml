@@ -39,6 +39,8 @@ jobs:
       - name: Bundle Tauri GUI App (NSIS Installer)
         run: npx @tauri-apps/cli build
         working-directory: crates/gui/src-tauri
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
         # This compiles the app and packages it using the NSIS bundler configured in tauri.conf.json
 
       - name: Create Portable ZIP Package
