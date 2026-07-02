@@ -614,35 +614,12 @@ export default function ProjectWorkspace({ project, isVisible, onUnregisterProje
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
 
-      {/* ── Project Title & Path Header ────────────────────────── */}
-      <div className="header-card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: 'transparent', padding: '8px 24px 4px 24px', border: 'none', marginBottom: '0px' }}>
-        <div style={{ display: 'flex', flexDirection: 'row', alignItems: 'baseline', gap: '8px' }}>
-          <h2 style={{ fontSize: '1.05rem', fontWeight: 600, color: 'var(--text-primary)', margin: 0, display: 'flex', alignItems: 'center', gap: '4px' }}>
-            {project.name}
-          </h2>
-          <span style={{ fontSize: '0.72rem', color: 'var(--text-tertiary)', fontFamily: 'monospace' }}>
-            {project.root_path}
-          </span>
-        </div>
-
-        <button
-          onClick={() => onUnregisterProject(project)}
-          className="btn-delete-project"
-          style={{
-            fontSize: '0.75rem',
-            padding: '3px 8px',
-          }}
-        >
-          🗑 {t('proj.modal.btn.cancel')}
-        </button>
-      </div>
-
       {/* ── Subparts Console Tab bar Header ────────────────────────── */}
       <div style={{
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
-        borderBottom: activeTabId === 'overview' ? 'none' : '1px solid var(--border-subtle, #27272a)',
+        borderBottom: '1px solid var(--border-subtle, #27272a)',
         padding: '2px 24px 4px 24px',
         marginBottom: '0px',
         gap: '12px'
@@ -706,6 +683,16 @@ export default function ProjectWorkspace({ project, isVisible, onUnregisterProje
 
         <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
           <button
+            onClick={() => onUnregisterProject(project)}
+            className="btn-delete-project"
+            style={{
+              fontSize: '0.75rem',
+              padding: '3px 8px',
+            }}
+          >
+            🗑 {t('proj.modal.btn.cancel')}
+          </button>
+          <button
             onClick={handleAddRawTerminal}
             style={{
               padding: '4px 10px',
@@ -752,9 +739,33 @@ export default function ProjectWorkspace({ project, isVisible, onUnregisterProje
             display: 'flex',
             flexDirection: 'row',
             gap: '24px',
-            padding: '0px 24px 24px 24px',
+            padding: '36px 24px 24px 24px',
+            position: 'relative',
             overflow: 'hidden'
           }}>
+
+          {/* Project Info Banner */}
+          <div style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            right: 0,
+            height: '36px',
+            display: 'flex',
+            alignItems: 'center',
+            padding: '0 24px',
+            gap: '12px',
+            backgroundColor: 'var(--bg-card-outer, rgba(255,255,255,0.02))',
+            borderBottom: '1px solid var(--border-subtle, #27272a)',
+            zIndex: 1
+          }}>
+            <span style={{ fontSize: '0.95rem', fontWeight: 600, color: 'var(--text-primary)', whiteSpace: 'nowrap' }}>
+              {project.name}
+            </span>
+            <span style={{ fontSize: '0.72rem', color: 'var(--text-tertiary)', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {project.root_path}
+            </span>
+          </div>
             {/* Left Column: Quick Derive Templates (20% width) */}
             <div style={{
               width: '20%',
