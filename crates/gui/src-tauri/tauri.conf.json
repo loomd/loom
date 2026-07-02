@@ -1,6 +1,6 @@
 {
   "productName": "Loom",
-  "version": "0.2.7",
+  "version": "0.2.8",
   "identifier": "com.loom.app",
   "build": {
     "beforeDevCommand": "npm --prefix frontend run dev",
@@ -32,7 +32,7 @@
   },
   "plugins": {
     "updater": {
-      "pubkey": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAxztfZpb3H8SErgMXtBpKjilrb3EPtcuZP9lSMOFft6jw3zTRIam/JMzofoZzW5FRhLziO76SwcoVV3wpWO/ROkk9W+3uBEnAXd+Cj6Izz3se8NKwx6wgzU3m1EY0Bdg/aLknZbFKby920ymTe4v/HIOzLE1gc8161fcQfcLIekUZDFZ5LGM1r+1icbmsn4Lb6VPTCV10s0J9lDzsdJrQMWRO9QFKPShEQuRXMbdx+9Iaq3weN5wm6QieeWyyDUfsNq81nrJsqCR+S9cKhgdRyXBHZABTnE0fqHT0pXA4xO9yqsUJm+8ELWWl1EluzoPEjgGE8xS9pgL3R0vukNa79wIDAQAB",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDdFOTNCQkE4RUE3MDQ5MDQKUldRRVNYRHFxTHVUZmhBN2p4bU9kMWdkQkYycHNHWmZxb3VQNGRFOU93aDdTOVpHdTJndWNZVmEK",
       "endpoints": [
         "https://github.com/GoldTest/Loom/releases/latest/download/latest.json"
       ],

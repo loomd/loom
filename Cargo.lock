@@ -2154,7 +2154,7 @@ checksum = "5e5032e24019045c762d3c0f28f5b6b8bbf38563a65908389bf7978758920897"
 
 [[package]]
 name = "loom-cli"
-version = "0.2.7"
+version = "0.2.8"
 dependencies = [
  "loom-core",
  "serde",
@@ -2163,7 +2163,7 @@ dependencies = [
 
 [[package]]
 name = "loom-core"
-version = "0.2.7"
+version = "0.2.8"
 dependencies = [
  "directories",
  "serde",
@@ -2175,7 +2175,7 @@ dependencies = [
 
 [[package]]
 name = "loom-gui"
-version = "0.2.7"
+version = "0.2.8"
 dependencies = [
  "loom-core",
  "portable-pty",
