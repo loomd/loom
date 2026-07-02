@@ -1021,21 +1021,39 @@ export default function ProjectWorkspace({ project, isVisible, onUnregisterProje
                 <h3 style={{ margin: 0, fontSize: '1.0rem', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
                   🔌 智能体技能管理
                 </h3>
-                <button
-                  onClick={handleOpenImportSkillModal}
-                  style={{
-                    padding: '4px 10px',
-                    fontSize: '0.8rem',
-                    borderRadius: 'var(--radius-sm, 4px)',
-                    cursor: 'pointer',
-                    backgroundColor: 'var(--bg-elevated, #18181b)',
-                    border: '1px solid var(--border-subtle, #27272a)',
-                    color: 'var(--text-primary, #fff)',
-                    fontWeight: 500
-                  }}
-                >
-                  从全局库导入
-                </button>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <button
+                    onClick={() => loadSkillsAndDocs()}
+                    style={{
+                      padding: '4px 10px',
+                      fontSize: '0.8rem',
+                      borderRadius: 'var(--radius-sm, 4px)',
+                      cursor: 'pointer',
+                      backgroundColor: 'var(--bg-elevated, #18181b)',
+                      border: '1px solid var(--border-subtle, #27272a)',
+                      color: 'var(--text-primary, #fff)',
+                      fontWeight: 500
+                    }}
+                    title="刷新技能列表"
+                  >
+                    ↻ 刷新
+                  </button>
+                  <button
+                    onClick={handleOpenImportSkillModal}
+                    style={{
+                      padding: '4px 10px',
+                      fontSize: '0.8rem',
+                      borderRadius: 'var(--radius-sm, 4px)',
+                      cursor: 'pointer',
+                      backgroundColor: 'var(--bg-elevated, #18181b)',
+                      border: '1px solid var(--border-subtle, #27272a)',
+                      color: 'var(--text-primary, #fff)',
+                      fontWeight: 500
+                    }}
+                  >
+                    从全局库导入
+                  </button>
+                </div>
               </div>
 
               <div style={{
