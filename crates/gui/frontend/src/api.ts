@@ -264,6 +264,8 @@ export const listProjectFiles = (dirPath: string): Promise<FileEntry[]> =>
 
 export const openFileWithSystem = (filePath: string): Promise<void> =>
   invoke('open_file_with_system', { filePath });
+export const openInManager = (itemPath: string): Promise<void> =>
+  invoke('open_in_manager', { itemPath });
 
 export const deleteFileEntry = (filePath: string, isDir: boolean): Promise<void> =>
   invoke('delete_file_entry', { filePath, isDir });

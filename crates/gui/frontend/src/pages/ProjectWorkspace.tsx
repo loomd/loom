@@ -6,6 +6,7 @@ import {
   reorderTemplates,
   listProjectFiles,
   openFileWithSystem,
+  openInManager,
   getProjectSkills,
   toggleProjectSkill,
   scanProjectAgentDocs,
@@ -232,6 +233,16 @@ export default function ProjectWorkspace({ project, isVisible, onUnregisterProje
   };
 
   const handleCloseContextMenu = () => setContextMenu(null);
+  const handleOpenInManager = async () => {
+    if (!contextMenu) return;
+    const { file } = contextMenu;
+    setContextMenu(null);
+    try {
+      await openInManager(file.path);
+    } catch (e: any) {
+      toast.error(`打开失败: ${String(e)}`);
+    }
+  };
 
   const handleDeleteFile = async () => {
     if (!contextMenu) return;
@@ -1326,6 +1337,27 @@ export default function ProjectWorkspace({ project, isVisible, onUnregisterProje
             >
               {contextMenu.file.is_dir ? '📁' : '📄'} {contextMenu.file.name}
             </div>
+            <button
+              onClick={handleOpenInManager}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                width: '100%',
+                padding: '6px 12px',
+                background: 'none',
+                border: 'none',
+                cursor: 'pointer',
+                fontSize: '0.85rem',
+                color: 'var(--text-primary, #fafafa)',
+                borderRadius: '4px',
+                textAlign: 'left',
+              }}
+              onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.08)')}
+              onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
+            >
+              📂 在管理器中打开
+            </button>
             <button
               onClick={handleDeleteFile}
               style={{

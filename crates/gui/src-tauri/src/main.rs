@@ -591,6 +591,47 @@ fn open_file_with_system(file_path: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn open_in_manager(item_path: String) -> Result<(), String> {
+    let path = std::path::Path::new(&item_path);
+    if !path.exists() {
+        return Err("Item does not exist".to_string());
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        std::process::Command::new("explorer")
+            .args(&["/select,", &item_path])
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open")
+            .args(&["-R", &item_path])
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        if let Some(parent) = path.parent() {
+            std::process::Command::new("xdg-open")
+                .arg(parent)
+                .spawn()
+                .map_err(|e| e.to_string())?;
+        } else {
+            std::process::Command::new("xdg-open")
+                .arg(path)
+                .spawn()
+                .map_err(|e| e.to_string())?;
+        }
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
 fn read_text_file(file_path: String) -> Result<String, String> {
     std::fs::read_to_string(&file_path).map_err(|e| e.to_string())
 }
@@ -1227,6 +1268,7 @@ fn main() {
             select_directory,
             list_project_files,
             open_file_with_system,
+            open_in_manager,
             read_text_file,
             write_text_file,
             delete_file_entry,
