@@ -637,7 +637,7 @@ fn open_in_manager(item_path: String) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {
         std::process::Command::new("explorer")
-            .args(&["/select,", &item_path])
+            .args(&["/select", &item_path])
             .spawn()
             .map_err(|e| e.to_string())?;
     }
