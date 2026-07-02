@@ -89,6 +89,11 @@ export default function SettingsPage({
 	const [appVersion, setAppVersion] = useState<string>("0.1.5");
 	const [autostartEnabled, setAutostartEnabled] = useState<boolean>(false);
 	const [isChecking, setIsChecking] = useState<boolean>(false);
+	// Toast close is local; prop only drives initial show
+	const [toastVisible, setToastVisible] = useState(!!showUpdateToast);
+	useEffect(() => {
+		if (showUpdateToast) setToastVisible(true);
+	}, [showUpdateToast]);
 
 	const handleManualCheck = async () => {
 		if (isChecking) return;
@@ -2190,7 +2195,7 @@ export default function SettingsPage({
 			)}
 
 			{/* Update Notification Toast */}
-			{showUpdateToast && updateInfo && updateInfo.hasUpdate && (
+			{toastVisible && updateInfo && updateInfo.hasUpdate && (
 				<div
 					style={{
 						position: "fixed",
@@ -2225,7 +2230,7 @@ export default function SettingsPage({
 							{t("settings.version.newUpdate")}
 						</span>
 						<button
-							onClick={() => setShowUpdateToast(false)}
+							onClick={() => setToastVisible(false)}
 							style={{
 								background: "none",
 								border: "none",
