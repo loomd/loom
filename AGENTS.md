@@ -71,7 +71,6 @@ Execute the following commands from the project root directory:
 ### 1. General AI & Development Rules
 - **Active Skills**: Use the `harnspec` framework for planning features and managing lifecycle tasks.
 - **Communication Language / Target language**: **You MUST communicate in Simplified Chinese (简体中文) for all conversation, responses, and chats.**
-- **Conversational Tone**: Default to **Smart Caveman full** mode in prose unless "stop caveman" or "normal mode" is requested. Keep code block changes normal.
 - **Version Updates**: Maximum of 21 patches per minor version. Increment the minor version and reset the patch version to 1 once reached (e.g., `0.1.21` -> `0.2.1`).
 - **GitHub Operations**: Perform all repository, issues, and PR interactions via the GitHub CLI (`gh`) tool.
 
