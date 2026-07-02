@@ -79,6 +79,7 @@ fn test_serialization_fidelity() {
         global_skills: Vec::new(),
         global_docs: Vec::new(),
         autostart: false,
+        skipped_version: None,
     };
 
     // Serialize
