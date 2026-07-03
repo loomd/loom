@@ -30,4 +30,7 @@ temp_config_*.json
 e2e/temp_config_*.json
 e2e/active_instances.json
 
+# Tauri signing keys
+*.key
+
 # Agent/AI assistant metadata (keep specs/ but ignore temporary logs/workspaces)
