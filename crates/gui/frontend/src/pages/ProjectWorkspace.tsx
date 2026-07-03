@@ -641,7 +641,7 @@ export default function ProjectWorkspace({ project, isVisible, onUnregisterProje
                 alignItems: 'center',
                 lineHeight: 1,
                 gap: '6px',
-                padding: '4px 10px',
+                padding: '6px 10px',
                 flexShrink: 0,
                 backgroundColor: isActive ? 'var(--bg-elevated, #27272a)' : 'transparent',
                 border: '1px solid',
@@ -650,9 +650,9 @@ export default function ProjectWorkspace({ project, isVisible, onUnregisterProje
                 cursor: 'pointer',
                 color: isActive ? 'var(--text-primary, #ffffff)' : 'var(--text-secondary, #a1a1aa)',
                 fontSize: '0.82rem',
-                fontWeight: isActive ? 600 : 400,
-                transition: 'all 0.2s ease',
+                fontWeight: 400,
                 whiteSpace: 'nowrap',
+                userSelect: 'none',
               }}
             >
               <span style={{
@@ -699,7 +699,7 @@ export default function ProjectWorkspace({ project, isVisible, onUnregisterProje
                   alignItems: 'center',
                   lineHeight: 1,
                   gap: '6px',
-                  padding: '4px 10px',
+                  padding: '6px 10px',
                   flexShrink: 0,
                   backgroundColor: isActive ? 'var(--bg-elevated, #27272a)' : 'transparent',
                   border: '1px solid',
@@ -708,9 +708,9 @@ export default function ProjectWorkspace({ project, isVisible, onUnregisterProje
                   cursor: 'pointer',
                   color: isActive ? 'var(--text-primary, #ffffff)' : 'var(--text-secondary, #a1a1aa)',
                   fontSize: '0.82rem',
-                  fontWeight: isActive ? 600 : 400,
-                  transition: 'all 0.2s ease',
+                  fontWeight: 400,
                   whiteSpace: 'nowrap',
+                  userSelect: 'none',
                 }}
               >
                 {tab.type === 'editor' && <span style={{ fontSize: '0.8rem', opacity: 0.8 }}>📄</span>}
@@ -750,14 +750,15 @@ export default function ProjectWorkspace({ project, isVisible, onUnregisterProje
               display: 'inline-flex',
               alignItems: 'center',
               lineHeight: 1,
-              padding: '4px 10px',
+              padding: '6px 10px',
               fontSize: '0.82rem',
               borderRadius: 'var(--radius-sm, 4px)',
               cursor: 'pointer',
               backgroundColor: 'var(--bg-elevated, #18181b)',
               border: '1px solid var(--border-subtle, #27272a)',
               color: 'var(--text-primary, #fff)',
-              fontWeight: 500
+              fontWeight: 500,
+              userSelect: 'none',
             }}
           >
             {t('proj.launcher.btn.spawn') === '启动 Agent' ? '新建终端' : 'New Terminal'}
@@ -770,14 +771,15 @@ export default function ProjectWorkspace({ project, isVisible, onUnregisterProje
                 display: 'inline-flex',
                 alignItems: 'center',
                 lineHeight: 1,
-                padding: '4px 10px',
+                padding: '6px 10px',
                 fontSize: '0.82rem',
                 borderRadius: 'var(--radius-sm, 4px)',
                 cursor: 'pointer',
                 backgroundColor: isGridLayout ? 'var(--accent-emerald, #10b981)' : 'var(--bg-elevated, #18181b)',
                 border: '1px solid var(--border-subtle, #27272a)',
                 color: isGridLayout ? '#fff' : 'var(--text-primary, #fff)',
-                fontWeight: 500
+                fontWeight: 500,
+                userSelect: 'none',
               }}
             >
               🔳 {isGridLayout ? '单签切换' : '平铺多开'}
