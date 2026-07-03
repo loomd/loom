@@ -102,6 +102,11 @@ body {
 
   --ambient-orb-purple: radial-gradient(circle, rgba(144,97,249,0.06) 0%, transparent 70%);
   --ambient-orb-emerald: radial-gradient(circle, rgba(16,185,129,0.04) 0%, transparent 70%);
+
+  /* ─── Terminal variables (dark default) ─── */
+  --terminal-bg: #121214;
+  --terminal-text: #c8c8c8;
+  --terminal-error: #f87171;
 }
 
 /* ─── Gray Eye-Care Theme Override ─── */
@@ -179,6 +184,11 @@ body.theme-day {
 
   --ambient-orb-purple: radial-gradient(circle, rgba(124,58,237,0.03) 0%, transparent 70%);
   --ambient-orb-emerald: radial-gradient(circle, rgba(5,150,105,0.02) 0%, transparent 70%);
+
+  /* ─── Terminal variables (day) ─── */
+  --terminal-bg: #1e1e21;
+  --terminal-text: #c8c8c8;
+  --terminal-error: #f87171;
 }
 
 /* ─── Scrollbar ──────────────────────────────────────────── */
