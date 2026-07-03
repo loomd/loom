@@ -560,13 +560,20 @@ export function TerminalTab({ sessionId, cwd, command, args, env, isVisible, the
     }
   }, [isVisible, sessionId]);
 
+  const getOuterBg = (theme?: 'dark' | 'day' | 'gray') => {
+    switch (theme) {
+      case 'gray': return '#1a1a1f';
+      default: return '#121214';
+    }
+  };
+
   return (
     <div
       ref={outerRef}
       style={{
         width: '100%',
         height: '100%',
-        backgroundColor: '#121214',
+        backgroundColor: getOuterBg(theme),
         padding: '4px 4px 28px 4px',
         margin: '0px',
         overflow: 'hidden',
@@ -584,7 +591,7 @@ export function TerminalTab({ sessionId, cwd, command, args, env, isVisible, the
         .xterm-viewport {
           width: 100% !important;
           height: 100% !important;
-          background-color: #121214 !important;
+          background-color: ${getOuterBg(theme)} !important;
         }
         .xterm .xterm-helpers {
           left: 0;
