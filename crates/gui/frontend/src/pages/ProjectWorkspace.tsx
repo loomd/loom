@@ -1019,7 +1019,7 @@ export default function ProjectWorkspace({ project, isVisible, onUnregisterProje
             }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <h3 style={{ margin: 0, fontSize: '1.0rem', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  🔌 智能体技能管理
+                  🔌 指令管理
                 </h3>
                 <div style={{ display: 'flex', gap: '8px' }}>
                   <button
@@ -1152,7 +1152,7 @@ export default function ProjectWorkspace({ project, isVisible, onUnregisterProje
             }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <h3 style={{ margin: 0, fontSize: '1.0rem', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  📝 智能体指令文档管理
+                  📝 规则管理
                 </h3>
                 <div style={{ display: 'flex', gap: '6px' }}>
                   <button
@@ -1204,7 +1204,7 @@ export default function ProjectWorkspace({ project, isVisible, onUnregisterProje
               }}>
                 {loadingDocs ? (
                   <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%', color: 'var(--text-secondary)' }}>
-                    正在扫描指令文档...
+                    正在扫描规则文档...
                   </div>
                 ) : agentDocs.length === 0 ? (
                   <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%', color: 'var(--text-tertiary)', fontSize: '0.9rem', fontStyle: 'italic' }}>
@@ -1427,7 +1427,7 @@ export default function ProjectWorkspace({ project, isVisible, onUnregisterProje
       {showAddDocModal && (
         <div className="modal-backdrop" style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0, 0, 0, 0.6)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
           <div className="modal-content" style={{ backgroundColor: 'var(--bg-modal, #1c1917)', padding: '24px', borderRadius: 'var(--radius-md, 8px)', border: '1px solid var(--border-subtle, #27272a)', width: '90%', maxWidth: '400px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-            <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 600, color: 'var(--text-primary)' }}>新建智能体指令文档</h3>
+            <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 600, color: 'var(--text-primary)' }}>新建规则文档</h3>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
               <label style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>文档类型 / 预设模板</label>
@@ -1586,7 +1586,7 @@ export default function ProjectWorkspace({ project, isVisible, onUnregisterProje
 
             {globalDocs.length === 0 ? (
               <div style={{ color: 'var(--text-tertiary)', fontSize: '0.85rem', fontStyle: 'italic', textAlign: 'center', padding: '16px 0' }}>
-                暂无全局指令文档，请先前往“设置”界面创建全局模版。
+                暂无全局规则文档，请先前往“设置”界面创建全局模版。
               </div>
             ) : (
               <>
