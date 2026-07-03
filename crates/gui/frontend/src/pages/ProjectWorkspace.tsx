@@ -628,6 +628,51 @@ export default function ProjectWorkspace({ project, isVisible, onUnregisterProje
           gap: '12px'
         }}
       >
+        {/* 固定标签：概览 + 技能管理 */}
+        {tabs.filter(tab => tab.id === 'overview' || tab.id === 'agents-skills').map((tab) => {
+          const isActive = tab.id === activeTabId;
+          return (
+            <div
+              key={tab.id}
+              onClick={() => setActiveTabId(tab.id)}
+              data-tauri-drag-region
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                lineHeight: 1,
+                gap: '6px',
+                padding: '4px 10px',
+                flexShrink: 0,
+                backgroundColor: isActive ? 'var(--bg-elevated, #27272a)' : 'transparent',
+                border: '1px solid',
+                borderColor: isActive ? 'var(--border-subtle, #3e3e42)' : 'transparent',
+                borderRadius: 'var(--radius-md, 6px)',
+                cursor: 'pointer',
+                color: isActive ? 'var(--text-primary, #ffffff)' : 'var(--text-secondary, #a1a1aa)',
+                fontSize: '0.82rem',
+                fontWeight: isActive ? 600 : 400,
+                transition: 'all 0.2s ease',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              <span style={{
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+                display: 'inline-block',
+                maxWidth: tab.id === 'overview' ? '80px' : '60px'
+              }}>
+                {tab.title}
+              </span>
+            </div>
+          );
+        })}
+
+        {tabs.filter(tab => tab.id !== 'overview' && tab.id !== 'agents-skills').length > 0 && (
+          <div style={{ width: '1px', alignSelf: 'stretch', backgroundColor: 'var(--border-subtle, #27272a)', flexShrink: 0 }} />
+        )}
+
+        {/* 可滚动标签：终端 / 编辑器等动态标签 */}
         <div
           data-tauri-drag-region
           onWheel={(e) => {
@@ -638,12 +683,12 @@ export default function ProjectWorkspace({ project, isVisible, onUnregisterProje
             gap: '4px',
             overflowX: 'auto',
             flex: 1,
-            scrollbarWidth: 'none', // 隐藏 Firefox 下滚动条
-            msOverflowStyle: 'none'  // 隐藏 IE/Edge
+            scrollbarWidth: 'none',
+            msOverflowStyle: 'none'
           }}
           className="titlebar-tabs-scroll"
         >
-          {tabs.map((tab) => {
+          {tabs.filter(tab => tab.id !== 'overview' && tab.id !== 'agents-skills').map((tab) => {
             const isActive = tab.id === activeTabId;
             return (
               <div
@@ -655,6 +700,7 @@ export default function ProjectWorkspace({ project, isVisible, onUnregisterProje
                   lineHeight: 1,
                   gap: '6px',
                   padding: '4px 10px',
+                  flexShrink: 0,
                   backgroundColor: isActive ? 'var(--bg-elevated, #27272a)' : 'transparent',
                   border: '1px solid',
                   borderColor: isActive ? 'var(--border-subtle, #3e3e42)' : 'transparent',
@@ -673,27 +719,25 @@ export default function ProjectWorkspace({ project, isVisible, onUnregisterProje
                   textOverflow: 'ellipsis',
                   whiteSpace: 'nowrap',
                   display: 'inline-block',
-                  maxWidth: tab.type === 'terminal' ? 'none' : (tab.id === 'overview' ? '80px' : '60px')
+                  maxWidth: tab.type === 'terminal' ? 'none' : '60px'
                 }}>
                   {tab.title}
                 </span>
-                {tab.id !== 'overview' && tab.id !== 'agents-skills' && (
-                  <span
-                    onClick={(e) => handleCloseTerminal(tab.id, e)}
-                    style={{
-                      marginLeft: '2px',
-                      cursor: 'pointer',
-                      display: 'inline-block',
-                      width: '12px',
-                      height: '12px',
-                      textAlign: 'center',
-                      lineHeight: '12px',
-                      fontSize: tab.isDirty ? '0.6rem' : '0.7rem'
-                    }}
-                    className={`tab-close-icon ${tab.isDirty ? 'dirty' : ''}`}
-                    title={tab.isDirty ? '有未保存的更改' : undefined}
-                  />
-                )}
+                <span
+                  onClick={(e) => handleCloseTerminal(tab.id, e)}
+                  style={{
+                    marginLeft: '2px',
+                    cursor: 'pointer',
+                    display: 'inline-block',
+                    width: '12px',
+                    height: '12px',
+                    textAlign: 'center',
+                    lineHeight: '12px',
+                    fontSize: tab.isDirty ? '0.6rem' : '0.7rem'
+                  }}
+                  className={`tab-close-icon ${tab.isDirty ? 'dirty' : ''}`}
+                  title={tab.isDirty ? '有未保存的更改' : undefined}
+                />
               </div>
             );
           })}
