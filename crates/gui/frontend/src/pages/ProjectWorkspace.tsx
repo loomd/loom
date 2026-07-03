@@ -683,16 +683,6 @@ export default function ProjectWorkspace({ project, isVisible, onUnregisterProje
 
         <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
           <button
-            onClick={() => onUnregisterProject(project)}
-            className="btn-delete-project"
-            style={{
-              fontSize: '0.75rem',
-              padding: '3px 8px',
-            }}
-          >
-            🗑 {t('proj.modal.btn.cancel')}
-          </button>
-          <button
             onClick={handleAddRawTerminal}
             style={{
               padding: '4px 10px',
@@ -810,8 +800,18 @@ export default function ProjectWorkspace({ project, isVisible, onUnregisterProje
               paddingTop: '2px',
               overflow: 'hidden'
             }}>
-              <h3 style={{ margin: 0, fontSize: '1.0rem', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                📁 {t('proj.explorer.title') || 'File Explorer'}
+              <h3 style={{ margin: 0, fontSize: '1.0rem', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>📁 {t('proj.explorer.title') || 'File Explorer'}</span>
+                <button
+                  onClick={() => onUnregisterProject(project)}
+                  className="btn-delete-project"
+                  style={{
+                    fontSize: '0.75rem',
+                    padding: '3px 8px',
+                  }}
+                >
+                  🗑 {t('proj.modal.btn.cancel')}
+                </button>
               </h3>
               
               {/* File Explorer Toolbar */}
