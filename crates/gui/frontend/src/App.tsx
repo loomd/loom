@@ -8,6 +8,8 @@ import { TitleBar } from "./components/TitleBar";
 import {
 	getTheme,
 	setTheme,
+	getProjectColumnAlign,
+	setProjectColumnAlign,
 	getFontFamily,
 	getFontSize,
 	setFontFamily as apiFontFamily,
@@ -77,6 +79,7 @@ function App() {
 	const [theme, setThemeState] = useState<"dark" | "day">("dark");
 	const [fontFamily, setFontFamilyState] = useState("Plus Jakarta Sans");
 	const [fontSize, setFontSizeState] = useState("14px");
+	const [projectColumnAlign, setProjectColumnAlignState] = useState("top");
 	const [updateInfo, setUpdateInfo] = useState<{
 		hasUpdate: boolean;
 		latestVersion: string;
@@ -323,6 +326,14 @@ function App() {
 				applyFontToDocument(family, size);
 			})
 			.catch(() => {});
+
+		getProjectColumnAlign()
+			.then((align) => {
+				if (align === "top" || align === "center") {
+					setProjectColumnAlignState(align);
+				}
+			})
+			.catch(() => {});
 	}, []);
 
 	// Global keyboard shortcuts (e.g. Ctrl+A / Cmd+A Select All in inputs/textareas)
@@ -376,6 +387,15 @@ function App() {
 			await apiFontSize(size);
 		} catch (err) {
 			console.error("Failed to persist font size", err);
+		}
+	};
+
+	const handleProjectColumnAlignChange = async (align: string) => {
+		setProjectColumnAlignState(align);
+		try {
+			await setProjectColumnAlign(align);
+		} catch (err) {
+			console.error("Failed to persist project column align", err);
 		}
 	};
 
@@ -477,6 +497,7 @@ function App() {
 						flexGrow: 1,
 						marginTop: "8px",
 						paddingBottom: "4px",
+						justifyContent: projectColumnAlign === "center" ? "center" : "flex-start",
 					}}
 				>
 					{projects.length === 0 ? (
@@ -683,6 +704,8 @@ function App() {
 					<SettingsPage
 						theme={theme}
 						onThemeChange={handleThemeChange}
+						projectColumnAlign={projectColumnAlign}
+						onProjectColumnAlignChange={handleProjectColumnAlignChange}
 						fontFamily={fontFamily}
 						fontSize={fontSize}
 						onFontFamilyChange={handleFontFamilyChange}

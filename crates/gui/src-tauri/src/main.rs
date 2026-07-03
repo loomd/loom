@@ -19,7 +19,8 @@ use loom_core::storage::{
     get_language as core_get_language, get_project_agents as core_get_project_agents,
     get_project_skills as core_get_project_skills, get_projects as core_get_projects,
     get_skipped_version as core_get_skipped_version, get_templates as core_get_templates,
-    get_theme as core_get_theme, import_cli_tool as core_import_cli_tool,
+    get_theme as core_get_theme, get_project_column_align as core_get_project_column_align,
+    set_project_column_align as core_set_project_column_align, import_cli_tool as core_import_cli_tool,
     import_global_doc_to_project as core_import_global_doc_to_project,
     import_global_skill_to_project as core_import_global_skill_to_project,
     kill_cli_instance as core_kill_cli_instance,
@@ -1296,6 +1297,16 @@ fn set_skipped_version(version: Option<String>) -> Result<(), String> {
     core_set_skipped_version(version).map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+fn get_project_column_align() -> Result<String, String> {
+    core_get_project_column_align().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn set_project_column_align(align: String) -> Result<(), String> {
+    core_set_project_column_align(align).map_err(|e| e.to_string())
+}
+
 fn main() {
     #[cfg(target_os = "windows")]
     pty::init_process_session_job();
@@ -1510,7 +1521,9 @@ fn main() {
             pty::pty_history,
             pty::pty_close,
             get_skipped_version,
-            set_skipped_version
+            set_skipped_version,
+            get_project_column_align,
+            set_project_column_align
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

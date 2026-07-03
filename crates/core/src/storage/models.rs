@@ -68,6 +68,10 @@ pub fn default_font_size() -> String {
     "14px".to_string()
 }
 
+pub fn default_project_column_align() -> String {
+    "top".to_string()
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Project {
     pub id: String,
@@ -132,6 +136,8 @@ pub struct LoomStorage {
     pub font_family: String,
     #[serde(default = "default_font_size")]
     pub font_size: String,
+    #[serde(default = "default_project_column_align")]
+    pub project_column_align: String,
     #[serde(default)]
     pub projects: Vec<Project>,
     #[serde(default)]
@@ -157,6 +163,7 @@ impl Default for LoomStorage {
             theme: default_theme(),
             font_family: default_font_family(),
             font_size: default_font_size(),
+            project_column_align: default_project_column_align(),
             projects: Vec::new(),
             agent_instances: Vec::new(),
             global_skills: Vec::new(),

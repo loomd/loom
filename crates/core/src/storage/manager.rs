@@ -1639,6 +1639,18 @@ pub fn set_skipped_version(version: Option<String>) -> Result<()> {
     Ok(())
 }
 
+pub fn get_project_column_align() -> Result<String> {
+    let config = load_config()?;
+    Ok(config.project_column_align.clone())
+}
+
+pub fn set_project_column_align(align: String) -> Result<()> {
+    let mut config = load_config()?;
+    config.project_column_align = align;
+    save_config(&config)?;
+    Ok(())
+}
+
 pub fn update_category(cat_id: String, name: String, desc: String) -> Result<Category> {
     if name.is_empty() {
         return Err(StorageError::Validation(

@@ -163,6 +163,12 @@ export const getTheme = (): Promise<string> => invoke("get_theme");
 export const setTheme = (theme: string): Promise<void> =>
 	invoke("set_theme", { theme });
 
+export const getProjectColumnAlign = (): Promise<string> =>
+	invoke("get_project_column_align");
+
+export const setProjectColumnAlign = (align: string): Promise<void> =>
+	invoke("set_project_column_align", { align });
+
 // ─── Font Configurations ──────────────────────────────────
 export const getFontFamily = (): Promise<string> => invoke("get_font_family");
 

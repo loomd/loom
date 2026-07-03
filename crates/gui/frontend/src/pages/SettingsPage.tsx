@@ -41,6 +41,8 @@ import { invoke } from "@tauri-apps/api/core";
 interface Props {
 	theme: "dark" | "day";
 	onThemeChange: (newTheme: "dark" | "day") => Promise<void>;
+	projectColumnAlign: string;
+	onProjectColumnAlignChange: (align: string) => Promise<void>;
 	fontFamily: string;
 	fontSize: string;
 	onFontFamilyChange: (family: string) => Promise<void>;
@@ -73,6 +75,8 @@ type Tab = "general" | "tools" | "env" | "libs";
 export default function SettingsPage({
 	theme,
 	onThemeChange,
+	projectColumnAlign,
+	onProjectColumnAlignChange,
 	fontFamily,
 	fontSize,
 	onFontFamilyChange,
@@ -930,11 +934,97 @@ export default function SettingsPage({
 									{t("settings.system.desc")}
 								</div>
 
+								{/* Project Column Align */}
 								<div
 									style={{
 										display: "flex",
 										alignItems: "center",
 										justifyContent: "space-between",
+									}}
+								>
+									<div>
+										<div
+											style={{
+												fontSize: "14px",
+												fontWeight: 500,
+												color: "var(--text-primary)",
+											}}
+										>
+											{t("settings.projectAlign.title")}
+										</div>
+										<div
+											style={{
+												fontSize: "12px",
+												color: "var(--text-secondary)",
+												marginTop: "4px",
+											}}
+										>
+											{t("settings.projectAlign.desc")}
+										</div>
+									</div>
+									<div style={{ display: "flex", gap: "8px" }}>
+										<button
+											onClick={() => onProjectColumnAlignChange("top")}
+											style={{
+												background:
+													projectColumnAlign === "top"
+														? "var(--accent-purple)"
+														: "var(--bg-elevated)",
+												border:
+													projectColumnAlign === "top"
+														? "1px solid var(--accent-purple)"
+														: "1px solid var(--border-mid)",
+												borderRadius: "6px",
+												padding: "6px 14px",
+												cursor: "pointer",
+												color:
+													projectColumnAlign === "top"
+														? "#ffffff"
+														: "var(--text-secondary)",
+												fontSize: "13px",
+												fontWeight: 500,
+												transition: "all 200ms ease",
+											}}
+										>
+											{t("settings.projectAlign.top")}
+										</button>
+										<button
+											onClick={() => onProjectColumnAlignChange("center")}
+											style={{
+												background:
+													projectColumnAlign === "center"
+														? "var(--accent-purple)"
+														: "var(--bg-elevated)",
+												border:
+													projectColumnAlign === "center"
+														? "1px solid var(--accent-purple)"
+														: "1px solid var(--border-mid)",
+												borderRadius: "6px",
+												padding: "6px 14px",
+												cursor: "pointer",
+												color:
+													projectColumnAlign === "center"
+														? "#ffffff"
+														: "var(--text-secondary)",
+												fontSize: "13px",
+												fontWeight: 500,
+												transition: "all 200ms ease",
+											}}
+										>
+											{t("settings.projectAlign.center")}
+										</button>
+									</div>
+								</div>
+
+								{/* Autostart */}
+								<div
+									style={{
+										display: "flex",
+										alignItems: "center",
+										justifyContent: "space-between",
+										marginTop: "16px",
+										paddingTop: "16px",
+										borderTop: "1px solid var(--border-subtle)",
 									}}
 								>
 									<div>

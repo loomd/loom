@@ -712,7 +712,7 @@ export default function ProjectWorkspace({ project, isVisible, onUnregisterProje
               fontWeight: 500
             }}
           >
-            + {t('proj.launcher.btn.spawn') === '启动 Agent' ? '新建终端' : 'New Terminal'}
+            {t('proj.launcher.btn.spawn') === '启动 Agent' ? '新建终端' : 'New Terminal'}
           </button>
 
           {tabs.filter(t => t.type === 'terminal').length > 1 && (

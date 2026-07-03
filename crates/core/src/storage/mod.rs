@@ -11,7 +11,7 @@ pub use manager::{
     get_active_instances_list, get_autostart_enabled, get_categories, get_cli_tools,
     get_config_path, get_font_family, get_font_size, get_global_docs, get_global_env_vars,
     get_global_skills, get_language, get_project_agents, get_project_skills, get_projects,
-    get_skipped_version, get_templates, get_theme, import_cli_tool, import_global_doc_to_project,
+    get_skipped_version, get_templates, get_theme, get_project_column_align, set_project_column_align, import_cli_tool, import_global_doc_to_project,
     import_global_skill_to_project, kill_cli_instance, parse_local_skill_dir, read_agent_logs,
     reorder_cli_tools, reorder_projects, reorder_templates, run_cli_template, scan_directory,
     scan_path_env, scan_project_agent_docs, set_autostart_enabled, set_font_family, set_font_size,
