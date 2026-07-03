@@ -651,6 +651,7 @@ export default function ProjectWorkspace({ project, isVisible, onUnregisterProje
                 style={{
                   display: 'flex',
                   alignItems: 'center',
+                  lineHeight: 1,
                   gap: '6px',
                   padding: '4px 10px',
                   backgroundColor: isActive ? 'var(--bg-elevated, #27272a)' : 'transparent',
@@ -663,7 +664,6 @@ export default function ProjectWorkspace({ project, isVisible, onUnregisterProje
                   fontWeight: isActive ? 600 : 400,
                   transition: 'all 0.2s ease',
                   whiteSpace: 'nowrap',
-                  maxWidth: '120px',
                 }}
               >
                 {tab.type === 'editor' && <span style={{ fontSize: '0.8rem', opacity: 0.8 }}>📄</span>}
@@ -672,7 +672,7 @@ export default function ProjectWorkspace({ project, isVisible, onUnregisterProje
                   textOverflow: 'ellipsis',
                   whiteSpace: 'nowrap',
                   display: 'inline-block',
-                  maxWidth: tab.id === 'overview' ? '80px' : (tab.type === 'editor' ? '60px' : '75px')
+                  maxWidth: tab.type === 'terminal' ? 'none' : (tab.id === 'overview' ? '80px' : '60px')
                 }}>
                   {tab.title}
                 </span>
@@ -702,8 +702,11 @@ export default function ProjectWorkspace({ project, isVisible, onUnregisterProje
           <button
             onClick={handleAddRawTerminal}
             style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              lineHeight: 1,
               padding: '4px 10px',
-              fontSize: '0.8rem',
+              fontSize: '0.82rem',
               borderRadius: 'var(--radius-sm, 4px)',
               cursor: 'pointer',
               backgroundColor: 'var(--bg-elevated, #18181b)',
@@ -719,8 +722,11 @@ export default function ProjectWorkspace({ project, isVisible, onUnregisterProje
             <button
               onClick={() => setIsGridLayout(!isGridLayout)}
               style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                lineHeight: 1,
                 padding: '4px 10px',
-                fontSize: '0.8rem',
+                fontSize: '0.82rem',
                 borderRadius: 'var(--radius-sm, 4px)',
                 cursor: 'pointer',
                 backgroundColor: isGridLayout ? 'var(--accent-emerald, #10b981)' : 'var(--bg-elevated, #18181b)',
@@ -1019,8 +1025,11 @@ export default function ProjectWorkspace({ project, isVisible, onUnregisterProje
                   <button
                     onClick={() => loadSkillsAndDocs()}
                     style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      lineHeight: 1,
                       padding: '4px 10px',
-                      fontSize: '0.8rem',
+                      fontSize: '0.82rem',
                       borderRadius: 'var(--radius-sm, 4px)',
                       cursor: 'pointer',
                       backgroundColor: 'var(--bg-elevated, #18181b)',
@@ -1035,8 +1044,11 @@ export default function ProjectWorkspace({ project, isVisible, onUnregisterProje
                   <button
                     onClick={handleOpenImportSkillModal}
                     style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      lineHeight: 1,
                       padding: '4px 10px',
-                      fontSize: '0.8rem',
+                      fontSize: '0.82rem',
                       borderRadius: 'var(--radius-sm, 4px)',
                       cursor: 'pointer',
                       backgroundColor: 'var(--bg-elevated, #18181b)',
@@ -1146,8 +1158,11 @@ export default function ProjectWorkspace({ project, isVisible, onUnregisterProje
                   <button
                     onClick={handleOpenImportDocModal}
                     style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      lineHeight: 1,
                       padding: '4px 10px',
-                      fontSize: '0.8rem',
+                      fontSize: '0.82rem',
                       borderRadius: 'var(--radius-sm, 4px)',
                       cursor: 'pointer',
                       backgroundColor: 'var(--bg-elevated, #18181b)',
@@ -1161,8 +1176,11 @@ export default function ProjectWorkspace({ project, isVisible, onUnregisterProje
                   <button
                     onClick={handleOpenAddDocModal}
                     style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      lineHeight: 1,
                       padding: '4px 10px',
-                      fontSize: '0.8rem',
+                      fontSize: '0.82rem',
                       borderRadius: 'var(--radius-sm, 4px)',
                       cursor: 'pointer',
                       backgroundColor: 'var(--bg-elevated, #18181b)',
