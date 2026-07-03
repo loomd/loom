@@ -9,6 +9,10 @@
     "core:default",
     "core:event:allow-listen",
     "core:event:allow-emit",
+    "core:window:allow-close",
+    "core:window:allow-minimize",
+    "core:window:allow-toggle-maximize",
+    "core:window:allow-start-dragging",
     "updater:default",
     "process:allow-restart"
   ]

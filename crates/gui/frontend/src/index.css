@@ -147,11 +147,20 @@ body.theme-day {
 ::-webkit-scrollbar-thumb:hover { background: var(--border-bright); }
 
 /* ─── Layout Shell ───────────────────────────────────────── */
+.app-container {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  width: 100vw;
+  overflow: hidden;
+}
+
 .app-shell {
   display: grid;
   grid-template-columns: 170px 1fr;
   grid-template-rows: 1fr;
-  height: 100vh;
+  flex: 1;
+  min-height: 0;
   position: relative;
   overflow: hidden;
 }
@@ -182,7 +191,7 @@ body.theme-day {
   z-index: 10;
   display: flex;
   flex-direction: column;
-  padding: 16px 8px;
+  padding: 8px;
   border-right: 1px solid var(--border-subtle);
   background: var(--bg-sidebar);
   transition: background-color 300ms var(--ease-spring), border-color 300ms var(--ease-spring);
@@ -324,7 +333,7 @@ body.theme-day {
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  height: 100vh;
+  height: 100%;
 }
 
 .page-header {
@@ -1094,4 +1103,55 @@ body.theme-day select.input option {
   content: '✕';
   color: var(--text-secondary);
 }
+
+/* ─── Custom Title Bar Styles ─────────────────────────────── */
+.app-titlebar {
+  position: fixed;
+  top: 0;
+  right: 0;
+  height: 32px;
+  width: 46px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  user-select: none;
+  z-index: 9999;
+  background: transparent;
+  transition: background-color 300ms var(--ease-spring);
+}
+
+.titlebar-button {
+  background: transparent;
+  border: none;
+  outline: none;
+  height: 100%;
+  width: 100%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background-color 200ms, color 200ms;
+}
+
+.titlebar-button:hover {
+  background-color: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.titlebar-button.close:hover {
+  background-color: var(--accent-red, #ef4444);
+  color: #ffffff;
+}
+
+.titlebar-button svg {
+  pointer-events: none;
+}
+
+/* 隐藏 Tab 横向滚动条 */
+.titlebar-tabs-scroll::-webkit-scrollbar {
+  display: none;
+}
+
+
 

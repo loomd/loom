@@ -615,16 +615,33 @@ export default function ProjectWorkspace({ project, isVisible, onUnregisterProje
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
 
       {/* ── Subparts Console Tab bar Header ────────────────────────── */}
-      <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        borderBottom: '1px solid var(--border-subtle, #27272a)',
-        padding: '2px 24px 4px 24px',
-        marginBottom: '0px',
-        gap: '12px'
-      }}>
-        <div style={{ display: 'flex', gap: '4px', overflowX: 'auto', flex: 1 }}>
+      <div
+        data-tauri-drag-region
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          borderBottom: '1px solid var(--border-subtle, #27272a)',
+          padding: '2px 60px 4px 24px', // 右侧预留 60px 避让关闭按钮
+          marginBottom: '0px',
+          gap: '12px'
+        }}
+      >
+        <div
+          data-tauri-drag-region
+          onWheel={(e) => {
+            e.currentTarget.scrollLeft += e.deltaY;
+          }}
+          style={{
+            display: 'flex',
+            gap: '4px',
+            overflowX: 'auto',
+            flex: 1,
+            scrollbarWidth: 'none', // 隐藏 Firefox 下滚动条
+            msOverflowStyle: 'none'  // 隐藏 IE/Edge
+          }}
+          className="titlebar-tabs-scroll"
+        >
           {tabs.map((tab) => {
             const isActive = tab.id === activeTabId;
             return (
@@ -650,16 +667,16 @@ export default function ProjectWorkspace({ project, isVisible, onUnregisterProje
                 }}
               >
                 {tab.type === 'editor' && <span style={{ fontSize: '0.8rem', opacity: 0.8 }}>📄</span>}
-                <span style={{ 
-                  overflow: 'hidden', 
-                  textOverflow: 'ellipsis', 
+                <span style={{
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
                   whiteSpace: 'nowrap',
                   display: 'inline-block',
                   maxWidth: tab.id === 'overview' ? '80px' : (tab.type === 'editor' ? '60px' : '75px')
                 }}>
                   {tab.title}
                 </span>
-                {tab.id !== 'overview' && (
+                {tab.id !== 'overview' && tab.id !== 'agents-skills' && (
                   <span
                     onClick={(e) => handleCloseTerminal(tab.id, e)}
                     style={{

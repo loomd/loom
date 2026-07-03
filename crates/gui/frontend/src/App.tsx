@@ -4,6 +4,7 @@ import { ToastProvider, useToast } from "./ToastContext";
 import { I18nProvider, useI18n } from "./I18nContext";
 import SettingsPage from "./pages/SettingsPage";
 import ProjectWorkspace from "./pages/ProjectWorkspace";
+import { TitleBar } from "./components/TitleBar";
 import {
 	getTheme,
 	setTheme,
@@ -458,7 +459,9 @@ function App() {
 	const selectedProject = projects.find((p) => p.id === selectedProjectId);
 
 	return (
-		<div className="app-shell">
+		<div className="app-container">
+			<TitleBar />
+			<div className="app-shell">
 			{/* ── Sidebar ─────────────────────────────────────── */}
 			<aside
 				className="sidebar"
@@ -837,6 +840,7 @@ function App() {
 				</div>
 			)}
 		</div>
+	</div>
 	);
 }
 
