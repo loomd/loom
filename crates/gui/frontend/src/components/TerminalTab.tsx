@@ -19,25 +19,25 @@ const getTerminalTheme = (theme?: 'dark' | 'day' | 'gray') => {
   switch (theme) {
     case 'day':
       return {
-        background: '#f5f5f8',
-        foreground: '#1e1e21',
-        cursor: '#6b6b72',
-        black: '#1e1e21',
+        background: '#121214',
+        foreground: '#e4e4e7',
+        cursor: '#a1a1aa',
+        black: '#18181b',
         red: '#ef4444',
         green: '#22c55e',
         yellow: '#eab308',
         blue: '#3b82f6',
         magenta: '#a855f7',
         cyan: '#06b6d4',
-        white: '#1e1e21',
-        brightBlack: '#6b6b72',
+        white: '#f4f4f5',
+        brightBlack: '#71717a',
         brightRed: '#f87171',
         brightGreen: '#4ade80',
         brightYellow: '#facc15',
         brightBlue: '#60a5fa',
         brightMagenta: '#c084fc',
         brightCyan: '#22d3ee',
-        brightWhite: '#1e1e21',
+        brightWhite: '#fafafa',
       };
     case 'gray':
       return {
