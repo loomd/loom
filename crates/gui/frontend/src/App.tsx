@@ -76,7 +76,7 @@ function App() {
 	const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
 	const [selectedProjectId, setSelectedProjectId] = useState<string>("");
 
-	const [theme, setThemeState] = useState<"dark" | "day">("dark");
+	const [theme, setThemeState] = useState<"dark" | "day" | "gray">("dark");
 	const [fontFamily, setFontFamilyState] = useState("Plus Jakarta Sans");
 	const [fontSize, setFontSizeState] = useState("14px");
 	const [projectColumnAlign, setProjectColumnAlignState] = useState("top");
@@ -360,7 +360,7 @@ function App() {
 		};
 	}, []);
 
-	const handleThemeChange = async (newTheme: "dark" | "day") => {
+	const handleThemeChange = async (newTheme: "dark" | "day" | "gray") => {
 		setThemeState(newTheme);
 		document.body.className = `theme-${newTheme}`;
 		try {
@@ -686,6 +686,7 @@ function App() {
 									project={p}
 									isVisible={page === "workspace" && p.id === selectedProjectId}
 									onUnregisterProject={handleUnregisterProject}
+									theme={theme}
 								/>
 							</div>
 						))

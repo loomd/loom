@@ -7,9 +7,21 @@ import { useI18n } from '../I18nContext';
 interface FileEditorProps {
   filePath: string;
   onContentDirtyChange: (isDirty: boolean) => void;
+  theme?: 'dark' | 'day' | 'gray';
 }
 
-export function FileEditor({ filePath, onContentDirtyChange }: FileEditorProps) {
+const getMonacoTheme = (theme?: 'dark' | 'day' | 'gray') => {
+  switch (theme) {
+    case 'day':
+      return 'vs';
+    case 'gray':
+      return 'vs-dark';
+    default:
+      return 'vs-dark';
+  }
+};
+
+export function FileEditor({ filePath, onContentDirtyChange, theme }: FileEditorProps) {
   const [content, setContent] = useState<string>('');
   const [initialContent, setInitialContent] = useState<string>('');
   const [loading, setLoading] = useState<boolean>(true);
@@ -207,7 +219,7 @@ export function FileEditor({ filePath, onContentDirtyChange }: FileEditorProps) 
           height="100%"
           width="100%"
           language={getLanguage(filePath)}
-          theme="vs-dark"
+          theme={getMonacoTheme(theme)}
           value={content}
           onChange={handleEditorChange}
           options={{

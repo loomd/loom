@@ -28,6 +28,7 @@ interface Props {
   project: Project;
   isVisible: boolean;
   onUnregisterProject: (proj: Project) => void;
+  theme?: 'dark' | 'day' | 'gray';
 }
 
 interface ConsoleTab {
@@ -54,7 +55,7 @@ export function getMergedArgs(tool: CliTool, tpl: Template): string[] {
   return mergeCliArgs(tool.custom_args || [], tpl.args || []);
 }
 
-export default function ProjectWorkspace({ project, isVisible, onUnregisterProject }: Props) {
+export default function ProjectWorkspace({ project, isVisible, onUnregisterProject, theme }: Props) {
   const { t } = useI18n();
   const toast = useToast();
 
@@ -1305,6 +1306,7 @@ export default function ProjectWorkspace({ project, isVisible, onUnregisterProje
                   args={tab.args}
                   env={tab.env}
                   isVisible={isTerminalVisible}
+                  theme={theme}
                 />
               </div>
             );
@@ -1333,6 +1335,7 @@ export default function ProjectWorkspace({ project, isVisible, onUnregisterProje
                 onContentDirtyChange={(dirty) => {
                   setTabs(prev => prev.map(t => t.id === tab.id ? { ...t, isDirty: dirty } : t));
                 }}
+                theme={theme}
               />
             </div>
           );

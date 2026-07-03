@@ -39,8 +39,8 @@ import { TemplateModal } from "./TemplatesPage";
 import { invoke } from "@tauri-apps/api/core";
 
 interface Props {
-	theme: "dark" | "day";
-	onThemeChange: (newTheme: "dark" | "day") => Promise<void>;
+	theme: "dark" | "day" | "gray";
+	onThemeChange: (newTheme: "dark" | "day" | "gray") => Promise<void>;
 	projectColumnAlign: string;
 	onProjectColumnAlignChange: (align: string) => Promise<void>;
 	fontFamily: string;
@@ -300,7 +300,7 @@ export default function SettingsPage({
 		}
 	}, [activeSubTab, loadGlobalSkillsAndDocs]);
 
-	const handleThemeSelect = async (newTheme: "dark" | "day") => {
+	const handleThemeSelect = async (newTheme: "dark" | "day" | "gray") => {
 		try {
 			await onThemeChange(newTheme);
 			toast.success(t("settings.toast.themeSaved"));
@@ -562,7 +562,7 @@ export default function SettingsPage({
 								<div
 									style={{
 										display: "grid",
-										gridTemplateColumns: "1fr 1fr",
+										gridTemplateColumns: "1fr 1fr 1fr",
 										gap: "16px",
 									}}
 								>
@@ -685,6 +685,67 @@ export default function SettingsPage({
 											}}
 										>
 											{t("settings.theme.day")}
+										</span>
+									</button>
+
+									<button
+										onClick={() => handleThemeSelect("gray")}
+										style={{
+											background:
+												theme === "gray"
+													? "var(--accent-purple-dim)"
+													: "var(--bg-elevated)",
+											border:
+												theme === "gray"
+													? "2px solid var(--accent-purple)"
+													: "1px solid var(--border-mid)",
+											borderRadius: "var(--radius-lg)",
+											padding: "20px",
+											cursor: "pointer",
+											textAlign: "left",
+											transition: "all 200ms var(--ease-spring)",
+											display: "flex",
+											flexDirection: "column",
+											gap: "8px",
+										}}
+										className={theme === "gray" ? "theme-active" : ""}
+									>
+										<div
+											style={{
+												display: "flex",
+												alignItems: "center",
+												justifyContent: "space-between",
+												width: "100%",
+											}}
+										>
+											<span style={{ fontSize: "20px" }}>👁</span>
+											{theme === "gray" && (
+												<span
+													style={{
+														background: "var(--accent-purple)",
+														color: "#ffffff",
+														borderRadius: "50%",
+														width: "18px",
+														height: "18px",
+														display: "inline-flex",
+														alignItems: "center",
+														justifyContent: "center",
+														fontSize: "10px",
+														fontWeight: "bold",
+													}}
+												>
+													✓
+												</span>
+											)}
+										</div>
+										<span
+											style={{
+												fontSize: "14px",
+												fontWeight: 600,
+												color: "var(--text-primary)",
+											}}
+										>
+											{t("settings.theme.gray")}
 										</span>
 									</button>
 								</div>

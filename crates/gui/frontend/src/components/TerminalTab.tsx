@@ -12,9 +12,81 @@ interface TerminalTabProps {
   args?: string[];
   env?: Record<string, string>;
   isVisible: boolean;
+  theme?: 'dark' | 'day' | 'gray';
 }
 
-export function TerminalTab({ sessionId, cwd, command, args, env, isVisible }: TerminalTabProps) {
+const getTerminalTheme = (theme?: 'dark' | 'day' | 'gray') => {
+  switch (theme) {
+    case 'day':
+      return {
+        background: '#f5f5f8',
+        foreground: '#1e1e21',
+        cursor: '#6b6b72',
+        black: '#1e1e21',
+        red: '#ef4444',
+        green: '#22c55e',
+        yellow: '#eab308',
+        blue: '#3b82f6',
+        magenta: '#a855f7',
+        cyan: '#06b6d4',
+        white: '#1e1e21',
+        brightBlack: '#6b6b72',
+        brightRed: '#f87171',
+        brightGreen: '#4ade80',
+        brightYellow: '#facc15',
+        brightBlue: '#60a5fa',
+        brightMagenta: '#c084fc',
+        brightCyan: '#22d3ee',
+        brightWhite: '#1e1e21',
+      };
+    case 'gray':
+      return {
+        background: '#1a1a1f',
+        foreground: '#e0e0e0',
+        cursor: '#a0a0a0',
+        black: '#1a1a1f',
+        red: '#f87171',
+        green: '#4ade80',
+        yellow: '#facc15',
+        blue: '#60a5fa',
+        magenta: '#c084fc',
+        cyan: '#22d3ee',
+        white: '#e0e0e0',
+        brightBlack: '#707070',
+        brightRed: '#fca5a5',
+        brightGreen: '#86efac',
+        brightYellow: '#fde047',
+        brightBlue: '#93c5fd',
+        brightMagenta: '#d8b4fe',
+        brightCyan: '#67e8f9',
+        brightWhite: '#f4f4f5',
+      };
+    default: // dark
+      return {
+        background: '#121214',
+        foreground: '#e4e4e7',
+        cursor: '#a1a1aa',
+        black: '#18181b',
+        red: '#ef4444',
+        green: '#22c55e',
+        yellow: '#eab308',
+        blue: '#3b82f6',
+        magenta: '#a855f7',
+        cyan: '#06b6d4',
+        white: '#f4f4f5',
+        brightBlack: '#71717a',
+        brightRed: '#f87171',
+        brightGreen: '#4ade80',
+        brightYellow: '#facc15',
+        brightBlue: '#60a5fa',
+        brightMagenta: '#c084fc',
+        brightCyan: '#22d3ee',
+        brightWhite: '#fafafa',
+      };
+  }
+};
+
+export function TerminalTab({ sessionId, cwd, command, args, env, isVisible, theme }: TerminalTabProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const outerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
@@ -186,27 +258,7 @@ export function TerminalTab({ sessionId, cwd, command, args, env, isVisible }: T
         fontFamily: 'Consolas, "Courier New", monospace',
         fontSize: 13,
         scrollback: 10000,
-        theme: {
-          background: '#121214',
-          foreground: '#e4e4e7',
-          cursor: '#a1a1aa',
-          black: '#18181b',
-          red: '#ef4444',
-          green: '#22c55e',
-          yellow: '#eab308',
-          blue: '#3b82f6',
-          magenta: '#a855f7',
-          cyan: '#06b6d4',
-          white: '#f4f4f5',
-          brightBlack: '#71717a',
-          brightRed: '#f87171',
-          brightGreen: '#4ade80',
-          brightYellow: '#facc15',
-          brightBlue: '#60a5fa',
-          brightMagenta: '#c084fc',
-          brightCyan: '#22d3ee',
-          brightWhite: '#fafafa',
-        }
+        theme: getTerminalTheme(theme)
       });
 
       const fitAddon = new FitAddon();

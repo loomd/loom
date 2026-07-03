@@ -104,6 +104,47 @@ body {
   --ambient-orb-emerald: radial-gradient(circle, rgba(16,185,129,0.04) 0%, transparent 70%);
 }
 
+/* ─── Gray Eye-Care Theme Override ─── */
+body.theme-gray {
+  --bg-base:       #1a1a1f; /* Soft gray, not pure black */
+  --bg-surface:    rgba(255,255,255,0.03);
+  --bg-elevated:   rgba(255,255,255,0.05);
+  --bg-hover:      rgba(255,255,255,0.07);
+
+  --border-subtle: rgba(255,255,255,0.05);
+  --border-mid:    rgba(255,255,255,0.09);
+  --border-bright: rgba(255,255,255,0.14);
+
+  --text-primary:  #e0e0e0; /* Soft gray text, low contrast */
+  --text-secondary:#a0a0a0; /* Muted gray text */
+  --text-tertiary: #707070;
+
+  --accent-purple: #8b5cf6; /* Softer purple for gray theme */
+  --accent-purple-dim: rgba(139,92,246,0.12);
+  --accent-emerald:#10b981;
+  --accent-emerald-dim: rgba(16,185,129,0.10);
+  --accent-blue:   #3b82f6;
+
+  --bg-sidebar:    rgba(255,255,255,0.018);
+  --bg-card-outer: rgba(255,255,255,0.025);
+  --bg-card-inner: rgba(255,255,255,0.035);
+  --bg-modal:      #1e1e23;
+  --border-inset:  rgba(255,255,255,0.06);
+  --shadow-card-inset: inset 0 1px 0 rgba(255,255,255,0.04);
+
+  --shadow-glow-purple: 0 0 35px rgba(139,92,246,0.05);
+  --shadow-glow-emerald: 0 0 35px rgba(16,185,129,0.04);
+  --shadow-card: 0 4px 24px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.04);
+
+  --ambient-orb-purple: radial-gradient(circle, rgba(139,92,246,0.04) 0%, transparent 70%);
+  --ambient-orb-emerald: radial-gradient(circle, rgba(16,185,129,0.03) 0%, transparent 70%);
+
+  /* Gray theme terminal colors */
+  --terminal-bg: #1a1a1f;
+  --terminal-text: #c8c8c8;
+  --terminal-error: #f87171;
+}
+
 /* ─── Day/Light Theme Override ─── */
 body.theme-day {
   --bg-base:       #f5f5f8; /* Soft light gray, low glare */
@@ -702,7 +743,7 @@ body.theme-day select.input option {
 
 /* ─── Terminal / Console ─────────────────────────────────── */
 .log-terminal {
-  background: #000;
+  background: var(--terminal-bg, #000);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-md);
   padding: 14px 16px;
@@ -710,13 +751,13 @@ body.theme-day select.input option {
   font-size: var(--fs-12);
   line-height: 1.7;
   overflow-y: auto;
-  color: #c8c8c8;
+  color: var(--terminal-text, #c8c8c8);
   height: 240px;
   position: relative;
 }
 .terminal-line { display: block; word-break: break-all; }
-.terminal-line.stderr { color: #f87171; }
-.terminal-line.stdout { color: #c8c8c8; }
+.terminal-line.stderr { color: var(--terminal-error, #f87171); }
+.terminal-line.stdout { color: var(--terminal-text, #c8c8c8); }
 .terminal-header {
   display: flex;
   align-items: center;
@@ -969,14 +1010,14 @@ body.theme-day select.input option {
 }
 
 .spec-preview-terminal {
-  background: #050507;
+  background: var(--terminal-bg, #050507);
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: var(--radius-md);
   padding: 12px 14px;
   font-family: 'JetBrains Mono', 'Fira Code', monospace;
   font-size: 12px;
   line-height: 1.5;
-  color: #a1a1aa;
+  color: var(--terminal-text, #a1a1aa);
   overflow-x: auto;
   position: relative;
   box-shadow: inset 0 2px 8px rgba(0,0,0,0.8);
@@ -1010,7 +1051,7 @@ body.theme-day select.input option {
 }
 
 .spec-preview-cmd-line {
-  color: #f4f4f5;
+  color: var(--terminal-text, #f4f4f5);
   white-space: pre-wrap;
   word-break: break-all;
 }
