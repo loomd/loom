@@ -247,6 +247,8 @@ body.theme-day {
   margin-right: 2px;
   flex-shrink: 0;
   user-select: none;
+  line-height: 1;
+  transform: translateY(0);
 }
 
 .sidebar-toggle-mini-btn:hover {
