@@ -75,17 +75,29 @@ function WindowControlButtons() {
     alignItems: 'center',
     justifyContent: 'center',
     lineHeight: 1,
-    padding: '4px 4px',
+    padding: '0 4px',
+    height: '100%',
     fontSize: '0.82rem',
-    borderRadius: 'var(--radius-sm, 4px)',
+    borderRadius: 0,
     cursor: 'pointer',
     color: 'var(--text-primary, #fff)',
     fontWeight: 500,
     userSelect: 'none',
+    transition: 'background-color 0.15s ease',
   };
 
   return (
     <>
+      <button
+        className="window-ctrl-btn minimize"
+        onClick={() => appWindow.minimize()}
+        style={btnStyle}
+        title="最小化"
+      >
+        <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1">
+          <path d="M2 5 L8 5" />
+        </svg>
+      </button>
       <button
         className="window-ctrl-btn"
         onClick={() => appWindow.toggleMaximize()}
@@ -686,7 +698,8 @@ export default function ProjectWorkspace({ project, isVisible, onUnregisterProje
           borderBottom: '1px solid var(--border-subtle, #27272a)',
           padding: '2px 8px 4px 0px',
           marginBottom: '0px',
-          gap: '0px'
+          gap: '0px',
+          minHeight: '30px'
         }}
       >
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0px', alignSelf: 'stretch' }}>
@@ -837,7 +850,7 @@ export default function ProjectWorkspace({ project, isVisible, onUnregisterProje
           title="拖拽窗口 / 双击回到起始位置"
         />
 
-        <div style={{ display: 'flex', gap: '2px', alignItems: 'center' }}>
+        <div style={{ display: 'flex', gap: '2px', alignItems: 'stretch', alignSelf: 'stretch' }}>
           <button
               onClick={handleAddRawTerminal}
               style={{

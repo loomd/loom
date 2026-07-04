@@ -1199,15 +1199,22 @@ body.theme-day select.input option {
 /* ─── Custom Title Bar Styles (已废弃，按钮现在内联在 ProjectWorkspace) ── */
 /* .app-titlebar 和 .titlebar-button 样式已移除 */
 
-/* ─── Window Control Buttons (关闭/最大化) ────────────────── */
+/* ─── Window Control Buttons (关闭/最大化/最小化) ────────────────── */
 .window-ctrl-btn {
   background-color: transparent;
   border: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s cubic-bezier(0.32, 0.72, 0, 1);
 }
 
-.window-ctrl-btn:hover {
-  background-color: var(--bg-hover);
-  color: var(--text-primary);
+.window-ctrl-btn:hover:not(.close) {
+  background-color: var(--bg-hover, rgba(255,255,255,0.08));
+}
+
+.window-ctrl-btn.close {
+  color: var(--text-primary, #fff);
 }
 
 .window-ctrl-btn.close:hover {
