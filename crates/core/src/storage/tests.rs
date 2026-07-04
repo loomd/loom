@@ -74,6 +74,7 @@ fn test_serialization_fidelity() {
         theme: "dark".to_string(),
         font_family: "Plus Jakarta Sans".to_string(),
         font_size: "14px".to_string(),
+        project_column_align: "top".to_string(),
         projects: Vec::new(),
         agent_instances: Vec::new(),
         global_skills: Vec::new(),

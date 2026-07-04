@@ -59,6 +59,8 @@ interface Props {
 	onInstallUpdate?: () => void;
 	onSkipVersion?: (version: string) => void;
 	showUpdateToast?: boolean;
+	rightSidebarEnabled: boolean;
+	onRightSidebarEnabledChange: (enabled: boolean) => void;
 }
 
 function WindowControlButtons() {
@@ -145,6 +147,8 @@ export default function SettingsPage({
 	onInstallUpdate,
 	onSkipVersion,
 	showUpdateToast,
+	rightSidebarEnabled,
+	onRightSidebarEnabledChange,
 }: Props) {
 	const { t, language, setLanguage } = useI18n();
 	const toast = useToast();
@@ -1145,6 +1149,71 @@ export default function SettingsPage({
 											{t("settings.projectAlign.center")}
 										</button>
 									</div>
+								</div>
+
+								{/* Right Sidebar Toggle */}
+								<div
+									style={{
+										display: "flex",
+										alignItems: "center",
+										justifyContent: "space-between",
+										marginTop: "16px",
+										paddingTop: "16px",
+										borderTop: "1px solid var(--border-subtle)",
+									}}
+								>
+									<div>
+										<div
+											style={{
+												fontSize: "14px",
+												fontWeight: 500,
+												color: "var(--text-primary)",
+											}}
+										>
+											{t("proj.rightSidebar.enable")}
+										</div>
+										<div
+											style={{
+												fontSize: "12px",
+												color: "var(--text-secondary)",
+												marginTop: "4px",
+											}}
+										>
+											鼠标悬浮在右侧边缘时显示项目切换侧边栏
+										</div>
+									</div>
+									<button
+										onClick={() => onRightSidebarEnabledChange(!rightSidebarEnabled)}
+										style={{
+											background: rightSidebarEnabled
+												? "var(--accent-purple)"
+												: "var(--bg-elevated)",
+											border: rightSidebarEnabled
+												? "1px solid var(--accent-purple)"
+												: "1px solid var(--border-mid)",
+											borderRadius: "20px",
+											width: "48px",
+											height: "24px",
+											position: "relative",
+											cursor: "pointer",
+											transition: "all 200ms ease",
+											padding: 0,
+										}}
+									>
+										<span
+											style={{
+												position: "absolute",
+												top: "2px",
+												left: rightSidebarEnabled ? "26px" : "2px",
+												width: "18px",
+												height: "18px",
+												borderRadius: "50%",
+												background: "#fff",
+												transition: "all 200ms ease",
+												boxShadow: "0 1px 3px rgba(0,0,0,0.2)",
+											}}
+										/>
+									</button>
 								</div>
 
 								{/* Autostart */}

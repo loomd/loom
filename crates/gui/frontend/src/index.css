@@ -1220,5 +1220,67 @@ body.theme-day select.input option {
   display: none;
 }
 
+/* ─── Right Sidebar ──────────────────────────────────────── */
+.right-sidebar {
+  position: fixed;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  width: 120px;
+  background: var(--bg-card);
+  border-left: 1px solid var(--border-subtle);
+  transition: transform 150ms ease, opacity 150ms ease;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  z-index: 9999;
+  backdrop-filter: blur(20px);
+}
 
+.right-sidebar.visible {
+  transform: translateX(0);
+  opacity: 1;
+}
+
+.right-sidebar.hidden {
+  transform: translateX(100%);
+  opacity: 0;
+}
+
+.right-sidebar-project-item {
+  padding: 8px 12px;
+  cursor: pointer;
+  overflow: hidden;
+  font-size: 13px;
+  color: var(--text-primary);
+  border-radius: 4px;
+  margin: 2px 4px;
+  transition: background-color 0.2s ease;
+  white-space: nowrap;
+}
+
+.right-sidebar-project-item:hover {
+  background: var(--bg-elevated);
+}
+
+.right-sidebar-project-item.active {
+  background: var(--accent-purple);
+  color: white;
+}
+
+.right-sidebar-project-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.right-sidebar-project-item:hover .right-sidebar-project-name {
+  animation: marquee 3s linear infinite;
+}
+
+@keyframes marquee {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(-100%); }
+}
 

@@ -4,6 +4,7 @@ import { ToastProvider, useToast } from "./ToastContext";
 import { I18nProvider, useI18n } from "./I18nContext";
 import SettingsPage from "./pages/SettingsPage";
 import ProjectWorkspace from "./pages/ProjectWorkspace";
+import RightSidebar from "./components/RightSidebar";
 import {
 	getTheme,
 	setTheme,
@@ -98,6 +99,10 @@ function App() {
 		return saved === "true";
 	});
 	const [isResizing, setIsResizing] = useState<boolean>(false);
+	const [rightSidebarEnabled, setRightSidebarEnabled] = useState<boolean>(() => {
+		const saved = localStorage.getItem("loom_right_sidebar_enabled");
+		return saved !== "false";
+	});
 
 	useEffect(() => {
 		localStorage.setItem("loom_sidebar_width", sidebarWidth.toString());
@@ -106,6 +111,10 @@ function App() {
 	useEffect(() => {
 		localStorage.setItem("loom_sidebar_collapsed", isCollapsed.toString());
 	}, [isCollapsed]);
+
+	useEffect(() => {
+		localStorage.setItem("loom_right_sidebar_enabled", rightSidebarEnabled.toString());
+	}, [rightSidebarEnabled]);
 
 	const handleMouseDown = useCallback((e: React.MouseEvent) => {
 		e.preventDefault();
@@ -798,9 +807,22 @@ function App() {
 						onInstallUpdate={handleInstallUpdate}
 						onSkipVersion={handleSkipVersion}
 						showUpdateToast={showUpdateToast}
+						rightSidebarEnabled={rightSidebarEnabled}
+						onRightSidebarEnabledChange={setRightSidebarEnabled}
 					/>
 				</div>
 			</main>
+
+			{/* ── Right Sidebar ─────────────────────────────────── */}
+			<RightSidebar
+				projects={projects}
+				selectedProjectId={selectedProjectId}
+				onProjectSelect={(projectId) => {
+					setSelectedProjectId(projectId);
+					setPage("workspace");
+				}}
+				enabled={rightSidebarEnabled}
+			/>
 
 			{/* Register Project Modal */}
 			{showModal && (
