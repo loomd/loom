@@ -133,7 +133,7 @@ export default function ProjectWorkspace({ project, isVisible, onUnregisterProje
     { id: 'agents-skills', title: '技能管理', type: 'agents-skills', cwd: project.root_path }
   ]);
   const [activeTabId, setActiveTabId] = useState<string>('overview');
-  const [isGridLayout, setIsGridLayout] = useState<boolean>(false);
+  const [layoutMode, setLayoutMode] = useState<'single' | 'horizontal' | 'vertical'>('single');
 
   // Agent & Skills state
   const [skills, setSkills] = useState<ProjectSkill[]>([]);
@@ -661,12 +661,12 @@ export default function ProjectWorkspace({ project, isVisible, onUnregisterProje
   };
 
   const terminals = tabs.filter(t => t.type === 'terminal');
-  const showGrid = isGridLayout && terminals.length > 1;
+  const showGrid = layoutMode !== 'single' && terminals.length > 1;
 
   const getGridStyle = (): React.CSSProperties => {
     return {
       display: 'flex',
-      flexDirection: 'row',
+      flexDirection: layoutMode === 'vertical' ? 'column' : 'row',
       gap: '0px',
       width: '100%',
       height: '100%',
@@ -860,7 +860,11 @@ export default function ProjectWorkspace({ project, isVisible, onUnregisterProje
 
           {tabs.filter(t => t.type === 'terminal').length > 1 && (
             <button
-              onClick={() => setIsGridLayout(!isGridLayout)}
+              onClick={() => setLayoutMode(prev => {
+                if (prev === 'single') return 'horizontal';
+                if (prev === 'horizontal') return 'vertical';
+                return 'single';
+              })}
               style={{
                 display: 'inline-flex',
                 alignItems: 'center',
@@ -869,14 +873,14 @@ export default function ProjectWorkspace({ project, isVisible, onUnregisterProje
                 fontSize: '0.82rem',
                 borderRadius: 'var(--radius-sm, 4px)',
                 cursor: 'pointer',
-                backgroundColor: isGridLayout ? 'var(--accent-emerald, #10b981)' : 'var(--bg-elevated, #18181b)',
+                backgroundColor: layoutMode !== 'single' ? 'var(--accent-emerald, #10b981)' : 'var(--bg-elevated, #18181b)',
                 border: '1px solid var(--border-subtle, #27272a)',
-                color: isGridLayout ? '#fff' : 'var(--text-primary, #fff)',
+                color: layoutMode !== 'single' ? '#fff' : 'var(--text-primary, #fff)',
                 fontWeight: 500,
                 userSelect: 'none',
               }}
             >
-              {isGridLayout ? (t('proj.launcher.btn.spawn') === '启动 Agent' ? '单签' : 'Single') : (t('proj.launcher.btn.spawn') === '启动 Agent' ? '双开' : 'Dual')}
+              {layoutMode === 'single' ? (t('proj.launcher.btn.spawn') === '启动 Agent' ? '双开' : 'Dual') : layoutMode === 'horizontal' ? (t('proj.launcher.btn.spawn') === '启动 Agent' ? '竖开' : 'Vertical') : (t('proj.launcher.btn.spawn') === '启动 Agent' ? '单签' : 'Single')}
             </button>
           )}
 
@@ -1440,7 +1444,8 @@ export default function ProjectWorkspace({ project, isVisible, onUnregisterProje
                 style={{
                   display: isTabVisible ? 'block' : 'none',
                   flex: 1,
-                  height: '100%',
+                  height: layoutMode === 'vertical' ? '50%' : '100%',
+                  width: layoutMode === 'vertical' ? '100%' : 'auto',
                   minWidth: 0
                 }}
               >
