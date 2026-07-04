@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { killCliInstance } from '../api';
 import type { RunningInstance } from '../types';
 import { useToast } from '../ToastContext';
@@ -12,10 +12,14 @@ interface Props {
 export default function InstancesPage({ instances, onInstancesChange }: Props) {
   const { t } = useI18n();
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [now, setNow] = useState(() => Date.now());
   const logEndRef = useRef<HTMLDivElement>(null);
   const toast = useToast();
 
-
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, []);
 
   // Auto-scroll terminal
   useEffect(() => {
@@ -27,8 +31,8 @@ export default function InstancesPage({ instances, onInstancesChange }: Props) {
     try {
       await killCliInstance(instanceId);
       toast.success(t('inst.toast.terminated'));
-    } catch (e: any) {
-      toast.error(e?.toString() ?? t('inst.toast.terminateFailed'));
+    } catch {
+      toast.error(t('inst.toast.terminateFailed'));
     }
   };
 
@@ -46,7 +50,7 @@ export default function InstancesPage({ instances, onInstancesChange }: Props) {
   };
 
   const formatDuration = (start: Date) => {
-    const sec = Math.floor((Date.now() - start.getTime()) / 1000);
+    const sec = Math.floor((now - start.getTime()) / 1000);
     if (sec < 60) return `${sec}s`;
     return `${Math.floor(sec / 60)}m ${sec % 60}s`;
   };

@@ -157,18 +157,15 @@ export default function SettingsPage({
 	const [autostartEnabled, setAutostartEnabled] = useState<boolean>(false);
 	const [isChecking, setIsChecking] = useState<boolean>(false);
 	// Toast close is local; prop only drives initial show
-	const [toastVisible, setToastVisible] = useState(!!showUpdateToast);
-	useEffect(() => {
-		if (showUpdateToast) setToastVisible(true);
-	}, [showUpdateToast]);
+	const toastVisible = !!showUpdateToast;
 
 	const handleManualCheck = async () => {
 		if (isChecking) return;
 		setIsChecking(true);
 		try {
 			await onCheckUpdate(true);
-		} catch (err) {
-			console.error("Failed to manually check update:", err);
+		} catch {
+			console.error("Failed to manually check update");
 		} finally {
 			setIsChecking(false);
 		}
@@ -275,7 +272,7 @@ export default function SettingsPage({
 		try {
 			const ids = updated.map((t) => t.id);
 			await reorderCliTools(ids);
-		} catch (err) {
+		} catch {
 			toast.error("Failed to save tools order");
 			await loadToolsAndTemplates();
 		}
@@ -356,6 +353,7 @@ export default function SettingsPage({
 
 	useEffect(() => {
 		if (activeSubTab === "tools") {
+			// eslint-disable-next-line react-hooks/set-state-in-effect
 			loadCategories();
 			loadToolsAndTemplates();
 		} else if (activeSubTab === "libs") {
@@ -398,7 +396,7 @@ export default function SettingsPage({
 			await loadToolsAndTemplates();
 			toast.success(t("db.toast.scanSuccess", { count: found.length }));
 		} catch (e) {
-			toast.error(String(e) ?? t("db.toast.scanFailed"));
+			toast.error(String(e) || t("db.toast.scanFailed"));
 		} finally {
 			setScanningTools(false);
 		}
@@ -412,7 +410,7 @@ export default function SettingsPage({
 			await loadToolsAndTemplates();
 			toast.success(t("db.toast.imported"));
 		} catch (e) {
-			toast.error(String(e) ?? t("db.toast.importFailed"));
+			toast.error(String(e) || t("db.toast.importFailed"));
 		}
 	};
 
@@ -427,7 +425,7 @@ export default function SettingsPage({
 			await loadToolsAndTemplates();
 			toast.success(t("db.toast.removed"));
 		} catch (e) {
-			toast.error(String(e) ?? t("db.toast.removeFailed"));
+			toast.error(String(e) || t("db.toast.removeFailed"));
 		}
 	};
 
@@ -437,7 +435,7 @@ export default function SettingsPage({
 			await loadToolsAndTemplates();
 			toast.success(t("db.toast.catUpdated"));
 		} catch (e) {
-			toast.error(String(e) ?? t("db.toast.catUpdateFailed"));
+			toast.error(String(e) || t("db.toast.catUpdateFailed"));
 		}
 	};
 
@@ -449,7 +447,7 @@ export default function SettingsPage({
 			await loadToolsAndTemplates();
 			toast.success(t("temp.toast.deleted"));
 		} catch (e) {
-			toast.error(String(e) ?? "Failed to delete template");
+			toast.error(String(e) || "Failed to delete template");
 		}
 	};
 
@@ -2663,8 +2661,8 @@ function CliToolConfigModal({
 			toast.success(t("env.toast.saved") || "Saved successfully");
 			onSave();
 			onClose();
-		} catch (e: any) {
-			toast.error(e?.toString() ?? t("env.toast.saveFailed"));
+		} catch {
+			toast.error(t("env.toast.saveFailed"));
 		} finally {
 			setSaving(false);
 		}

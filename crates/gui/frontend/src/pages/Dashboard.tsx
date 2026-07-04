@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { getCliTools, scanPathEnv, scanDirectory, deleteCliTool, assignCliCategory, importCliTool } from '../api';
+import { getCliTools, scanPathEnv, deleteCliTool, assignCliCategory, importCliTool } from '../api';
 import type { CliTool, Category } from '../types';
 import { useToast } from '../ToastContext';
 import { useI18n } from '../I18nContext';
@@ -24,13 +24,14 @@ export default function Dashboard({ categories, onToolsChange, onSelectTool, sel
     try {
       const data = await getCliTools();
       setTools(data);
-    } catch (e) {
+    } catch {
       toast.error(t('db.toast.loadFailed'));
     } finally {
       setLoading(false);
     }
-  }, [t]);
+  }, [t, toast]);
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { load(); }, [load]);
 
   const handleScanPath = async () => {
@@ -40,8 +41,8 @@ export default function Dashboard({ categories, onToolsChange, onSelectTool, sel
       await load();
       onToolsChange();
       toast.success(t('db.toast.scanSuccess', { count: found.length }));
-    } catch (e: any) {
-      toast.error(e?.toString() ?? t('db.toast.scanFailed'));
+    } catch {
+      toast.error(t('db.toast.scanFailed'));
     } finally {
       setScanning(false);
     }
@@ -55,8 +56,8 @@ export default function Dashboard({ categories, onToolsChange, onSelectTool, sel
       await load();
       onToolsChange();
       toast.success(t('db.toast.imported'));
-    } catch (e: any) {
-      toast.error(e?.toString() ?? t('db.toast.importFailed'));
+    } catch {
+      toast.error(t('db.toast.importFailed'));
     }
   };
 
@@ -68,8 +69,8 @@ export default function Dashboard({ categories, onToolsChange, onSelectTool, sel
       await load();
       onToolsChange();
       toast.success(t('db.toast.removed'));
-    } catch (e: any) {
-      toast.error(e?.toString() ?? t('db.toast.removeFailed'));
+    } catch {
+      toast.error(t('db.toast.removeFailed'));
     }
   };
 
@@ -79,8 +80,8 @@ export default function Dashboard({ categories, onToolsChange, onSelectTool, sel
       await load();
       onToolsChange();
       toast.success(t('db.toast.catUpdated'));
-    } catch (e: any) {
-      toast.error(e?.toString() ?? t('db.toast.catUpdateFailed'));
+    } catch {
+      toast.error(t('db.toast.catUpdateFailed'));
     }
   };
 

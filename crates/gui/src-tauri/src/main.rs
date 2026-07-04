@@ -50,7 +50,6 @@ use tauri::{
     Manager,
 };
 use tauri_plugin_autostart::{MacosLauncher, ManagerExt};
-use tauri_plugin_updater::UpdaterExt;
 
 #[tauri::command]
 fn update_ime_position(

@@ -70,8 +70,8 @@ export function TemplateModal({
       onSave();
       onClose();
       toast.success(template ? t('temp.toast.updated') : t('temp.toast.created'));
-    } catch (e) {
-      toast.error(String(e) ?? t('temp.toast.createFailed'));
+    } catch {
+      toast.error(t('temp.toast.createFailed'));
     } finally {
       setSaving(false);
     }
@@ -356,15 +356,13 @@ export default function TemplatesPage({ tools, onInstanceLaunched }: Props) {
   };
 
   useEffect(() => {
-    const timer = setTimeout(() => {
-      load();
-    }, 0);
-    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    load();
   }, []);
 
   const handleDelete = async (id: string, name: string) => {
     if (!confirm(t('temp.confirm.delete', { name }))) return;
-    try { await deleteTemplate(id); load(); toast.success(t('temp.toast.deleted')); } catch (e) { toast.error(String(e) ?? t('cat.toast.deleteFailed')); }
+    try { await deleteTemplate(id); load(); toast.success(t('temp.toast.deleted')); } catch { toast.error(t('cat.toast.deleteFailed')); }
   };
 
   const handleRun = async (tpl: Template) => {
@@ -375,8 +373,8 @@ export default function TemplatesPage({ tools, onInstanceLaunched }: Props) {
       const instanceId = await runCliTemplate(tpl.id);
       onInstanceLaunched(instanceId, tpl, tool);
       toast.success(t('temp.toast.launched') + ': ' + tpl.name);
-    } catch (e) {
-      toast.error(String(e) ?? t('temp.toast.launchFailed'));
+    } catch {
+      toast.error(t('temp.toast.launchFailed'));
     } finally {
       setLaunching(null);
     }

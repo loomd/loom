@@ -54,7 +54,7 @@ import { mergeCliArgs } from '../utils';
  * @param tool 关联的 CLI 工具实体
  * @param tpl 当前执行的模板
  */
-export function getMergedArgs(tool: CliTool, tpl: Template): string[] {
+function getMergedArgs(tool: CliTool, tpl: Template): string[] {
   return mergeCliArgs(tool.custom_args || [], tpl.args || []);
 }
 
@@ -180,7 +180,7 @@ export default function ProjectWorkspace({ project, isVisible, onUnregisterProje
     try {
       const list = await listProjectFiles(path);
       setFiles(list);
-    } catch (e: any) {
+    } catch (e) {
       console.error('Failed to list files', e);
       setFileError(String(e));
     } finally {
@@ -190,11 +190,13 @@ export default function ProjectWorkspace({ project, isVisible, onUnregisterProje
 
   // Sync currentPath when project changes
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setCurrentPath(project.root_path);
   }, [project.root_path]);
 
   // Load files when currentPath changes
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     loadFiles(currentPath);
   }, [currentPath, loadFiles]);
 
@@ -291,7 +293,7 @@ export default function ProjectWorkspace({ project, isVisible, onUnregisterProje
       if (binaryExtensions.includes(ext)) {
         try {
           await openFileWithSystem(file.path);
-        } catch (e: any) {
+        } catch (e) {
           toast.error('Failed to open file: ' + String(e));
         }
       } else {
@@ -313,7 +315,7 @@ export default function ProjectWorkspace({ project, isVisible, onUnregisterProje
     setContextMenu(null);
     try {
       await openInManager(file.path);
-    } catch (e: any) {
+    } catch (e) {
       toast.error(`打开失败: ${String(e)}`);
     }
   };
@@ -336,7 +338,7 @@ export default function ProjectWorkspace({ project, isVisible, onUnregisterProje
       setTabs(prev => prev.filter(t => t.id !== file.path));
       if (activeTabId === file.path) setActiveTabId('overview');
       loadFiles(currentPath);
-    } catch (e: any) {
+    } catch (e) {
       toast.error(`删除失败: ${String(e)}`);
     }
   };
@@ -655,6 +657,7 @@ export default function ProjectWorkspace({ project, isVisible, onUnregisterProje
       type: 'terminal',
       cwd: project.root_path
     };
+    setLayoutMode('single');
     setTabs(prev => [...prev, newTab]);
     setActiveTabId(sessionId);
   };

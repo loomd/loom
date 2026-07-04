@@ -39,11 +39,12 @@ export default function EnvVarsPage() {
     try {
       const vars = await getGlobalEnvVars();
       setEnvVars(vars);
-    } catch (e: any) {
-      toast.error(e?.toString() ?? 'Failed to load global environment variables');
+    } catch {
+      toast.error('Failed to load global environment variables');
     }
   };
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { load(); }, []);
 
   const openNew = (keyPrefill = '') => {
@@ -78,8 +79,8 @@ export default function EnvVarsPage() {
       setShowModal(false);
       load();
       toast.success(t('env.toast.saved'));
-    } catch (e: any) {
-      toast.error(e?.toString() ?? t('env.toast.saveFailed'));
+    } catch {
+      toast.error(t('env.toast.saveFailed'));
     } finally {
       setSaving(false);
     }
@@ -91,8 +92,8 @@ export default function EnvVarsPage() {
       await deleteGlobalEnvVar(id);
       load();
       toast.success(t('temp.toast.deleted'));
-    } catch (e: any) {
-      toast.error(e?.toString() ?? 'Delete failed');
+    } catch {
+      toast.error('Delete failed');
     }
   };
 

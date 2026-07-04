@@ -124,6 +124,7 @@ export function TerminalTab({ sessionId, cwd, command, args, env, isVisible, the
     };
 
     const getCellDimensions = () => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const core = (termRef.current as any)?._core;
       if (core?._renderService?.dimensions?.css?.cell) {
         const cell = core._renderService.dimensions.css.cell;
@@ -152,7 +153,7 @@ export function TerminalTab({ sessionId, cwd, command, args, env, isVisible, the
         const { width, height } = getCellDimensions();
         
         // Custom single-row virtual cursor detection logic
-        const getTargetCursorPosition = (t: any) => {
+        const getTargetCursorPosition = (t: Terminal) => {
           const defaultX = t.buffer.active.cursorX;
           const defaultY = t.buffer.active.cursorY;
           const isHidden = !!t?._core?.coreService?.isCursorHidden;
@@ -277,7 +278,7 @@ export function TerminalTab({ sessionId, cwd, command, args, env, isVisible, the
           console.log(`[IME ${action}] activeElement=${activeInfo} scroll=${textarea.scrollLeft},${textarea.scrollTop} styleLeft=${textarea.style.left} styleTop=${textarea.style.top} rectLeft=${rect.left} rectTop=${rect.top} rectWidth=${rect.width} rectHeight=${rect.height} valLen=${textarea.value.length} sel=${textarea.selectionStart},${textarea.selectionEnd}`);
         };
 
-        const handleStart = (e: any) => {
+        const handleStart = (e: CompositionEvent) => {
           isComposing = true;
           termEl.classList.add('is-composing');
           textarea.scrollLeft = 0;
@@ -286,7 +287,7 @@ export function TerminalTab({ sessionId, cwd, command, args, env, isVisible, the
           console.log('IME Log: compositionstart - data:', e.data);
           logState('start');
         };
-        const handleEnd = (e: any) => {
+        const handleEnd = (e: CompositionEvent) => {
           isComposing = false;
           termEl.classList.remove('is-composing');
           textarea.scrollLeft = 0;
@@ -296,7 +297,7 @@ export function TerminalTab({ sessionId, cwd, command, args, env, isVisible, the
           logState('end');
           flushPtyBuffer();
         };
-        const handleUpdate = (e: any) => {
+        const handleUpdate = (e: CompositionEvent) => {
           textarea.scrollLeft = 0;
           textarea.scrollTop = 0;
           syncTextareaPosition();
@@ -310,7 +311,7 @@ export function TerminalTab({ sessionId, cwd, command, args, env, isVisible, the
           textarea.scrollTop = 0;
           logState('scroll after reset');
         };
-        const handleKey = (e: any) => {
+        const handleKey = (e: KeyboardEvent) => {
           if (e.key === 'Backspace' || e.key === 'Delete') {
             console.log('IME Log: backspace/delete keydown (capture)!', e.key);
             logState('keydown delete');

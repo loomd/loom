@@ -32,6 +32,7 @@ export function FileEditor({ filePath, onContentDirtyChange, theme }: FileEditor
   // Load file content
   useEffect(() => {
     let active = true;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setLoading(true);
     setError(null);
     readTextFile(filePath)
@@ -41,7 +42,7 @@ export function FileEditor({ filePath, onContentDirtyChange, theme }: FileEditor
         setInitialContent(data);
         onContentDirtyChange(false);
       })
-      .catch((err) => {
+      .catch((err: unknown) => {
         if (!active) return;
         console.error('Failed to read file:', err);
         setError(String(err));

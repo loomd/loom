@@ -46,7 +46,7 @@ export default function CategoriesPage({ categories, tools, onCategoriesChange }
       setShowModal(false);
       onCategoriesChange();
       toast.success(t('cat.toast.created', { name: newName.trim() }));
-    } catch (e: any) {
+    } catch (e) {
       toast.error(e?.toString() ?? t('cat.toast.createFailed'));
     } finally {
       setCreating(false);
@@ -70,7 +70,7 @@ export default function CategoriesPage({ categories, tools, onCategoriesChange }
       setEditCategory(null);
       onCategoriesChange();
       toast.success(t('cat.toast.updated', { name: editName.trim() }));
-    } catch (e: any) {
+    } catch (e) {
       toast.error(e?.toString() ?? t('cat.toast.updateFailed'));
     } finally {
       setSaving(false);
@@ -87,7 +87,7 @@ export default function CategoriesPage({ categories, tools, onCategoriesChange }
       await deleteCategory(cat.id);
       onCategoriesChange();
       toast.success(t('cat.toast.deleted', { name: cat.name }));
-    } catch (e: any) {
+    } catch (e) {
       toast.error(e?.toString() ?? t('cat.toast.deleteFailed'));
     }
   };
@@ -98,7 +98,7 @@ export default function CategoriesPage({ categories, tools, onCategoriesChange }
       const [sys, dev] = await smartClassify();
       onCategoriesChange();
       toast.success(t('cat.toast.smartClassified', { sys, dev }));
-    } catch (e: any) {
+    } catch (e) {
       toast.error(e?.toString() ?? t('cat.toast.smartClassifyFailed'));
     } finally {
       setClassifying(false);

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
+import { useI18n } from "../I18nContext";
 import type { Project } from "../types";
 
 interface RightSidebarProps {
@@ -6,6 +7,9 @@ interface RightSidebarProps {
   selectedProjectId: string;
   onProjectSelect: (projectId: string) => void;
   enabled: boolean;
+  page: "workspace" | "settings";
+  onNavigate: (page: "workspace" | "settings") => void;
+  onRegisterProject?: () => void;
 }
 
 export default function RightSidebar({
@@ -13,7 +17,11 @@ export default function RightSidebar({
   selectedProjectId,
   onProjectSelect,
   enabled,
+  page,
+  onNavigate,
+  onRegisterProject,
 }: RightSidebarProps) {
+  const { t } = useI18n();
   const [isVisible, setIsVisible] = useState(false);
   const sidebarRef = useRef<HTMLDivElement>(null);
   const hideTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -91,15 +99,16 @@ export default function RightSidebar({
         overflowY: "auto",
         display: "flex",
         flexDirection: "column",
-        justifyContent: "center",
         zIndex: 9999,
         backdropFilter: "blur(20px)",
       }}
     >
       <div
         style={{
+          flex: 1,
           display: "flex",
           flexDirection: "column",
+          justifyContent: "center",
           gap: "4px",
           padding: "8px",
         }}
@@ -148,6 +157,85 @@ export default function RightSidebar({
             </div>
           );
         })}
+      </div>
+      <div
+        style={{
+          borderTop: "1px solid var(--border-subtle)",
+          padding: "4px 0",
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+        }}
+      >
+        {onRegisterProject && (
+          <div
+            onClick={onRegisterProject}
+            style={{
+              padding: "8px 12px",
+              cursor: "pointer",
+              fontSize: "13px",
+              borderRadius: "4px",
+              margin: "2px 4px",
+              color: "var(--text-primary)",
+              transition: "background-color 0.2s ease",
+              display: "flex",
+              alignItems: "center",
+              gap: "6px",
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = "var(--bg-elevated)";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = "transparent";
+            }}
+          >
+            <span
+              style={{
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {t("proj.sidebar.add")}
+            </span>
+          </div>
+        )}
+        <div
+          onClick={() => onNavigate("settings")}
+          style={{
+            padding: "8px 12px",
+            cursor: "pointer",
+            fontSize: "13px",
+            borderRadius: "4px",
+            margin: "2px 4px",
+            background: page === "settings" ? "var(--accent-purple)" : "transparent",
+            color: page === "settings" ? "white" : "var(--text-primary)",
+            transition: "background-color 0.2s ease",
+            display: "flex",
+            alignItems: "center",
+            gap: "6px",
+          }}
+          onMouseEnter={(e) => {
+            if (page !== "settings") {
+              e.currentTarget.style.background = "var(--bg-elevated)";
+            }
+          }}
+          onMouseLeave={(e) => {
+            if (page !== "settings") {
+              e.currentTarget.style.background = "transparent";
+            }
+          }}
+        >
+          <span
+            style={{
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+            }}
+          >
+            {t("nav.settings")}
+          </span>
+        </div>
       </div>
     </div>
   );

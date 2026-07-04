@@ -54,8 +54,8 @@ export default function ProjectsPage() {
       if (projs.length > 0 && !selectedProjectId) {
         setSelectedProjectId(projs[0].id);
       }
-    } catch (e: any) {
-      toast.error(e?.toString() || 'Failed to fetch projects');
+    } catch {
+      toast.error('Failed to fetch projects');
     }
   }, [selectedProjectId, toast]);
 
@@ -79,17 +79,19 @@ export default function ProjectsPage() {
       const active = list.filter(a => a.status === 'running')
         .sort((a, b) => b.start_time.localeCompare(a.start_time));
       setActiveAgents(active);
-    } catch (e: any) {
-      console.error('Failed to fetch project agents', e);
+    } catch {
+      console.error('Failed to fetch project agents');
     }
   }, [selectedProjectId]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchProjects();
     fetchCliTools();
-  }, []);
+  }, [fetchProjects, fetchCliTools]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     refreshAgents();
   }, [selectedProjectId, refreshAgents]);
 
@@ -134,7 +136,7 @@ export default function ProjectsPage() {
           }
         }
       }
-    } catch (e: any) {
+    } catch {
       toast.error('Failed to open directory browser');
     }
   };
@@ -166,8 +168,8 @@ export default function ProjectsPage() {
       setNewProjPath('');
       setProjects(prev => [...prev, proj]);
       setSelectedProjectId(proj.id);
-    } catch (e: any) {
-      toast.error(e?.toString() || t('proj.toast.createFailed'));
+    } catch {
+      toast.error(t('proj.toast.createFailed'));
     } finally {
       setCreating(false);
     }
@@ -182,8 +184,8 @@ export default function ProjectsPage() {
       if (selectedProjectId === proj.id) {
         setSelectedProjectId('');
       }
-    } catch (e: any) {
-      toast.error(e?.toString() || t('proj.toast.deleteFailed'));
+    } catch {
+      toast.error(t('proj.toast.deleteFailed'));
     }
   };
 
@@ -200,7 +202,7 @@ export default function ProjectsPage() {
     if (envMode === 'isolated') {
       try {
         parsedEnvs = JSON.parse(customEnvsText);
-      } catch (err) {
+      } catch {
         toast.error('Custom environment variables must be valid JSON');
         return;
       }
@@ -215,8 +217,8 @@ export default function ProjectsPage() {
       toast.success('Agent spawned successfully');
       setSpawnArgs('');
       refreshAgents();
-    } catch (err: any) {
-      toast.error(err?.toString() || 'Failed to spawn agent');
+    } catch {
+      toast.error('Failed to spawn agent');
     } finally {
       setSpawning(false);
     }
@@ -233,8 +235,8 @@ export default function ProjectsPage() {
       await killAgentProcess(agent.id);
       toast.success(t('inst.toast.terminated'));
       setTimeout(refreshAgents, 300);
-    } catch (err: any) {
-      toast.error(err?.toString() || 'Failed to terminate agent');
+    } catch {
+      toast.error('Failed to terminate agent');
       refreshAgents();
     }
   };
@@ -245,19 +247,6 @@ export default function ProjectsPage() {
       return date.toLocaleTimeString();
     } catch {
       return epochSecondsStr;
-    }
-  };
-
-  const calculateDuration = (start: string, end?: string) => {
-    if (!end) return '-';
-    try {
-      const duration = parseInt(end) - parseInt(start);
-      if (duration < 60) return `${duration}s`;
-      const mins = Math.floor(duration / 60);
-      const secs = duration % 60;
-      return `${mins}m ${secs}s`;
-    } catch {
-      return '-';
     }
   };
 
@@ -506,13 +495,13 @@ export default function ProjectsPage() {
                         try {
                           const historical = await getAgentLogs(agent.id);
                           setSelectedAgentLogs({ id: agent.id, command: `${agent.command} ${agent.arguments.join(' ')}`, logs: historical });
-                        } catch (err) {
-                          setSelectedAgentLogs({ id: agent.id, command: `${agent.command} ${agent.arguments.join(' ')}`, logs: [`[SYSTEM] Failed to load logs: ${err}`] });
+                        } catch {
+                          setSelectedAgentLogs({ id: agent.id, command: `${agent.command} ${agent.arguments.join(' ')}`, logs: [`[SYSTEM] Failed to load logs`] });
                         }
                         try {
                           await bringAgentToForeground(agent.id);
-                        } catch (err) {
-                          console.error('Failed to bring agent to foreground:', err);
+                        } catch {
+                          console.error('Failed to bring agent to foreground');
                         }
                       }}
                     >
@@ -557,13 +546,13 @@ export default function ProjectsPage() {
                             try {
                               const historical = await getAgentLogs(agent.id);
                               setSelectedAgentLogs({ id: agent.id, command: `${agent.command} ${agent.arguments.join(' ')}`, logs: historical });
-                            } catch (err) {
-                              setSelectedAgentLogs({ id: agent.id, command: `${agent.command} ${agent.arguments.join(' ')}`, logs: [`[SYSTEM] Failed to load logs: ${err}`] });
+                            } catch {
+                              setSelectedAgentLogs({ id: agent.id, command: `${agent.command} ${agent.arguments.join(' ')}`, logs: [`[SYSTEM] Failed to load logs`] });
                             }
                             try {
                               await bringAgentToForeground(agent.id);
-                            } catch (err) {
-                              console.error('Failed to bring agent to foreground:', err);
+                            } catch {
+                              console.error('Failed to bring agent to foreground');
                             }
                           }}
                           style={{ padding: '4px 12px', fontSize: '0.85rem', cursor: 'pointer', backgroundColor: 'transparent', border: '1px solid var(--border-subtle)', color: 'var(--text-secondary)', borderRadius: 'var(--radius-sm)' }}

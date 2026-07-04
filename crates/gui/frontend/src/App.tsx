@@ -20,7 +20,7 @@ import {
 	selectDirectory,
 	reorderProjects,
 } from "./api";
-import type { Category, Project } from "./types";
+import type { Project } from "./types";
 
 type Page = "workspace" | "settings";
 
@@ -70,7 +70,6 @@ function App() {
 	const toast = useToast();
 
 	const [page, setPage] = useState<Page>("workspace");
-	const [categories, setCategories] = useState<Category[]>([]);
 	const [projects, setProjects] = useState<Project[]>([]);
 	const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
 	const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
@@ -345,7 +344,7 @@ function App() {
 		try {
 			const ids = updated.map((p) => p.id);
 			await reorderProjects(ids);
-		} catch (err) {
+		} catch {
 			toast.error("Failed to save project order");
 			fetchProjects();
 		}
@@ -356,22 +355,12 @@ function App() {
 		setDragOverIndex(null);
 	};
 
-	// Load categories
-	const loadCategories = useCallback(async () => {
-		import("@tauri-apps/api/core").then(({ invoke }) => {
-			invoke<Category[]>("get_categories")
-				.then((cats) => setCategories(cats))
-				.catch(() => {});
-		});
-	}, []);
-
 	useEffect(() => {
 		const timer = setTimeout(() => {
 			fetchProjects();
-			loadCategories();
 		}, 0);
 		return () => clearTimeout(timer);
-	}, [fetchProjects, loadCategories]);
+	}, [fetchProjects]);
 
 	// Theme, Font startup configurations
 	useEffect(() => {
@@ -540,8 +529,6 @@ function App() {
 			toast.error(String(e) || t("proj.toast.deleteFailed"));
 		}
 	};
-
-	const selectedProject = projects.find((p) => p.id === selectedProjectId);
 
 	return (
 		<div className="app-container" style={{ userSelect: isResizing ? "none" : "auto" }}>
@@ -814,15 +801,18 @@ function App() {
 			</main>
 
 			{/* ── Right Sidebar ─────────────────────────────────── */}
-			<RightSidebar
-				projects={projects}
-				selectedProjectId={selectedProjectId}
-				onProjectSelect={(projectId) => {
-					setSelectedProjectId(projectId);
-					setPage("workspace");
-				}}
-				enabled={rightSidebarEnabled}
-			/>
+      <RightSidebar
+        projects={projects}
+        selectedProjectId={selectedProjectId}
+        onProjectSelect={(projectId) => {
+          setSelectedProjectId(projectId);
+          setPage("workspace");
+        }}
+        enabled={rightSidebarEnabled}
+        page={page}
+        onNavigate={setPage}
+        onRegisterProject={() => setShowModal(true)}
+      />
 
 			{/* Register Project Modal */}
 			{showModal && (
