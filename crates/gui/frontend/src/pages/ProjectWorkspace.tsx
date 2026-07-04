@@ -361,13 +361,13 @@ export default function ProjectWorkspace({ project, isVisible, onUnregisterProje
 
     const breadcrumbStyle: React.CSSProperties = {
       cursor: 'pointer',
-      padding: '2px 4px',
+      padding: '0px',
       borderRadius: 'var(--radius-sm, 4px)',
       transition: 'color 150ms ease, background-color 150ms ease',
     };
 
     return (
-      <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '2px', fontSize: '0.82rem', color: 'var(--text-secondary)' }}>
+      <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 0, fontSize: '0.82rem', color: 'var(--text-secondary)' }}>
         {isWindowsRoot ? (
           <span 
             onClick={() => setCurrentPath(segments[0] + '/')}
@@ -984,54 +984,56 @@ export default function ProjectWorkspace({ project, isVisible, onUnregisterProje
               <div style={{
                 display: 'flex',
                 alignItems: 'center',
-                gap: '10px',
+                gap: '4px',
                 padding: '6px 12px',
                 backgroundColor: 'var(--bg-card-outer, rgba(255,255,255,0.02))',
                 borderRadius: 'var(--radius-sm, 8px)',
                 border: '1px solid var(--border-subtle, #27272a)'
               }}>
-                <button
-                  onClick={handleGoUp}
-                  disabled={isAtRoot}
-                  style={{
-                    background: 'none',
-                    border: '1px solid var(--border-subtle, #27272a)',
-                    color: 'var(--text-primary, #fff)',
-                    cursor: isAtRoot ? 'default' : 'pointer',
-                    padding: '4px 8px',
-                    borderRadius: 'var(--radius-sm, 4px)',
-                    opacity: isAtRoot ? 0.4 : 1,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    fontSize: '0.8rem'
-                  }}
-                  title="Go Up"
-                >
-                  ⬆️
-                </button>
+                <div style={{ display: 'flex', flexDirection: 'row', gap: 0 }}>
+                  <button
+                    onClick={handleGoUp}
+                    disabled={isAtRoot}
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      color: 'var(--text-primary, #fff)',
+                      cursor: isAtRoot ? 'default' : 'pointer',
+                      padding: '4px 4px',
+                      borderRadius: 'var(--radius-sm, 4px)',
+                      opacity: isAtRoot ? 0.4 : 1,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      fontSize: '0.8rem'
+                    }}
+                    title="Go Up"
+                  >
+                    ⬆️
+                  </button>
 
-                <button
-                  onClick={() => loadFiles(currentPath)}
-                  style={{
-                    background: 'none',
-                    border: '1px solid var(--border-subtle, #27272a)',
-                    color: 'var(--text-primary, #fff)',
-                    cursor: 'pointer',
-                    padding: '4px 8px',
-                    borderRadius: 'var(--radius-sm, 4px)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    fontSize: '0.8rem'
-                  }}
-                  title="Refresh"
-                >
-                  🔄
-                </button>
+                  <button
+                    onClick={() => loadFiles(currentPath)}
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      color: 'var(--text-primary, #fff)',
+                      cursor: 'pointer',
+                      padding: '4px 4px',
+                      borderRadius: 'var(--radius-sm, 4px)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      fontSize: '0.8rem'
+                    }}
+                    title="Refresh"
+                  >
+                    🔄
+                  </button>
+                </div>
 
                 {/* Breadcrumbs */}
-                <div style={{ flex: 1, overflowX: 'auto', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', padding: '0 4px' }}>
+                <div style={{ flexGrow: 1, flexShrink: 0, flexBasis: 0, overflow: 'hidden', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', padding: 0, minWidth: 0 }}>
                   {renderBreadcrumbs()}
                 </div>
 
@@ -1049,7 +1051,8 @@ export default function ProjectWorkspace({ project, isVisible, onUnregisterProje
                     padding: '4px 10px',
                     fontSize: '0.8rem',
                     outline: 'none',
-                    width: '160px',
+                    flex: '0 1 80px',
+                    minWidth: '40px',
                     transition: 'border-color 0.2s',
                   }}
                 />
