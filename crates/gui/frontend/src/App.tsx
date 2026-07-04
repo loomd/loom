@@ -368,7 +368,7 @@ function App() {
 	useEffect(() => {
 		getTheme()
 			.then((t) => {
-				if (t === "dark" || t === "day") {
+				if (t === "dark" || t === "day" || t === "gray") {
 					setThemeState(t);
 					document.body.className = `theme-${t}`;
 				}
