@@ -667,7 +667,7 @@ export default function ProjectWorkspace({ project, isVisible, onUnregisterProje
     return {
       display: 'flex',
       flexDirection: 'row',
-      gap: '12px',
+      gap: '0px',
       width: '100%',
       height: '100%',
     };
@@ -817,6 +817,25 @@ export default function ProjectWorkspace({ project, isVisible, onUnregisterProje
             );
           })}
         </div>
+
+        {/* 最小拖拽区 - 始终保留空白区域用于窗口拖动 */}
+        <div
+          data-tauri-drag-region
+          onDoubleClick={() => {
+            // 双击恢复：滚动到最左端
+            const scrollContainer = document.querySelector('.titlebar-tabs-scroll');
+            if (scrollContainer) {
+              scrollContainer.scrollTo({ left: 0, behavior: 'smooth' });
+            }
+          }}
+          style={{
+            width: '40px',
+            flexShrink: 0,
+            alignSelf: 'stretch',
+            cursor: 'grab',
+          }}
+          title="拖拽窗口 / 双击回到起始位置"
+        />
 
         <div style={{ display: 'flex', gap: '2px', alignItems: 'center' }}>
           <button
