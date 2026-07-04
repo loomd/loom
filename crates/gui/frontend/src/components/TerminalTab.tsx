@@ -590,7 +590,6 @@ export function TerminalTab({ sessionId, cwd, command, args, env, isVisible, the
           height: 100%;
         }
         .xterm-viewport {
-          width: 100% !important;
           height: 100% !important;
           background-color: ${getOuterBg(theme)} !important;
         }
