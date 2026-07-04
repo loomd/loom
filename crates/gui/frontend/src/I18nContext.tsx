@@ -352,6 +352,9 @@ const zhDict: Dictionary = {
 	"workspace.tab.env": "环境配置",
 	"workspace.tab.instances": "实例监控",
 	"proj.sidebar.add": "注册项目",
+	"proj.sidebar.title": "项目列表",
+	"proj.sidebar.collapse": "折叠侧边栏",
+	"proj.sidebar.expand": "展开侧边栏",
 
 	// File Editor
 	"editor.loading": "正在加载文件内容...",
@@ -729,6 +732,9 @@ const enDict: Dictionary = {
 	"workspace.tab.env": "Environment",
 	"workspace.tab.instances": "Instances",
 	"proj.sidebar.add": "Register Project",
+	"proj.sidebar.title": "Projects",
+	"proj.sidebar.collapse": "Collapse Sidebar",
+	"proj.sidebar.expand": "Expand Sidebar",
 
 	// File Editor
 	"editor.loading": "Loading file contents...",

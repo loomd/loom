@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { getCurrentWindow } from '@tauri-apps/api/window';
 import {
   getCliTools,
   getTemplates,
@@ -29,6 +30,8 @@ interface Props {
   isVisible: boolean;
   onUnregisterProject: (proj: Project) => void;
   theme?: 'dark' | 'day' | 'gray';
+  isSidebarCollapsed?: boolean;
+  onToggleSidebar?: () => void;
 }
 
 interface ConsoleTab {
@@ -55,7 +58,65 @@ export function getMergedArgs(tool: CliTool, tpl: Template): string[] {
   return mergeCliArgs(tool.custom_args || [], tpl.args || []);
 }
 
-export default function ProjectWorkspace({ project, isVisible, onUnregisterProject, theme }: Props) {
+function WindowControlButtons() {
+  const appWindow = getCurrentWindow();
+  const [isMaximized, setIsMaximized] = useState(false);
+
+  useEffect(() => {
+    appWindow.isMaximized().then(setIsMaximized);
+    const unlisten = appWindow.onResized(() => {
+      appWindow.isMaximized().then(setIsMaximized);
+    });
+    return () => { unlisten.then(fn => fn()); };
+  }, [appWindow]);
+
+  const btnStyle: React.CSSProperties = {
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    lineHeight: 1,
+    padding: '4px 4px',
+    fontSize: '0.82rem',
+    borderRadius: 'var(--radius-sm, 4px)',
+    cursor: 'pointer',
+    color: 'var(--text-primary, #fff)',
+    fontWeight: 500,
+    userSelect: 'none',
+  };
+
+  return (
+    <>
+      <button
+        className="window-ctrl-btn"
+        onClick={() => appWindow.toggleMaximize()}
+        style={btnStyle}
+        title={isMaximized ? '恢复' : '最大化'}
+      >
+        {isMaximized ? (
+          <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1">
+            <path d="M3 1.5 H8.5 V7 H3 Z M1.5 3 V8.5 H7" />
+          </svg>
+        ) : (
+          <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1">
+            <rect x="1.5" y="1.5" width="7" height="7" rx="0.5" />
+          </svg>
+        )}
+      </button>
+      <button
+        className="window-ctrl-btn close"
+        onClick={() => appWindow.close()}
+        style={btnStyle}
+        title="关闭"
+      >
+        <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1">
+          <path d="M1.5 1.5 L8.5 8.5 M8.5 1.5 L1.5 8.5" />
+        </svg>
+      </button>
+    </>
+  );
+}
+
+export default function ProjectWorkspace({ project, isVisible, onUnregisterProject, theme, isSidebarCollapsed, onToggleSidebar }: Props) {
   const { t } = useI18n();
   const toast = useToast();
 
@@ -623,56 +684,68 @@ export default function ProjectWorkspace({ project, isVisible, onUnregisterProje
           alignItems: 'center',
           justifyContent: 'space-between',
           borderBottom: '1px solid var(--border-subtle, #27272a)',
-          padding: '2px 60px 4px 24px', // 右侧预留 60px 避让关闭按钮
+          padding: '2px 8px 4px 0px',
           marginBottom: '0px',
-          gap: '12px'
+          gap: '0px'
         }}
       >
-        {/* 固定标签：概览 + 技能管理 */}
-        {tabs.filter(tab => tab.id === 'overview' || tab.id === 'agents-skills').map((tab) => {
-          const isActive = tab.id === activeTabId;
-          return (
-            <div
-              key={tab.id}
-              onClick={() => setActiveTabId(tab.id)}
-              data-tauri-drag-region
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                lineHeight: 1,
-                gap: '6px',
-                padding: '6px 10px',
-                flexShrink: 0,
-                backgroundColor: isActive ? 'var(--bg-elevated, #27272a)' : 'transparent',
-                border: '1px solid',
-                borderColor: isActive ? 'var(--border-subtle, #3e3e42)' : 'transparent',
-                borderRadius: 'var(--radius-md, 6px)',
-                cursor: 'pointer',
-                color: isActive ? 'var(--text-primary, #ffffff)' : 'var(--text-secondary, #a1a1aa)',
-                fontSize: '0.82rem',
-                fontWeight: 400,
-                whiteSpace: 'nowrap',
-                userSelect: 'none',
-              }}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0px', alignSelf: 'stretch' }}>
+          {onToggleSidebar && (
+            <button
+              onClick={onToggleSidebar}
+              className="sidebar-toggle-mini-btn"
+              title={isSidebarCollapsed ? t("proj.sidebar.expand") : t("proj.sidebar.collapse")}
+              style={{ marginLeft: '0px', marginRight: '0px' }}
             >
-              <span style={{
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                whiteSpace: 'nowrap',
-                display: 'inline-block',
-                maxWidth: tab.id === 'overview' ? '80px' : '60px'
-              }}>
-                {tab.title}
-              </span>
-            </div>
-          );
-        })}
+              {isSidebarCollapsed ? "▶" : "◀"}
+            </button>
+          )}
 
-        {tabs.filter(tab => tab.id !== 'overview' && tab.id !== 'agents-skills').length > 0 && (
-          <div style={{ width: '1px', alignSelf: 'stretch', backgroundColor: 'var(--border-subtle, #27272a)', flexShrink: 0 }} />
-        )}
+          {/* 固定标签：概览 + 技能管理 */}
+          {tabs.filter(tab => tab.id === 'overview' || tab.id === 'agents-skills').map((tab) => {
+            const isActive = tab.id === activeTabId;
+            return (
+              <div
+                key={tab.id}
+                onClick={() => setActiveTabId(tab.id)}
+                data-tauri-drag-region
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  lineHeight: 1,
+                  gap: '6px',
+                  padding: '4px 4px',
+                  flexShrink: 0,
+                  backgroundColor: isActive ? 'var(--bg-elevated, #27272a)' : 'transparent',
+                  border: '1px solid',
+                  borderColor: isActive ? 'var(--border-subtle, #3e3e42)' : 'transparent',
+                  borderRadius: 'var(--radius-md, 6px)',
+                  cursor: 'pointer',
+                  color: isActive ? 'var(--text-primary, #ffffff)' : 'var(--text-secondary, #a1a1aa)',
+                  fontSize: '0.82rem',
+                  fontWeight: 400,
+                  whiteSpace: 'nowrap',
+                  userSelect: 'none',
+                }}
+              >
+                <span style={{
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                  display: 'inline-block',
+                  maxWidth: tab.id === 'overview' ? '80px' : '60px'
+                }}>
+                  {tab.title}
+                </span>
+              </div>
+            );
+          })}
 
-        {/* 可滚动标签：终端 / 编辑器等动态标签 */}
+          {tabs.filter(tab => tab.id !== 'overview' && tab.id !== 'agents-skills').length > 0 && (
+            <div style={{ width: '1px', alignSelf: 'stretch', backgroundColor: 'var(--border-subtle, #27272a)', flexShrink: 0, margin: '6px 0' }} />
+          )}
+        </div>
+{/* 可滚动标签：终端 / 编辑器等动态标签 */}
         <div
           data-tauri-drag-region
           onWheel={(e) => {
@@ -680,7 +753,7 @@ export default function ProjectWorkspace({ project, isVisible, onUnregisterProje
           }}
           style={{
             display: 'flex',
-            gap: '4px',
+            gap: '2px',
             overflowX: 'auto',
             flex: 1,
             scrollbarWidth: 'none',
@@ -689,17 +762,19 @@ export default function ProjectWorkspace({ project, isVisible, onUnregisterProje
           className="titlebar-tabs-scroll"
         >
           {tabs.filter(tab => tab.id !== 'overview' && tab.id !== 'agents-skills').map((tab) => {
-            const isActive = tab.id === activeTabId;
+            const isActive = showGrid
+              ? tab.type === 'terminal' && terminals.findIndex(t => t.id === tab.id) < 2
+              : tab.id === activeTabId;
             return (
               <div
                 key={tab.id}
-                onClick={() => setActiveTabId(tab.id)}
+                onClick={() => { if (!showGrid) setActiveTabId(tab.id); }}
                 style={{
                   display: 'flex',
                   alignItems: 'center',
                   lineHeight: 1,
-                  gap: '6px',
-                  padding: '6px 10px',
+                  gap: '0px',
+                  padding: '4px 4px',
                   flexShrink: 0,
                   backgroundColor: isActive ? 'var(--bg-elevated, #27272a)' : 'transparent',
                   border: '1px solid',
@@ -726,7 +801,7 @@ export default function ProjectWorkspace({ project, isVisible, onUnregisterProje
                 <span
                   onClick={(e) => handleCloseTerminal(tab.id, e)}
                   style={{
-                    marginLeft: '2px',
+                    marginLeft: '0px',
                     cursor: 'pointer',
                     display: 'inline-block',
                     width: '12px',
@@ -743,15 +818,15 @@ export default function ProjectWorkspace({ project, isVisible, onUnregisterProje
           })}
         </div>
 
-        <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+        <div style={{ display: 'flex', gap: '2px', alignItems: 'center' }}>
           <button
-            onClick={handleAddRawTerminal}
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              lineHeight: 1,
-              padding: '6px 10px',
-              fontSize: '0.82rem',
+              onClick={handleAddRawTerminal}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                lineHeight: 1,
+                padding: '4px 4px',
+                fontSize: '0.82rem',
               borderRadius: 'var(--radius-sm, 4px)',
               cursor: 'pointer',
               backgroundColor: 'var(--bg-elevated, #18181b)',
@@ -761,7 +836,7 @@ export default function ProjectWorkspace({ project, isVisible, onUnregisterProje
               userSelect: 'none',
             }}
           >
-            {t('proj.launcher.btn.spawn') === '启动 Agent' ? '新建终端' : 'New Terminal'}
+            {t('proj.launcher.btn.spawn') === '启动 Agent' ? '终端' : 'Terminal'}
           </button>
 
           {tabs.filter(t => t.type === 'terminal').length > 1 && (
@@ -771,7 +846,7 @@ export default function ProjectWorkspace({ project, isVisible, onUnregisterProje
                 display: 'inline-flex',
                 alignItems: 'center',
                 lineHeight: 1,
-                padding: '6px 10px',
+                padding: '4px 4px',
                 fontSize: '0.82rem',
                 borderRadius: 'var(--radius-sm, 4px)',
                 cursor: 'pointer',
@@ -782,9 +857,11 @@ export default function ProjectWorkspace({ project, isVisible, onUnregisterProje
                 userSelect: 'none',
               }}
             >
-              🔳 {isGridLayout ? '单签切换' : '平铺多开'}
+              {isGridLayout ? (t('proj.launcher.btn.spawn') === '启动 Agent' ? '单签' : 'Single') : (t('proj.launcher.btn.spawn') === '启动 Agent' ? '双开' : 'Dual')}
             </button>
           )}
+
+          <WindowControlButtons />
         </div>
       </div>
 

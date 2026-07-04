@@ -4,7 +4,6 @@ import { ToastProvider, useToast } from "./ToastContext";
 import { I18nProvider, useI18n } from "./I18nContext";
 import SettingsPage from "./pages/SettingsPage";
 import ProjectWorkspace from "./pages/ProjectWorkspace";
-import { TitleBar } from "./components/TitleBar";
 import {
 	getTheme,
 	setTheme,
@@ -89,6 +88,63 @@ function App() {
 	} | null>(null);
 	const [updateDownload, setUpdateDownload] = useState<unknown>(null); // Update object from tauri-plugin-updater
 	const [showUpdateToast, setShowUpdateToast] = useState(false);
+
+	const [sidebarWidth, setSidebarWidth] = useState<number>(() => {
+		const saved = localStorage.getItem("loom_sidebar_width");
+		return saved ? parseInt(saved, 10) : 170;
+	});
+	const [isCollapsed, setIsCollapsed] = useState<boolean>(() => {
+		const saved = localStorage.getItem("loom_sidebar_collapsed");
+		return saved === "true";
+	});
+	const [isResizing, setIsResizing] = useState<boolean>(false);
+
+	useEffect(() => {
+		localStorage.setItem("loom_sidebar_width", sidebarWidth.toString());
+	}, [sidebarWidth]);
+
+	useEffect(() => {
+		localStorage.setItem("loom_sidebar_collapsed", isCollapsed.toString());
+	}, [isCollapsed]);
+
+	const handleMouseDown = useCallback((e: React.MouseEvent) => {
+		e.preventDefault();
+		setIsResizing(true);
+		const startX = e.clientX;
+		const startWidth = sidebarWidth;
+
+		const handleMouseMove = (moveEvent: MouseEvent) => {
+			const deltaX = moveEvent.clientX - startX;
+			let newWidth = startWidth + deltaX;
+
+			const minWidth = 140;
+			const maxWidth = 450;
+			const collapseThreshold = 80;
+
+			if (newWidth < collapseThreshold) {
+				setIsCollapsed(true);
+			} else {
+				setIsCollapsed(false);
+				if (newWidth < minWidth) newWidth = minWidth;
+				if (newWidth > maxWidth) newWidth = maxWidth;
+				setSidebarWidth(newWidth);
+			}
+		};
+
+		const handleMouseUp = () => {
+			setIsResizing(false);
+			document.removeEventListener("mousemove", handleMouseMove);
+			document.removeEventListener("mouseup", handleMouseUp);
+		};
+
+		document.addEventListener("mousemove", handleMouseMove);
+		document.addEventListener("mouseup", handleMouseUp);
+	}, [sidebarWidth]);
+
+	const handleDoubleClick = useCallback(() => {
+		setSidebarWidth(170);
+		setIsCollapsed(false);
+	}, []);
 
 	const performUpdateCheck = useCallback(
 		async (isManual: boolean = false) => {
@@ -479,14 +535,19 @@ function App() {
 	const selectedProject = projects.find((p) => p.id === selectedProjectId);
 
 	return (
-		<div className="app-container">
-			<TitleBar />
-			<div className="app-shell">
+		<div className="app-container" style={{ userSelect: isResizing ? "none" : "auto" }}>
+			<div
+				className="app-shell"
+				style={{
+					gridTemplateColumns: isCollapsed ? "1fr" : `${sidebarWidth}px 1fr`,
+				}}
+			>
 			{/* ── Sidebar ─────────────────────────────────────── */}
 			<aside
 				className="sidebar"
-				style={{ display: "flex", flexDirection: "column", height: "100%" }}
+				style={{ display: isCollapsed ? "none" : "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}
 			>
+
 				{/* Project Selector List */}
 				<div
 					style={{
@@ -623,6 +684,25 @@ function App() {
 				</div>
 			</aside>
 
+				{/* ── Sidebar Drag Resizer Handle ────────────────────── */}
+				{!isCollapsed && (
+					<div
+						className="sidebar-resizer"
+						style={{
+							position: "absolute",
+							left: `${sidebarWidth}px`,
+							top: 0,
+							bottom: 0,
+							width: "4px",
+							marginLeft: "-2px",
+							cursor: "col-resize",
+							zIndex: 100
+						}}
+						onMouseDown={handleMouseDown}
+						onDoubleClick={handleDoubleClick}
+					/>
+				)}
+
 			{/* ── Main Content ─────────────────────────────────── */}
 			<main className="main-content">
 				<div
@@ -683,6 +763,8 @@ function App() {
 								}}
 							>
 								<ProjectWorkspace
+										isSidebarCollapsed={isCollapsed}
+										onToggleSidebar={() => setIsCollapsed(!isCollapsed)}
 									project={p}
 									isVisible={page === "workspace" && p.id === selectedProjectId}
 									onUnregisterProject={handleUnregisterProject}

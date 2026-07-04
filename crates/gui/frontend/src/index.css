@@ -208,12 +208,51 @@ body.theme-day {
 
 .app-shell {
   display: grid;
-  grid-template-columns: 170px 1fr;
   grid-template-rows: 1fr;
   flex: 1;
   min-height: 0;
   position: relative;
   overflow: hidden;
+}
+
+/* ─── Sidebar Resizer Drag Handle ─── */
+.sidebar-resizer {
+  width: 4px;
+  cursor: col-resize;
+  background: transparent;
+  transition: background-color 200ms;
+  position: relative;
+  z-index: 100;
+  height: 100%;
+}
+
+.sidebar-resizer:hover,
+.sidebar-resizer:active {
+  background: var(--accent-purple);
+}
+
+/* ─── Sidebar Toggle Mini Button ─── */
+.sidebar-toggle-mini-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 4px 6px;
+  font-size: 0.75rem;
+  border-radius: var(--radius-md);
+  transition: background-color 200ms, color 200ms;
+  margin-right: 2px;
+  flex-shrink: 0;
+  user-select: none;
+}
+
+.sidebar-toggle-mini-btn:hover {
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  border-color: var(--border-subtle);
 }
 
 /* ─── Ambient Background Orbs ────────────────────────────── */
@@ -1155,48 +1194,23 @@ body.theme-day select.input option {
   color: var(--text-secondary);
 }
 
-/* ─── Custom Title Bar Styles ─────────────────────────────── */
-.app-titlebar {
-  position: fixed;
-  top: 0;
-  right: 0;
-  height: 32px;
-  width: 46px;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  user-select: none;
-  z-index: 9999;
-  background: transparent;
-  transition: background-color 300ms var(--ease-spring);
-}
+/* ─── Custom Title Bar Styles (已废弃，按钮现在内联在 ProjectWorkspace) ── */
+/* .app-titlebar 和 .titlebar-button 样式已移除 */
 
-.titlebar-button {
-  background: transparent;
+/* ─── Window Control Buttons (关闭/最大化) ────────────────── */
+.window-ctrl-btn {
+  background-color: transparent;
   border: none;
-  outline: none;
-  height: 100%;
-  width: 100%;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--text-secondary);
-  cursor: pointer;
-  transition: background-color 200ms, color 200ms;
 }
 
-.titlebar-button:hover {
+.window-ctrl-btn:hover {
   background-color: var(--bg-hover);
   color: var(--text-primary);
 }
 
-.titlebar-button.close:hover {
+.window-ctrl-btn.close:hover {
   background-color: var(--accent-red, #ef4444);
   color: #ffffff;
-}
-
-.titlebar-button svg {
-  pointer-events: none;
 }
 
 /* 隐藏 Tab 横向滚动条 */
