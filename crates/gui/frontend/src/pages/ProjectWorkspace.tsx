@@ -1457,6 +1457,7 @@ export default function ProjectWorkspace({ project, isVisible, onUnregisterProje
                   env={tab.env}
                   isVisible={isTerminalVisible}
                   theme={theme}
+                  isTopInVerticalLayout={layoutMode === 'vertical' && idx === 0}
                 />
               </div>
             );

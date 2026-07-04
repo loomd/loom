@@ -13,6 +13,7 @@ interface TerminalTabProps {
   env?: Record<string, string>;
   isVisible: boolean;
   theme?: 'dark' | 'day' | 'gray';
+  isTopInVerticalLayout?: boolean;
 }
 
 const getTerminalTheme = (theme?: 'dark' | 'day' | 'gray') => {
@@ -86,7 +87,7 @@ const getTerminalTheme = (theme?: 'dark' | 'day' | 'gray') => {
   }
 };
 
-export function TerminalTab({ sessionId, cwd, command, args, env, isVisible, theme }: TerminalTabProps) {
+export function TerminalTab({ sessionId, cwd, command, args, env, isVisible, theme, isTopInVerticalLayout }: TerminalTabProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const outerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
@@ -574,7 +575,7 @@ export function TerminalTab({ sessionId, cwd, command, args, env, isVisible, the
         width: '100%',
         height: '100%',
         backgroundColor: getOuterBg(theme),
-        padding: '4px 4px 28px 4px',
+        padding: `4px 4px ${isTopInVerticalLayout ? '4px' : '28px'} 4px`,
         margin: '0px',
         overflow: 'hidden',
         position: 'relative',
