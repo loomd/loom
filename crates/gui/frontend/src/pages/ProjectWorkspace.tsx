@@ -1423,7 +1423,7 @@ export default function ProjectWorkspace({ project, isVisible, onUnregisterProje
           ...getGridStyle(),
           flex: 1,
           minHeight: 0,
-          paddingRight: '6px',
+          paddingRight: '0px',
           backgroundColor: '#121214',
           boxSizing: 'border-box',
           display: (showGrid || terminals.some(t => t.id === activeTabId)) ? 'flex' : 'none'
