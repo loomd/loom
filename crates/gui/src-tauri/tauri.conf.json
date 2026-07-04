@@ -1,6 +1,6 @@
 {
   "productName": "Loom",
-  "version": "0.2.17",
+  "version": "0.2.18",
   "identifier": "com.loom.app",
   "build": {
     "beforeDevCommand": "npm --prefix frontend run dev",
