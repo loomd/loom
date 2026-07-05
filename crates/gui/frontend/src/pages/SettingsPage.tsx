@@ -1888,7 +1888,7 @@ export default function SettingsPage({
 													key={tpl.id}
 													className="template-card"
 													style={{
-														backgroundColor: "var(--bg-card)",
+						backgroundColor: "var(--bg-modal)",
 														border: "1px solid var(--border-subtle)",
 														borderRadius: "var(--radius-md)",
 														padding: "14px 16px",
@@ -2494,7 +2494,7 @@ export default function SettingsPage({
 						top: "16px",
 						right: "16px",
 						zIndex: 2000,
-						backgroundColor: "var(--bg-card)",
+						backgroundColor: "var(--bg-modal)",
 						border: "1px solid var(--border-subtle)",
 						borderRadius: "var(--radius-md)",
 						padding: "16px 20px",
