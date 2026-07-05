@@ -157,7 +157,11 @@ export default function SettingsPage({
 	const [autostartEnabled, setAutostartEnabled] = useState<boolean>(false);
 	const [isChecking, setIsChecking] = useState<boolean>(false);
 	// Toast close is local; prop only drives initial show
-	const toastVisible = !!showUpdateToast;
+	const [toastVisible, setToastVisible] = useState<boolean>(!!showUpdateToast);
+
+	useEffect(() => {
+		setToastVisible(!!showUpdateToast);
+	}, [showUpdateToast]);
 
 	const handleManualCheck = async () => {
 		if (isChecking) return;
