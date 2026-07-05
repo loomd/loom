@@ -95,7 +95,7 @@ function App() {
 	});
 	const [isCollapsed, setIsCollapsed] = useState<boolean>(() => {
 		const saved = localStorage.getItem("loom_sidebar_collapsed");
-		return saved === "true";
+		return saved !== "false";
 	});
 	const [isResizing, setIsResizing] = useState<boolean>(false);
 	const [rightSidebarEnabled, setRightSidebarEnabled] = useState<boolean>(() => {
