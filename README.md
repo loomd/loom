@@ -1,5 +1,3 @@
-# Loom
-
 <p align="center">
   <img src="samples/20260706-124550.jpg" alt="Loom Screenshot" width="780" />
 </p>
