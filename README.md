@@ -1,6 +1,11 @@
 # Loom
 
 <p align="center">
+  <img src="samples/20260706-124601.jpg" alt="Loom Screenshot" width="780" />
+</p>
+
+
+<p align="center">
   <img src="crates/gui/src-tauri/icons/tray.png" alt="Loom Logo" width="120" />
 </p>
 
