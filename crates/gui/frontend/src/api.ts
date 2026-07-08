@@ -353,3 +353,9 @@ export const getSkippedVersion = (): Promise<string | null> =>
 
 export const setSkippedVersion = (version: string | null): Promise<void> =>
 	invoke("set_skipped_version", { version });
+
+export const getUpdateCheckInterval = (): Promise<string> =>
+	invoke("get_update_check_interval");
+
+export const setUpdateCheckInterval = (interval: string): Promise<void> =>
+	invoke("set_update_check_interval", { interval });

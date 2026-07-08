@@ -72,6 +72,10 @@ pub fn default_project_column_align() -> String {
     "top".to_string()
 }
 
+pub fn default_update_check_interval() -> String {
+    String::new()
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Project {
     pub id: String,
@@ -150,6 +154,8 @@ pub struct LoomStorage {
     pub autostart: bool,
     #[serde(default)]
     pub skipped_version: Option<String>,
+    #[serde(default = "default_update_check_interval")]
+    pub update_check_interval: String,
 }
 
 impl Default for LoomStorage {
@@ -170,6 +176,7 @@ impl Default for LoomStorage {
             global_docs: Vec::new(),
             autostart: false,
             skipped_version: None,
+            update_check_interval: default_update_check_interval(),
         }
     }
 }

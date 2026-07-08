@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { useI18n } from "../../I18nContext";
 import { useToast } from "../../ToastContext";
-import { getAutostart, setAutostart } from "../../api";
+import { getAutostart, setAutostart, getUpdateCheckInterval, setUpdateCheckInterval } from "../../api";
 
 interface Props {
 	theme: "dark" | "day" | "gray";
@@ -22,7 +22,6 @@ interface Props {
 	onCheckUpdate: (isManual: boolean) => Promise<void>;
 	onInstallUpdate?: () => void;
 	onSkipVersion?: (version: string) => void;
-	showUpdateToast?: boolean;
 	rightSidebarEnabled: boolean;
 	onRightSidebarEnabledChange: (enabled: boolean) => void;
 }
@@ -50,7 +49,6 @@ export default function GeneralSettingsTab({
 	onCheckUpdate,
 	onInstallUpdate,
 	onSkipVersion,
-	showUpdateToast,
 	rightSidebarEnabled,
 	onRightSidebarEnabledChange,
 }: Props) {
@@ -59,23 +57,7 @@ export default function GeneralSettingsTab({
 	const [appVersion, setAppVersion] = useState<string>("0.1.5");
 	const [autostartEnabled, setAutostartEnabled] = useState<boolean>(false);
 	const [isChecking, setIsChecking] = useState<boolean>(false);
-	const [toastVisible, setToastVisible] = useState<boolean>(!!showUpdateToast);
-
-	useEffect(() => {
-		setToastVisible(!!showUpdateToast);
-	}, [showUpdateToast]);
-
-	const handleManualCheck = async () => {
-		if (isChecking) return;
-		setIsChecking(true);
-		try {
-			await onCheckUpdate(true);
-		} catch {
-			console.error("Failed to manually check update");
-		} finally {
-			setIsChecking(false);
-		}
-	};
+	const [checkInterval, setCheckInterval] = useState<string>("");
 
 	useEffect(() => {
 		import("@tauri-apps/api/app")
@@ -89,7 +71,32 @@ export default function GeneralSettingsTab({
 		getAutostart()
 			.then((enabled) => setAutostartEnabled(enabled))
 			.catch((err) => console.error("Failed to fetch autostart status:", err));
+
+		getUpdateCheckInterval()
+			.then((interval) => setCheckInterval(interval || ""))
+			.catch(() => {});
 	}, []);
+
+	const handleChangeInterval = async (interval: string) => {
+		try {
+			await setUpdateCheckInterval(interval);
+			setCheckInterval(interval);
+		} catch (err) {
+			console.error("Failed to set update check interval:", err);
+		}
+	};
+
+	const handleManualCheck = async () => {
+		if (isChecking) return;
+		setIsChecking(true);
+		try {
+			await onCheckUpdate(true);
+		} catch {
+			console.error("Failed to manually check update");
+		} finally {
+			setIsChecking(false);
+		}
+	};
 
 	const handleAutostartToggle = async (enabled: boolean) => {
 		try {
@@ -1020,111 +1027,74 @@ export default function GeneralSettingsTab({
 							)}
 						</button>
 					</div>
-				</div>
-			</div>
 
-			{/* Update Notification Toast */}
-			{toastVisible && updateInfo && updateInfo.hasUpdate && (
-				<div
-					style={{
-						position: "fixed",
-						top: "16px",
-						right: "16px",
-						zIndex: 2000,
-						backgroundColor: "var(--bg-modal)",
-						border: "1px solid var(--border-subtle)",
-						borderRadius: "var(--radius-md)",
-						padding: "16px 20px",
-						boxShadow: "0 8px 32px rgba(0, 0, 0, 0.3)",
-						maxWidth: "360px",
-						display: "flex",
-						flexDirection: "column",
-						gap: "12px",
-					}}
-				>
+					{/* Check Interval Setting */}
 					<div
 						style={{
-							display: "flex",
-							justifyContent: "space-between",
-							alignItems: "center",
+							marginTop: "16px",
+							paddingTop: "16px",
+							borderTop: "1px solid var(--border-subtle)",
 						}}
 					>
-						<span
+						<div
 							style={{
+								fontSize: "13px",
 								fontWeight: 600,
 								color: "var(--text-primary)",
-								fontSize: "14px",
+								marginBottom: "4px",
 							}}
 						>
-							{t("settings.version.newUpdate")}
-						</span>
-						<button
-							onClick={() => setToastVisible(false)}
-							style={{
-								background: "none",
-								border: "none",
-								color: "var(--text-tertiary)",
-								cursor: "pointer",
-								fontSize: "16px",
-								padding: "0 4px",
-							}}
-						>
-							✕
-						</button>
-					</div>
-					<div style={{ fontSize: "13px", color: "var(--text-secondary)" }}>
-						{t("settings.version.available")}: v{updateInfo.latestVersion}
-					</div>
-					{updateInfo.body && (
+							{t("settings.version.checkInterval.title")}
+						</div>
 						<div
 							style={{
 								fontSize: "12px",
-								color: "var(--text-tertiary)",
-								maxHeight: "60px",
-								overflowY: "auto",
-								whiteSpace: "pre-wrap",
+								color: "var(--text-secondary)",
+								marginTop: "4px",
+								marginBottom: "10px",
 							}}
 						>
-							{updateInfo.body}
+							{t("settings.version.checkInterval.desc")}
 						</div>
-					)}
-					<div
-						style={{ display: "flex", gap: "8px", justifyContent: "flex-end" }}
-					>
-						{onSkipVersion && updateInfo.latestVersion && (
-							<button
-								onClick={() => onSkipVersion(updateInfo.latestVersion)}
-								style={{
-									backgroundColor: "transparent",
-									border: "1px solid var(--border-subtle)",
-									color: "var(--text-secondary)",
-									padding: "4px 12px",
-									borderRadius: "var(--radius-sm)",
-									cursor: "pointer",
-									fontSize: "12px",
-								}}
-							>
-								{t("settings.version.skip")}
-							</button>
-						)}
-						<button
-							onClick={onInstallUpdate}
-							style={{
-								backgroundColor: "var(--accent-purple)",
-								border: "none",
-								color: "#fff",
-								padding: "4px 16px",
-								borderRadius: "var(--radius-sm)",
-								cursor: "pointer",
-								fontSize: "12px",
-								fontWeight: 500,
-							}}
-						>
-							{t("settings.version.installNow")}
-						</button>
+						<div style={{ display: "flex", gap: "8px" }}>
+							{(
+								[
+									{ value: "", label: t("settings.version.checkInterval.never") },
+									{ value: "30min", label: t("settings.version.checkInterval.30min") },
+									{ value: "1h", label: t("settings.version.checkInterval.1h") },
+								] as const
+							).map((opt) => (
+								<button
+									key={opt.value}
+									onClick={() => handleChangeInterval(opt.value)}
+									style={{
+										background:
+											checkInterval === opt.value
+												? "var(--accent-purple)"
+												: "var(--bg-elevated)",
+										border:
+											checkInterval === opt.value
+												? "1px solid var(--accent-purple)"
+												: "1px solid var(--border-mid)",
+										borderRadius: "6px",
+										padding: "6px 14px",
+										cursor: "pointer",
+										color:
+											checkInterval === opt.value
+												? "#ffffff"
+												: "var(--text-secondary)",
+										fontSize: "13px",
+										fontWeight: 500,
+										transition: "all 200ms ease",
+									}}
+								>
+									{opt.label}
+								</button>
+							))}
+						</div>
 					</div>
 				</div>
-			)}
+			</div>
 		</div>
 	);
 }

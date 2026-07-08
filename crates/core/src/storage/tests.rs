@@ -81,6 +81,7 @@ fn test_serialization_fidelity() {
         global_docs: Vec::new(),
         autostart: false,
         skipped_version: None,
+        update_check_interval: String::new(),
     };
 
     // Serialize

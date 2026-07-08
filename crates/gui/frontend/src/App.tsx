@@ -88,6 +88,10 @@ function App() {
 	} | null>(null);
 	const [updateDownload, setUpdateDownload] = useState<unknown>(null); // Update object from tauri-plugin-updater
 	const [showUpdateToast, setShowUpdateToast] = useState(false);
+	const [downloadProgress, setDownloadProgress] = useState<{
+		status: "idle" | "downloading" | "preparing" | "complete" | "error";
+		percent: number;
+	}>({ status: "idle", percent: 0 });
 
 	const [sidebarWidth, setSidebarWidth] = useState<number>(() => {
 		const saved = localStorage.getItem("loom_sidebar_width");
@@ -233,8 +237,11 @@ function App() {
 			toast.error(t("settings.version.noUpdate"));
 			return;
 		}
+		setDownloadProgress({ status: "downloading", percent: 0 });
 		try {
 			const { relaunch } = await import("@tauri-apps/plugin-process");
+			let contentLength = 0;
+			let downloaded = 0;
 
 			await (
 				updateDownload as {
@@ -248,18 +255,30 @@ function App() {
 			).downloadAndInstall((event) => {
 				switch (event.event) {
 					case "Started":
-						toast.info(t("settings.version.downloading"));
+						contentLength = event.data.contentLength || 0;
+						setDownloadProgress({ status: "downloading", percent: 0 });
+						break;
+					case "Progress":
+						downloaded += event.data.chunkLength || 0;
+						if (contentLength > 0) {
+							setDownloadProgress({
+								status: "downloading",
+								percent: Math.round((downloaded / contentLength) * 100),
+							});
+						}
 						break;
 					case "Finished":
-						toast.success(t("settings.version.downloadComplete"));
+						setDownloadProgress({ status: "preparing", percent: 100 });
 						break;
 				}
 			});
 
+			setDownloadProgress({ status: "complete", percent: 100 });
 			toast.success(t("settings.version.installReady"));
 			await relaunch();
 		} catch (err) {
 			console.error("Failed to install update:", err);
+			setDownloadProgress({ status: "error", percent: 0 });
 			toast.error(t("settings.version.installFailed"));
 		}
 	}, [updateDownload, t, toast]);
@@ -270,6 +289,7 @@ function App() {
 				await (await import("./api")).setSkippedVersion(version);
 				setShowUpdateToast(false);
 				setUpdateInfo(null);
+				setDownloadProgress({ status: "idle", percent: 0 });
 				toast.info(t("settings.version.skipped", { version }));
 			} catch (err) {
 				console.error("Failed to skip version:", err);
@@ -286,6 +306,39 @@ function App() {
 
 		return () => clearTimeout(timer);
 	}, [performUpdateCheck]);
+
+	// Periodic update check based on interval setting
+	useEffect(() => {
+		let intervalId: ReturnType<typeof setInterval> | null = null;
+
+		const setupInterval = async () => {
+			try {
+				const { getUpdateCheckInterval } = await import("./api");
+				const interval = await getUpdateCheckInterval();
+
+				let ms: number | null = null;
+				if (interval === "30min") {
+					ms = 30 * 60 * 1000;
+				} else if (interval === "1h") {
+					ms = 60 * 60 * 1000;
+				}
+
+				if (ms) {
+					intervalId = setInterval(() => {
+						performUpdateCheck(false);
+					}, ms);
+				}
+			} catch (e) {
+				console.error("Failed to read update check interval:", e);
+			}
+		};
+
+		setupInterval();
+
+		return () => {
+			if (intervalId) clearInterval(intervalId);
+		};
+	}, []);
 
 	// Register project modal states
 	const [showModal, setShowModal] = useState(false);
@@ -793,7 +846,6 @@ function App() {
 						onCheckUpdate={performUpdateCheck}
 						onInstallUpdate={handleInstallUpdate}
 						onSkipVersion={handleSkipVersion}
-						showUpdateToast={showUpdateToast}
 						rightSidebarEnabled={rightSidebarEnabled}
 						onRightSidebarEnabledChange={setRightSidebarEnabled}
 					/>
@@ -813,6 +865,167 @@ function App() {
         onNavigate={setPage}
         onRegisterProject={() => setShowModal(true)}
       />
+
+			{/* ── Update Notification Toast ────────────────────────────────── */}
+			{showUpdateToast && updateInfo && updateInfo.hasUpdate && (
+				<div
+					style={{
+						position: "fixed",
+						top: "16px",
+						right: "16px",
+						zIndex: 2000,
+						backgroundColor: "var(--bg-modal)",
+						border: "1px solid var(--border-subtle)",
+						borderRadius: "var(--radius-md, 8px)",
+						padding: "16px 20px",
+						boxShadow: "0 8px 32px rgba(0, 0, 0, 0.3)",
+						width: "340px",
+						display: "flex",
+						flexDirection: "column",
+						gap: "12px",
+					}}
+				>
+					<div
+						style={{
+							display: "flex",
+							justifyContent: "space-between",
+							alignItems: "center",
+						}}
+					>
+						<span
+							style={{
+								fontWeight: 600,
+								color: "var(--text-primary)",
+								fontSize: "14px",
+							}}
+						>
+							{t("settings.version.newUpdate")}
+						</span>
+						<button
+							onClick={() => {
+								setShowUpdateToast(false);
+								setDownloadProgress({ status: "idle", percent: 0 });
+							}}
+							style={{
+								background: "none",
+								border: "none",
+								color: "var(--text-tertiary)",
+								cursor: "pointer",
+								fontSize: "16px",
+								padding: "0 4px",
+							}}
+						>
+							✕
+						</button>
+					</div>
+					<div style={{ fontSize: "13px", color: "var(--text-secondary)" }}>
+						{t("settings.version.available")}: v{updateInfo.latestVersion}
+					</div>
+					{updateInfo.body && (
+						<div
+							style={{
+								fontSize: "12px",
+								color: "var(--text-tertiary)",
+								maxHeight: "60px",
+								overflowY: "auto",
+								whiteSpace: "pre-wrap",
+							}}
+						>
+							{updateInfo.body}
+						</div>
+					)}
+
+					{downloadProgress.status !== "idle" && downloadProgress.status !== "error" && (
+						<div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+							<div
+								style={{
+									display: "flex",
+									justifyContent: "space-between",
+									fontSize: "12px",
+									color: "var(--text-secondary)",
+								}}
+							>
+								<span>
+									{downloadProgress.status === "downloading"
+										? t("settings.version.progress.downloading")
+										: downloadProgress.status === "preparing"
+											? t("settings.version.progress.preparing")
+											: t("settings.version.progress.complete")}
+								</span>
+								<span>{downloadProgress.percent}%</span>
+							</div>
+							<div
+								style={{
+									width: "100%",
+									height: "6px",
+									backgroundColor: "var(--bg-elevated)",
+									borderRadius: "3px",
+									overflow: "hidden",
+								}}
+							>
+								<div
+									style={{
+										width: `${downloadProgress.percent}%`,
+										height: "100%",
+										backgroundColor: "var(--accent-purple, #9b5de5)",
+										borderRadius: "3px",
+										transition: "width 200ms ease",
+									}}
+								/>
+							</div>
+						</div>
+					)}
+
+					{downloadProgress.status === "error" && (
+						<div
+							style={{
+								fontSize: "12px",
+								color: "#e63946",
+							}}
+						>
+							{t("settings.version.installFailed")}
+						</div>
+					)}
+
+					{downloadProgress.status === "idle" && (
+						<div
+							style={{ display: "flex", gap: "8px", justifyContent: "flex-end" }}
+						>
+							{updateInfo.latestVersion && (
+								<button
+									onClick={() => handleSkipVersion(updateInfo.latestVersion)}
+									style={{
+										backgroundColor: "transparent",
+										border: "1px solid var(--border-subtle)",
+										color: "var(--text-secondary)",
+										padding: "4px 12px",
+										borderRadius: "var(--radius-sm, 4px)",
+										cursor: "pointer",
+										fontSize: "12px",
+									}}
+								>
+									{t("settings.version.skip")}
+								</button>
+							)}
+							<button
+								onClick={handleInstallUpdate}
+								style={{
+									backgroundColor: "var(--accent-purple, #9b5de5)",
+									border: "none",
+									color: "#fff",
+									padding: "4px 16px",
+									borderRadius: "var(--radius-sm, 4px)",
+									cursor: "pointer",
+									fontSize: "12px",
+									fontWeight: 500,
+								}}
+							>
+								{t("settings.version.installNow")}
+							</button>
+						</div>
+					)}
+				</div>
+			)}
 
 			{/* Register Project Modal */}
 			{showModal && (

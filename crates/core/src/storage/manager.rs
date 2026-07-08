@@ -1651,6 +1651,18 @@ pub fn set_project_column_align(align: String) -> Result<()> {
     Ok(())
 }
 
+pub fn get_update_check_interval() -> Result<String> {
+    let config = load_config()?;
+    Ok(config.update_check_interval.clone())
+}
+
+pub fn set_update_check_interval(interval: String) -> Result<()> {
+    let mut config = load_config()?;
+    config.update_check_interval = interval;
+    save_config(&config)?;
+    Ok(())
+}
+
 pub fn update_category(cat_id: String, name: String, desc: String) -> Result<Category> {
     if name.is_empty() {
         return Err(StorageError::Validation(

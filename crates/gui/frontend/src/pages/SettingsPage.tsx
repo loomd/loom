@@ -25,7 +25,6 @@ interface Props {
 	onCheckUpdate: (isManual: boolean) => Promise<void>;
 	onInstallUpdate?: () => void;
 	onSkipVersion?: (version: string) => void;
-	showUpdateToast?: boolean;
 	rightSidebarEnabled: boolean;
 	onRightSidebarEnabledChange: (enabled: boolean) => void;
 }
@@ -43,12 +42,11 @@ export default function SettingsPage({
 	onFontSizeChange,
 	updateInfo,
 	onCheckUpdate,
-	onInstallUpdate,
-	onSkipVersion,
-	showUpdateToast,
-	rightSidebarEnabled,
-	onRightSidebarEnabledChange,
-}: Props) {
+onInstallUpdate,
+		onSkipVersion,
+		rightSidebarEnabled,
+		onRightSidebarEnabledChange,
+	}: Props) {
 	const { t } = useI18n();
 	const [activeSubTab, setActiveSubTab] = useState<Tab>("general");
 
@@ -183,7 +181,6 @@ export default function SettingsPage({
 						onCheckUpdate={onCheckUpdate}
 						onInstallUpdate={onInstallUpdate}
 						onSkipVersion={onSkipVersion}
-						showUpdateToast={showUpdateToast}
 						rightSidebarEnabled={rightSidebarEnabled}
 						onRightSidebarEnabledChange={onRightSidebarEnabledChange}
 					/>
