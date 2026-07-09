@@ -792,12 +792,12 @@ export function I18nProvider({ children }: { children: React.ReactNode }) {
 							setLanguageState(lang);
 						}
 					})
-					.catch(() => {
-						// Fallback to default 'zh'
+					.catch((err) => {
+						console.warn("Failed to get language, fallback to 'zh':", err);
 					});
 			})
-			.catch(() => {
-				// Fallback for non-Tauri contexts
+			.catch((err) => {
+				console.warn("Failed to import @tauri-apps/api/core (non-Tauri context):", err);
 			});
 	}, []);
 

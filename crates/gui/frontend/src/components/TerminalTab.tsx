@@ -534,7 +534,7 @@ export function TerminalTab({ sessionId, cwd, command, args, env, isVisible, the
           }
         }, 0);
       }
-      invoke('pty_close', { sessionId }).catch(() => {});
+      invoke('pty_close', { sessionId }).catch((err) => console.warn('Failed to close PTY session:', err));
     };
   }, [sessionId, cwd, command, args, env]);
 
@@ -551,7 +551,7 @@ export function TerminalTab({ sessionId, cwd, command, args, env, isVisible, the
               sessionId,
               cols: termRef.current.cols,
               rows: termRef.current.rows
-            }).catch(() => {});
+            }).catch((err) => console.warn('Failed to resize PTY:', err));
             termRef.current.focus();
           } catch (e) {
             console.warn("Visibility resize failed", e);

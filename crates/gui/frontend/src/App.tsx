@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useCallback } from "react";
 import "./index.css";
+import ErrorBoundary from "./components/ErrorBoundary";
+import GlobalErrorHandler from "./components/GlobalErrorHandler";
 import { ToastProvider, useToast } from "./ToastContext";
 import { I18nProvider, useI18n } from "./I18nContext";
 import SettingsPage from "./pages/SettingsPage";
@@ -424,7 +426,10 @@ function App() {
 					document.body.className = `theme-${t}`;
 				}
 			})
-			.catch(() => {});
+			.catch((err) => {
+				console.error("Failed to load theme:", err);
+				toast.error("主题加载失败，已使用默认主题");
+			});
 
 		Promise.all([getFontFamily(), getFontSize()])
 			.then(([family, size]) => {
@@ -432,7 +437,10 @@ function App() {
 				setFontSizeState(size);
 				applyFontToDocument(family, size);
 			})
-			.catch(() => {});
+			.catch((err) => {
+				console.error("Failed to load font settings:", err);
+				toast.error("字体设置加载失败，已使用默认字体");
+			});
 
 		getProjectColumnAlign()
 			.then((align) => {
@@ -440,8 +448,11 @@ function App() {
 					setProjectColumnAlignState(align);
 				}
 			})
-			.catch(() => {});
-	}, []);
+			.catch((err) => {
+				console.error("Failed to load column align:", err);
+				toast.error("项目排列方式加载失败，已使用默认排列");
+			});
+	}, [toast]);
 
 	// Global keyboard shortcuts (e.g. Ctrl+A / Cmd+A Select All in inputs/textareas)
 	useEffect(() => {
@@ -585,6 +596,7 @@ function App() {
 
 	return (
 		<div className="app-container" style={{ userSelect: isResizing ? "none" : "auto" }}>
+			<GlobalErrorHandler />
 			<div
 				className="app-shell"
 				style={{
@@ -592,6 +604,7 @@ function App() {
 				}}
 			>
 			{/* ── Sidebar ─────────────────────────────────────── */}
+			<ErrorBoundary>
 			<aside
 				className="sidebar"
 				style={{ display: isCollapsed ? "none" : "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}
@@ -732,6 +745,7 @@ function App() {
 					</button>
 				</div>
 			</aside>
+			</ErrorBoundary>
 
 				{/* ── Sidebar Drag Resizer Handle ────────────────────── */}
 				{!isCollapsed && (
@@ -753,6 +767,7 @@ function App() {
 				)}
 
 			{/* ── Main Content ─────────────────────────────────── */}
+			<ErrorBoundary>
 			<main className="main-content">
 				<div
 					style={{
@@ -851,8 +866,10 @@ function App() {
 					/>
 				</div>
 			</main>
+			</ErrorBoundary>
 
 			{/* ── Right Sidebar ─────────────────────────────────── */}
+      <ErrorBoundary>
       <RightSidebar
         projects={projects}
         selectedProjectId={selectedProjectId}
@@ -865,6 +882,7 @@ function App() {
         onNavigate={setPage}
         onRegisterProject={() => setShowModal(true)}
       />
+      </ErrorBoundary>
 
 			{/* ── Update Notification Toast ────────────────────────────────── */}
 			{showUpdateToast && updateInfo && updateInfo.hasUpdate && (

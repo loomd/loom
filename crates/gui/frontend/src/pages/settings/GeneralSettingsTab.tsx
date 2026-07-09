@@ -64,9 +64,15 @@ export default function GeneralSettingsTab({
 			.then(({ getVersion }) => {
 				getVersion()
 					.then((v) => setAppVersion(v))
-					.catch(() => {});
+					.catch((err) => {
+						console.error("Failed to get app version:", err);
+						toast.error("获取应用版本失败");
+					});
 			})
-			.catch(() => {});
+			.catch((err) => {
+				console.error("Failed to import @tauri-apps/api/app:", err);
+				toast.error("获取应用版本失败");
+			});
 
 		getAutostart()
 			.then((enabled) => setAutostartEnabled(enabled))
@@ -74,8 +80,11 @@ export default function GeneralSettingsTab({
 
 		getUpdateCheckInterval()
 			.then((interval) => setCheckInterval(interval || ""))
-			.catch(() => {});
-	}, []);
+			.catch((err) => {
+				console.error("Failed to get update check interval:", err);
+				toast.error("获取更新检查间隔失败");
+			});
+	}, [toast]);
 
 	const handleChangeInterval = async (interval: string) => {
 		try {
