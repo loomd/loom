@@ -269,53 +269,36 @@ export function TerminalTab({ sessionId, cwd, command, args, env, isVisible, the
 
       const textarea = term.textarea;
       const termEl = term.element;
-      console.log('IME Log: Init - textarea exists:', !!textarea, 'termEl exists:', !!termEl);
       if (textarea && termEl) {
-        const logState = (action: string) => {
-          const rect = textarea.getBoundingClientRect();
-          const activeEl = document.activeElement;
-          const activeInfo = activeEl ? `${activeEl.tagName}.${activeEl.className}` : 'none';
-          console.log(`[IME ${action}] activeElement=${activeInfo} scroll=${textarea.scrollLeft},${textarea.scrollTop} styleLeft=${textarea.style.left} styleTop=${textarea.style.top} rectLeft=${rect.left} rectTop=${rect.top} rectWidth=${rect.width} rectHeight=${rect.height} valLen=${textarea.value.length} sel=${textarea.selectionStart},${textarea.selectionEnd}`);
-        };
-
-        const handleStart = (e: CompositionEvent) => {
+        const handleStart = () => {
           isComposing = true;
           termEl.classList.add('is-composing');
           textarea.scrollLeft = 0;
           textarea.scrollTop = 0;
           syncTextareaPosition();
-          console.log('IME Log: compositionstart - data:', e.data);
-          logState('start');
         };
-        const handleEnd = (e: CompositionEvent) => {
+        const handleEnd = () => {
           isComposing = false;
           termEl.classList.remove('is-composing');
           textarea.scrollLeft = 0;
           textarea.scrollTop = 0;
           syncTextareaPosition();
-          console.log('IME Log: compositionend - data:', e.data);
-          logState('end');
           flushPtyBuffer();
         };
-        const handleUpdate = (e: CompositionEvent) => {
+        const handleUpdate = () => {
           textarea.scrollLeft = 0;
           textarea.scrollTop = 0;
           syncTextareaPosition();
-          console.log('IME Log: compositionupdate - data:', e.data);
-          logState('update');
         };
         const handleScroll = () => {
-          console.log('IME Log: scroll event fired!');
-          logState('scroll before reset');
           textarea.scrollLeft = 0;
           textarea.scrollTop = 0;
-          logState('scroll after reset');
         };
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        const handleFocus = (_e: FocusEvent) => {};
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        const handleBlur = (_e: FocusEvent) => {};
         const handleKey = (e: KeyboardEvent) => {
-          if (e.key === 'Backspace' || e.key === 'Delete') {
-            console.log('IME Log: backspace/delete keydown (capture)!', e.key);
-            logState('keydown delete');
-          }
           // Clear residue text before composition starts or during normal input
           // Only clear residue for alpha/letter keys (e.g. KeyA-KeyZ) to prevent
           // messing up punctuation inputs (comma, space, etc.) which confirm composition.
@@ -324,18 +307,9 @@ export function TerminalTab({ sessionId, cwd, command, args, env, isVisible, the
           const isChar = e.key && e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey;
           if (isAlphaKey && (isIME || isChar) && !isComposing) {
             if (textarea && textarea.value !== '') {
-              console.log('IME Log: keydown - clearing residue textarea value:', JSON.stringify(textarea.value));
               textarea.value = '';
             }
           }
-        };
-        const handleFocus = () => {
-          console.log('IME Log: textarea focus event');
-          logState('focus');
-        };
-        const handleBlur = () => {
-          console.log('IME Log: textarea blur event');
-          logState('blur');
         };
 
         textarea.addEventListener('compositionstart', handleStart);
@@ -346,7 +320,6 @@ export function TerminalTab({ sessionId, cwd, command, args, env, isVisible, the
         textarea.addEventListener('focus', handleFocus, true);
         textarea.addEventListener('blur', handleBlur, true);
         cleanupComposition = () => {
-          console.log('IME Log: cleanup called');
           textarea.removeEventListener('compositionstart', handleStart);
           textarea.removeEventListener('compositionend', handleEnd);
           textarea.removeEventListener('compositionupdate', handleUpdate);
@@ -428,7 +401,6 @@ export function TerminalTab({ sessionId, cwd, command, args, env, isVisible, the
 
         // 4. Hook up user keyboard input
         const dataSub = term.onData((text) => {
-          console.log('[IME onData] text:', JSON.stringify(text), 'length:', text.length, 'isComposing:', isComposing);
           const encoder = new TextEncoder();
           const bytes = encoder.encode(text);
           invoke('pty_write', { sessionId, data: Array.from(bytes) }).catch(err => {

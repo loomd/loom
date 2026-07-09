@@ -1,48 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use loom_core::storage::{
-    assign_cli_category as core_assign_cli_category, create_category as core_create_category,
-    create_global_doc as core_create_global_doc,
-    create_global_env_var as core_create_global_env_var,
-    create_global_skill as core_create_global_skill, create_project as core_create_project,
-    create_project_agent_doc as core_create_project_agent_doc,
-    create_template as core_create_template, delete_category as core_delete_category,
-    delete_cli_tool as core_delete_cli_tool, delete_global_doc as core_delete_global_doc,
-    delete_global_env_var as core_delete_global_env_var,
-    delete_global_skill as core_delete_global_skill, delete_project as core_delete_project,
-    delete_template as core_delete_template, get_active_instances as core_get_active_instances,
-    get_active_instances_list as core_get_active_instances_list,
-    get_autostart_enabled as core_get_autostart_enabled, get_categories as core_get_categories,
-    get_cli_tools as core_get_cli_tools, get_font_family as core_get_font_family,
-    get_font_size as core_get_font_size, get_global_docs as core_get_global_docs,
-    get_global_env_vars as core_get_global_env_vars, get_global_skills as core_get_global_skills,
-    get_language as core_get_language, get_project_agents as core_get_project_agents,
-    get_project_skills as core_get_project_skills, get_projects as core_get_projects,
-    get_skipped_version as core_get_skipped_version, get_templates as core_get_templates,
-    get_theme as core_get_theme, get_project_column_align as core_get_project_column_align,
-    get_update_check_interval as core_get_update_check_interval,
-    set_project_column_align as core_set_project_column_align, set_update_check_interval as core_set_update_check_interval, import_cli_tool as core_import_cli_tool,
-    import_global_doc_to_project as core_import_global_doc_to_project,
-    import_global_skill_to_project as core_import_global_skill_to_project,
-    kill_cli_instance as core_kill_cli_instance,
-    parse_local_skill_dir as core_parse_local_skill_dir, read_agent_logs as core_read_agent_logs,
-    reorder_cli_tools as core_reorder_cli_tools, reorder_projects as core_reorder_projects,
-    reorder_templates as core_reorder_templates, run_cli_template as core_run_cli_template,
-    scan_directory as core_scan_directory, scan_path_env as core_scan_path_env,
-    scan_project_agent_docs as core_scan_project_agent_docs,
-    set_autostart_enabled as core_set_autostart_enabled, set_font_family as core_set_font_family,
-    set_font_size as core_set_font_size, set_language as core_set_language,
-    set_skipped_version as core_set_skipped_version, set_theme as core_set_theme,
-    smart_classify as core_smart_classify, spawn_project_agent as core_spawn_project_agent,
-    sync_running_processes as core_sync_running_processes,
-    toggle_project_skill as core_toggle_project_skill, update_category as core_update_category,
-    update_cli_args as core_update_cli_args, update_cli_env as core_update_cli_env,
-    update_global_doc as core_update_global_doc,
-    update_global_env_var as core_update_global_env_var,
-    update_global_skill as core_update_global_skill, update_template as core_update_template,
-    AgentDoc, AgentInstance, Category, CliTool, GlobalDocTemplate, GlobalEnvVar,
-    GlobalSkillTemplate, Project, ProjectSkill, Template,
-};
+use loom_core::storage::{self as cstore, AgentDoc, AgentInstance, Category, CliTool, GlobalDocTemplate, GlobalEnvVar, GlobalSkillTemplate, Project, ProjectSkill, Template};
 use std::collections::HashMap;
 use tauri::{
     image::Image,
@@ -69,47 +27,47 @@ fn update_ime_position(
 
 #[tauri::command]
 fn get_cli_tools() -> Result<Vec<CliTool>, String> {
-    core_get_cli_tools().map_err(|e| e.to_string())
+    cstore::get_cli_tools().map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 fn get_categories() -> Result<Vec<Category>, String> {
-    core_get_categories().map_err(|e| e.to_string())
+    cstore::get_categories().map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 fn import_cli_tool(path: String) -> Result<CliTool, String> {
-    core_import_cli_tool(path).map_err(|e| e.to_string())
+    cstore::import_cli_tool(path).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 fn scan_path_env() -> Result<Vec<CliTool>, String> {
-    core_scan_path_env().map_err(|e| e.to_string())
+    cstore::scan_path_env().map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 fn scan_directory(path: String) -> Result<Vec<CliTool>, String> {
-    core_scan_directory(path).map_err(|e| e.to_string())
+    cstore::scan_directory(path).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 fn create_category(name: String, desc: String) -> Result<Category, String> {
-    core_create_category(name, desc).map_err(|e| e.to_string())
+    cstore::create_category(name, desc).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 fn assign_cli_category(cli_id: String, cat_id: Option<String>) -> Result<(), String> {
-    core_assign_cli_category(cli_id, cat_id).map_err(|e| e.to_string())
+    cstore::assign_cli_category(cli_id, cat_id).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 fn update_cli_env(cli_id: String, env: HashMap<String, String>) -> Result<(), String> {
-    core_update_cli_env(cli_id, env).map_err(|e| e.to_string())
+    cstore::update_cli_env(cli_id, env).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 fn update_cli_args(cli_id: String, args: Vec<String>) -> Result<(), String> {
-    core_update_cli_args(cli_id, args).map_err(|e| e.to_string())
+    cstore::update_cli_args(cli_id, args).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -123,7 +81,7 @@ fn create_template(
     cmd_override: Option<String>,
     env_mode: Option<String>,
 ) -> Result<Template, String> {
-    core_create_template(
+    cstore::create_template(
         cli_id,
         name,
         args,
@@ -138,12 +96,12 @@ fn create_template(
 
 #[tauri::command]
 fn get_templates() -> Result<Vec<Template>, String> {
-    core_get_templates().map_err(|e| e.to_string())
+    cstore::get_templates().map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 fn delete_template(template_id: String) -> Result<(), String> {
-    core_delete_template(template_id).map_err(|e| e.to_string())
+    cstore::delete_template(template_id).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -157,7 +115,7 @@ fn update_template(
     cmd_override: Option<String>,
     env_mode: Option<String>,
 ) -> Result<Template, String> {
-    core_update_template(
+    cstore::update_template(
         template_id,
         name,
         args,
@@ -172,7 +130,7 @@ fn update_template(
 
 #[tauri::command]
 fn get_global_env_vars() -> Result<Vec<GlobalEnvVar>, String> {
-    core_get_global_env_vars().map_err(|e| e.to_string())
+    cstore::get_global_env_vars().map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -181,7 +139,7 @@ fn create_global_env_var(
     value: String,
     description: String,
 ) -> Result<GlobalEnvVar, String> {
-    core_create_global_env_var(key, value, description).map_err(|e| e.to_string())
+    cstore::create_global_env_var(key, value, description).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -191,22 +149,22 @@ fn update_global_env_var(
     value: String,
     description: String,
 ) -> Result<GlobalEnvVar, String> {
-    core_update_global_env_var(id, key, value, description).map_err(|e| e.to_string())
+    cstore::update_global_env_var(id, key, value, description).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 fn delete_global_env_var(id: String) -> Result<(), String> {
-    core_delete_global_env_var(id).map_err(|e| e.to_string())
+    cstore::delete_global_env_var(id).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 fn delete_cli_tool(cli_id: String) -> Result<(), String> {
-    core_delete_cli_tool(cli_id).map_err(|e| e.to_string())
+    cstore::delete_cli_tool(cli_id).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 fn delete_category(cat_id: String) -> Result<(), String> {
-    core_delete_category(cat_id).map_err(|e| e.to_string())
+    cstore::delete_category(cat_id).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -215,32 +173,32 @@ fn run_cli_template(app_handle: tauri::AppHandle, template_id: String) -> Result
     let on_event = std::sync::Arc::new(move |event_name: String, payload: serde_json::Value| {
         let _ = app_handle.emit(&event_name, payload);
     });
-    core_run_cli_template(template_id, Some(on_event)).map_err(|e| e.to_string())
+    cstore::run_cli_template(template_id, Some(on_event)).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 fn kill_cli_instance(instance_id: String) -> Result<(), String> {
-    core_kill_cli_instance(instance_id).map_err(|e| e.to_string())
+    cstore::kill_cli_instance(instance_id).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 fn get_language() -> Result<String, String> {
-    core_get_language().map_err(|e| e.to_string())
+    cstore::get_language().map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 fn set_language(lang: String) -> Result<(), String> {
-    core_set_language(lang).map_err(|e| e.to_string())
+    cstore::set_language(lang).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 fn get_theme() -> Result<String, String> {
-    core_get_theme().map_err(|e| e.to_string())
+    cstore::get_theme().map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 fn set_theme(theme: String) -> Result<(), String> {
-    core_set_theme(theme).map_err(|e| e.to_string())
+    cstore::set_theme(theme).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -289,78 +247,78 @@ fn set_autostart(app: tauri::AppHandle, enabled: bool) -> Result<(), String> {
             .disable()
             .map_err(|e: tauri_plugin_autostart::Error| e.to_string())?;
     }
-    core_set_autostart_enabled(enabled).map_err(|e| e.to_string())?;
+    cstore::set_autostart_enabled(enabled).map_err(|e| e.to_string())?;
     Ok(())
 }
 
 #[tauri::command]
 fn update_category(cat_id: String, name: String, desc: String) -> Result<Category, String> {
-    core_update_category(cat_id, name, desc).map_err(|e| e.to_string())
+    cstore::update_category(cat_id, name, desc).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 fn smart_classify() -> Result<(usize, usize), String> {
-    core_smart_classify().map_err(|e| e.to_string())
+    cstore::smart_classify().map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 fn get_font_family() -> Result<String, String> {
-    core_get_font_family().map_err(|e| e.to_string())
+    cstore::get_font_family().map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 fn set_font_family(font: String) -> Result<(), String> {
-    core_set_font_family(font).map_err(|e| e.to_string())
+    cstore::set_font_family(font).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 fn get_font_size() -> Result<String, String> {
-    core_get_font_size().map_err(|e| e.to_string())
+    cstore::get_font_size().map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 fn set_font_size(size: String) -> Result<(), String> {
-    core_set_font_size(size).map_err(|e| e.to_string())
+    cstore::set_font_size(size).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 fn get_projects() -> Result<Vec<Project>, String> {
-    core_get_projects().map_err(|e| e.to_string())
+    cstore::get_projects().map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 fn create_project(name: String, root_path: String) -> Result<Project, String> {
-    core_create_project(name, root_path).map_err(|e| e.to_string())
+    cstore::create_project(name, root_path).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 fn delete_project(id: String) -> Result<(), String> {
-    core_delete_project(id).map_err(|e| e.to_string())
+    cstore::delete_project(id).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 fn reorder_projects(ids: Vec<String>) -> Result<(), String> {
-    core_reorder_projects(ids).map_err(|e| e.to_string())
+    cstore::reorder_projects(ids).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 fn reorder_templates(ids: Vec<String>) -> Result<(), String> {
-    core_reorder_templates(ids).map_err(|e| e.to_string())
+    cstore::reorder_templates(ids).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 fn reorder_cli_tools(ids: Vec<String>) -> Result<(), String> {
-    core_reorder_cli_tools(ids).map_err(|e| e.to_string())
+    cstore::reorder_cli_tools(ids).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 fn get_project_agents(project_id: String) -> Result<Vec<AgentInstance>, String> {
-    core_get_project_agents(project_id).map_err(|e| e.to_string())
+    cstore::get_project_agents(project_id).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 fn get_agent_logs(instance_id: String) -> Result<Vec<String>, String> {
-    core_read_agent_logs(instance_id).map_err(|e| e.to_string())
+    cstore::read_agent_logs(instance_id).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -377,7 +335,7 @@ fn spawn_project_agent(
     let on_event = std::sync::Arc::new(move |event_name: String, payload: serde_json::Value| {
         let _ = app_handle.emit(&event_name, payload);
     });
-    core_spawn_project_agent(
+    cstore::spawn_project_agent(
         project_id,
         command,
         args,
@@ -497,14 +455,14 @@ mod win_util {
 
 #[tauri::command]
 fn kill_agent_process(instance_id: String) -> Result<(), String> {
-    core_kill_cli_instance(instance_id).map_err(|e| e.to_string())
+    cstore::kill_cli_instance(instance_id).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 fn bring_agent_to_foreground(instance_id: String) -> Result<bool, String> {
     // 1. Try to get pid from in-memory running child handle
     let pid_opt = {
-        let active = core_get_active_instances().lock().unwrap();
+        let active = cstore::get_active_instances().lock().unwrap();
         if let Some(child_arc) = active.get(&instance_id) {
             if let Ok(guard) = child_arc.lock() {
                 Some(guard.id())
@@ -518,7 +476,7 @@ fn bring_agent_to_foreground(instance_id: String) -> Result<bool, String> {
 
     // 2. If not found in memory, look up the active instances list from JSON
     let pid = pid_opt.or_else(|| {
-        let list = core_get_active_instances_list();
+        let list = cstore::get_active_instances_list();
         list.iter()
             .find(|x| x.instance_id == instance_id)
             .map(|x| x.pid)
@@ -695,7 +653,7 @@ fn delete_file_entry(file_path: String, is_dir: bool) -> Result<(), String> {
 
 #[tauri::command]
 fn get_project_skills(project_id: String) -> Result<Vec<ProjectSkill>, String> {
-    core_get_project_skills(project_id).map_err(|e| e.to_string())
+    cstore::get_project_skills(project_id).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -704,12 +662,12 @@ fn toggle_project_skill(
     skill_name: String,
     enabled: bool,
 ) -> Result<(), String> {
-    core_toggle_project_skill(project_id, skill_name, enabled).map_err(|e| e.to_string())
+    cstore::toggle_project_skill(project_id, skill_name, enabled).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 fn scan_project_agent_docs(project_id: String) -> Result<Vec<AgentDoc>, String> {
-    core_scan_project_agent_docs(project_id).map_err(|e| e.to_string())
+    cstore::scan_project_agent_docs(project_id).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -718,12 +676,12 @@ fn create_project_agent_doc(
     relative_path: String,
     doc_type: String,
 ) -> Result<AgentDoc, String> {
-    core_create_project_agent_doc(project_id, relative_path, doc_type).map_err(|e| e.to_string())
+    cstore::create_project_agent_doc(project_id, relative_path, doc_type).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 fn get_global_skills() -> Result<Vec<GlobalSkillTemplate>, String> {
-    core_get_global_skills().map_err(|e| e.to_string())
+    cstore::get_global_skills().map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -733,7 +691,7 @@ fn create_global_skill(
     content: String,
     files: HashMap<String, String>,
 ) -> Result<GlobalSkillTemplate, String> {
-    core_create_global_skill(name, description, content, files).map_err(|e| e.to_string())
+    cstore::create_global_skill(name, description, content, files).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -744,17 +702,17 @@ fn update_global_skill(
     content: String,
     files: HashMap<String, String>,
 ) -> Result<GlobalSkillTemplate, String> {
-    core_update_global_skill(id, name, description, content, files).map_err(|e| e.to_string())
+    cstore::update_global_skill(id, name, description, content, files).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 fn delete_global_skill(id: String) -> Result<(), String> {
-    core_delete_global_skill(id).map_err(|e| e.to_string())
+    cstore::delete_global_skill(id).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 fn get_global_docs() -> Result<Vec<GlobalDocTemplate>, String> {
-    core_get_global_docs().map_err(|e| e.to_string())
+    cstore::get_global_docs().map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -763,7 +721,7 @@ fn create_global_doc(
     default_filename: String,
     content: String,
 ) -> Result<GlobalDocTemplate, String> {
-    core_create_global_doc(alias, default_filename, content).map_err(|e| e.to_string())
+    cstore::create_global_doc(alias, default_filename, content).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -773,17 +731,17 @@ fn update_global_doc(
     default_filename: String,
     content: String,
 ) -> Result<GlobalDocTemplate, String> {
-    core_update_global_doc(id, alias, default_filename, content).map_err(|e| e.to_string())
+    cstore::update_global_doc(id, alias, default_filename, content).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 fn delete_global_doc(id: String) -> Result<(), String> {
-    core_delete_global_doc(id).map_err(|e| e.to_string())
+    cstore::delete_global_doc(id).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 fn import_global_skill_to_project(project_id: String, skill_id: String) -> Result<(), String> {
-    core_import_global_skill_to_project(project_id, skill_id).map_err(|e| e.to_string())
+    cstore::import_global_skill_to_project(project_id, skill_id).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -792,13 +750,13 @@ fn import_global_doc_to_project(
     doc_id: String,
     relative_path: String,
 ) -> Result<AgentDoc, String> {
-    core_import_global_doc_to_project(project_id, doc_id, relative_path).map_err(|e| e.to_string())
+    cstore::import_global_doc_to_project(project_id, doc_id, relative_path).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 fn parse_local_skill_dir(path: String) -> Result<GlobalSkillTemplate, String> {
     let dir_path = std::path::Path::new(&path);
-    core_parse_local_skill_dir(dir_path).map_err(|e| e.to_string())
+    cstore::parse_local_skill_dir(dir_path).map_err(|e| e.to_string())
 }
 
 fn execute_test_command(cmd: &str, args_json: &str) -> Result<String, String> {
@@ -903,7 +861,7 @@ fn execute_test_command(cmd: &str, args_json: &str) -> Result<String, String> {
                 .get("env_mode")
                 .and_then(|v| v.as_str())
                 .map(|s| s.to_string());
-            let res = core_create_template(
+            let res = cstore::create_template(
                 cli_id.to_string(),
                 name.to_string(),
                 cmd_args,
@@ -969,7 +927,7 @@ fn execute_test_command(cmd: &str, args_json: &str) -> Result<String, String> {
                 .get("env_mode")
                 .and_then(|v| v.as_str())
                 .map(|s| s.to_string());
-            let res = core_update_template(
+            let res = cstore::update_template(
                 template_id.to_string(),
                 name.to_string(),
                 cmd_args,
@@ -1001,10 +959,10 @@ fn execute_test_command(cmd: &str, args_json: &str) -> Result<String, String> {
                 .as_str()
                 .ok_or_else(|| "Missing argument 'template_id'".to_string())?;
             let instance_id =
-                core_run_cli_template(template_id.to_string(), None).map_err(|e| e.to_string())?;
+                cstore::run_cli_template(template_id.to_string(), None).map_err(|e| e.to_string())?;
             println!("INSTANCE_ID: {}", instance_id);
 
-            let child_arc_opt = core_get_active_instances()
+            let child_arc_opt = cstore::get_active_instances()
                 .lock()
                 .unwrap()
                 .get(&instance_id)
@@ -1195,7 +1153,7 @@ fn execute_test_command(cmd: &str, args_json: &str) -> Result<String, String> {
                 .get("pwd")
                 .and_then(|p| p.as_str())
                 .map(|s| s.to_string());
-            let instance_id = core_spawn_project_agent(
+            let instance_id = cstore::spawn_project_agent(
                 project_id.to_string(),
                 command.to_string(),
                 cmd_args,
@@ -1262,7 +1220,7 @@ fn log_frontend(level: String, message: String) {
 mod pty;
 
 fn get_window_state_path() -> std::path::PathBuf {
-    let mut path = loom_core::storage::get_config_path();
+    let mut path = cstore::get_config_path();
     path.pop();
     path.join("window_state.json")
 }
@@ -1289,32 +1247,32 @@ fn save_window_state(window: &tauri::Window) {
 
 #[tauri::command]
 fn get_skipped_version() -> Result<Option<String>, String> {
-    core_get_skipped_version().map_err(|e| e.to_string())
+    cstore::get_skipped_version().map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 fn set_skipped_version(version: Option<String>) -> Result<(), String> {
-    core_set_skipped_version(version).map_err(|e| e.to_string())
+    cstore::set_skipped_version(version).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 fn get_project_column_align() -> Result<String, String> {
-    core_get_project_column_align().map_err(|e| e.to_string())
+    cstore::get_project_column_align().map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 fn set_project_column_align(align: String) -> Result<(), String> {
-    core_set_project_column_align(align).map_err(|e| e.to_string())
+    cstore::set_project_column_align(align).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 fn get_update_check_interval() -> Result<String, String> {
-    core_get_update_check_interval().map_err(|e| e.to_string())
+    cstore::get_update_check_interval().map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 fn set_update_check_interval(interval: String) -> Result<(), String> {
-    core_set_update_check_interval(interval).map_err(|e| e.to_string())
+    cstore::set_update_check_interval(interval).map_err(|e| e.to_string())
 }
 
 fn main() {
@@ -1388,12 +1346,12 @@ fn main() {
 
             // Run process synchronization in a background thread to prevent blocking Tauri's main startup thread (which causes the white screen freeze).
             std::thread::spawn(|| {
-                let _ = core_sync_running_processes();
+                let _ = cstore::sync_running_processes();
             });
 
             // Restore autostart setting from config after version update
             // The OS registry entry may be cleared during app update, but our config preserves the user's preference.
-            if let Ok(desired) = core_get_autostart_enabled() {
+            if let Ok(desired) = cstore::get_autostart_enabled() {
                 if desired {
                     let autostart_manager = app.autolaunch();
                     let _ = autostart_manager.enable();
