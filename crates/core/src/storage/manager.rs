@@ -718,7 +718,9 @@ pub fn scan_path_env() -> Result<Vec<CliTool>> {
                                 .cli_tools
                                 .iter()
                                 .find(|t| t.path == path)
-                                .unwrap()
+                                .ok_or_else(|| {
+                                    StorageError::CliToolNotFound(path.display().to_string())
+                                })?
                                 .clone()
                         } else {
                             let new_tool = CliTool {
@@ -821,7 +823,7 @@ pub fn scan_directory(path: String) -> Result<Vec<CliTool>> {
                                 .cli_tools
                                 .iter()
                                 .find(|t| t.path == entry_path)
-                                .unwrap()
+                                .expect("tool must exist after .any() check")
                                 .clone()
                         } else {
                             let new_tool = CliTool {
@@ -1400,7 +1402,7 @@ pub fn run_cli_template(
     let child_arc = Arc::new(Mutex::new(child));
     get_active_instances()
         .lock()
-        .unwrap()
+        .unwrap_or_else(|e| e.into_inner())
         .insert(instance_id.clone(), child_arc.clone());
 
     let instance_id_clone = instance_id.clone();
@@ -1523,7 +1525,7 @@ pub fn run_cli_template(
 
         get_active_instances()
             .lock()
-            .unwrap()
+            .unwrap_or_else(|e| e.into_inner())
             .remove(&instance_id_clone_mon);
 
         let mut list = get_active_instances_list();
@@ -1566,7 +1568,7 @@ pub fn kill_cli_instance(instance_id: String) -> Result<()> {
     std::thread::spawn(move || {
         let child_arc_opt = get_active_instances()
             .lock()
-            .unwrap()
+            .unwrap_or_else(|e| e.into_inner())
             .get(&instance_id_clone)
             .cloned();
         if let Some(child_arc) = child_arc_opt {
@@ -2177,7 +2179,7 @@ pub fn spawn_project_agent(
     let child_arc = Arc::new(Mutex::new(child));
     get_active_instances()
         .lock()
-        .unwrap()
+        .unwrap_or_else(|e| e.into_inner())
         .insert(instance_id.clone(), child_arc.clone());
 
     let instance_id_clone = instance_id.clone();
@@ -2293,7 +2295,7 @@ pub fn spawn_project_agent(
 
         get_active_instances()
             .lock()
-            .unwrap()
+            .unwrap_or_else(|e| e.into_inner())
             .remove(&instance_id_clone_mon);
 
         let mut list = get_active_instances_list();

@@ -1,5 +1,5 @@
 ---
-status: in-progress
+status: completed
 created: 2026-07-07
 priority: high
 tags:
@@ -7,10 +7,12 @@ tags:
 - react
 - refactor
 created_at: 2026-07-07T15:34:46.045992400Z
-updated_at: 2026-07-07T15:34:51.214954300Z
+updated_at: 2026-07-10T10:00:00Z
 transitions:
 - status: in-progress
   at: 2026-07-07T15:34:51.214954300Z
+- status: completed
+  at: 2026-07-10T10:00:00Z
 ---
 
 # SettingsPage 解耦重构
