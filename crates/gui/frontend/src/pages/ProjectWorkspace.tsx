@@ -653,7 +653,7 @@ export default function ProjectWorkspace({ project, isVisible, onUnregisterProje
             return (
               <div
                 key={tab.id}
-                onClick={() => setActiveTabId(tab.id)}
+                onClick={() => { setLayoutMode('single'); setActiveTabId(tab.id); }}
                 data-tauri-drag-region
                 style={{
                   display: 'flex',
@@ -714,7 +714,11 @@ export default function ProjectWorkspace({ project, isVisible, onUnregisterProje
             return (
               <div
                 key={tab.id}
-                onClick={() => { if (!showGrid) setActiveTabId(tab.id); }}
+                onClick={() => {
+                  if (showGrid && tab.type === 'terminal' && terminals.findIndex(t => t.id === tab.id) < 2) return;
+                  setLayoutMode('single');
+                  setActiveTabId(tab.id);
+                }}
                 style={{
                   display: 'flex',
                   alignItems: 'center',
