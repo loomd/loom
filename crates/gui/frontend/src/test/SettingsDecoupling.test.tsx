@@ -1,5 +1,5 @@
 import React from "react";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, act } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { I18nProvider } from "../I18nContext";
 import { ToastProvider } from "../ToastContext";
@@ -53,24 +53,32 @@ describe("GeneralSettingsTab", () => {
     onRightSidebarEnabledChange: vi.fn(),
   };
 
-  it("renders theme section", () => {
-    renderWithProviders(<GeneralSettingsTab {...defaultProps} />);
+  it("renders theme section", async () => {
+    await act(async () => {
+      renderWithProviders(<GeneralSettingsTab {...defaultProps} />);
+    });
     expect(screen.getByText("界面主题")).toBeInTheDocument();
   });
 
-  it("renders font section", () => {
-    renderWithProviders(<GeneralSettingsTab {...defaultProps} />);
+  it("renders font section", async () => {
+    await act(async () => {
+      renderWithProviders(<GeneralSettingsTab {...defaultProps} />);
+    });
     expect(screen.getByText("字体管理")).toBeInTheDocument();
   });
 
-  it("renders language section", () => {
-    renderWithProviders(<GeneralSettingsTab {...defaultProps} />);
+  it("renders language section", async () => {
+    await act(async () => {
+      renderWithProviders(<GeneralSettingsTab {...defaultProps} />);
+    });
     expect(screen.getByText("简体中文")).toBeInTheDocument();
     expect(screen.getByText("English")).toBeInTheDocument();
   });
 
-  it("renders version info", () => {
-    renderWithProviders(<GeneralSettingsTab {...defaultProps} />);
+  it("renders version info", async () => {
+    await act(async () => {
+      renderWithProviders(<GeneralSettingsTab {...defaultProps} />);
+    });
     expect(screen.getAllByText(/Loom/).length).toBeGreaterThanOrEqual(1);
   });
 });
@@ -87,11 +95,10 @@ describe("CliToolsTab", () => {
   });
 
   it("renders scan and import buttons", async () => {
-    renderWithProviders(<CliToolsTab />);
-    // Wait for initial load
-    await vi.waitFor(() => {
-      expect(screen.getByText((c) => c.includes("扫描 PATH"))).toBeInTheDocument();
+    await act(async () => {
+      renderWithProviders(<CliToolsTab />);
     });
+    expect(screen.getByText((c) => c.includes("扫描 PATH"))).toBeInTheDocument();
   });
 });
 
@@ -100,10 +107,14 @@ describe("LibsTab", () => {
     vi.clearAllMocks();
   });
 
-  it("renders skills and docs sections", () => {
-    renderWithProviders(<LibsTab />);
-    expect(screen.getByText((c) => c.includes("技能模版"))).toBeInTheDocument();
-    expect(screen.getByText((c) => c.includes("规则文档"))).toBeInTheDocument();
+  it("renders skills and docs sections", async () => {
+    await act(async () => {
+      renderWithProviders(<LibsTab />);
+    });
+    const skills = screen.getAllByText((c) => c.includes("技能模版"));
+    expect(skills.length).toBeGreaterThanOrEqual(1);
+    const docs = screen.getAllByText((c) => c.includes("规则文档"));
+    expect(docs.length).toBeGreaterThanOrEqual(1);
   });
 });
 
@@ -117,18 +128,22 @@ describe("CliToolConfigModal", () => {
     custom_args: [],
   };
 
-  it("renders modal with tool info", () => {
-    renderWithProviders(
-      <CliToolConfigModal tool={mockTool} onClose={vi.fn()} onSave={vi.fn()} />
-    );
+  it("renders modal with tool info", async () => {
+    await act(async () => {
+      renderWithProviders(
+        <CliToolConfigModal tool={mockTool} onClose={vi.fn()} onSave={vi.fn()} />
+      );
+    });
     expect(screen.getByText((c) => c.includes("配置"))).toBeInTheDocument();
   });
 
-  it("calls onClose when overlay clicked", () => {
+  it("calls onClose when overlay clicked", async () => {
     const onClose = vi.fn();
-    const { container } = renderWithProviders(
-      <CliToolConfigModal tool={mockTool} onClose={onClose} onSave={vi.fn()} />
-    );
+    const { container } = await act(async () => {
+      return renderWithProviders(
+        <CliToolConfigModal tool={mockTool} onClose={onClose} onSave={vi.fn()} />
+      );
+    });
     const overlay = container.querySelector(".modal-overlay");
     if (overlay) fireEvent.click(overlay);
     expect(onClose).toHaveBeenCalled();
@@ -197,43 +212,56 @@ describe("SettingsPage", () => {
     onRightSidebarEnabledChange: vi.fn(),
   };
 
-  it("renders page header with title", () => {
-    renderWithProviders(<SettingsPage {...defaultProps} />);
+  it("renders page header with title", async () => {
+    await act(async () => {
+      renderWithProviders(<SettingsPage {...defaultProps} />);
+    });
     const titles = screen.getAllByText("系统设置");
     expect(titles.length).toBeGreaterThanOrEqual(1);
   });
 
-  it("renders all 4 tab buttons", () => {
-    renderWithProviders(<SettingsPage {...defaultProps} />);
+  it("renders all 4 tab buttons", async () => {
+    await act(async () => {
+      renderWithProviders(<SettingsPage {...defaultProps} />);
+    });
     expect(screen.getByText((c) => c.includes("外观偏好"))).toBeInTheDocument();
     expect(screen.getByText((c) => c.includes("CLI 工具"))).toBeInTheDocument();
     expect(screen.getByText((c) => c.includes("环境变量"))).toBeInTheDocument();
     expect(screen.getByText((c) => c.includes("模版库管理"))).toBeInTheDocument();
   });
 
-  it("shows general tab by default", () => {
-    renderWithProviders(<SettingsPage {...defaultProps} />);
+  it("shows general tab by default", async () => {
+    await act(async () => {
+      renderWithProviders(<SettingsPage {...defaultProps} />);
+    });
     expect(screen.getByText("界面主题")).toBeInTheDocument();
   });
 
-  it("switches to tools tab on click", () => {
-    renderWithProviders(<SettingsPage {...defaultProps} />);
+  it("switches to tools tab on click", async () => {
+    await act(async () => {
+      renderWithProviders(<SettingsPage {...defaultProps} />);
+    });
     const toolsTab = screen.getByText((c) => c.includes("CLI 工具"));
-    fireEvent.click(toolsTab);
+    await act(async () => { fireEvent.click(toolsTab); });
     expect(screen.getByText((c) => c.includes("扫描 PATH"))).toBeInTheDocument();
   });
 
-  it("switches to env tab on click", () => {
-    renderWithProviders(<SettingsPage {...defaultProps} />);
+  it("switches to env tab on click", async () => {
+    await act(async () => {
+      renderWithProviders(<SettingsPage {...defaultProps} />);
+    });
     const envTab = screen.getByText((c) => c.includes("环境变量"));
-    fireEvent.click(envTab);
+    await act(async () => { fireEvent.click(envTab); });
     expect(screen.getByText("全局环境变量")).toBeInTheDocument();
   });
 
-  it("switches to libs tab on click", () => {
-    renderWithProviders(<SettingsPage {...defaultProps} />);
+  it("switches to libs tab on click", async () => {
+    await act(async () => {
+      renderWithProviders(<SettingsPage {...defaultProps} />);
+    });
     const libsTab = screen.getByText((c) => c.includes("模版库管理"));
-    fireEvent.click(libsTab);
-    expect(screen.getByText((c) => c.includes("技能模版"))).toBeInTheDocument();
+    await act(async () => { fireEvent.click(libsTab); });
+    const skills = screen.getAllByText((c) => c.includes("技能模版"));
+    expect(skills.length).toBeGreaterThanOrEqual(1);
   });
 });

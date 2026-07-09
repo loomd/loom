@@ -4,7 +4,7 @@ pub mod models;
 
 pub use error::{Result, StorageError};
 pub use manager::{
-    assign_cli_category, create_category, create_global_doc, create_global_env_var,
+    expand_env_vars, assign_cli_category, create_category, create_global_doc, create_global_env_var,
     create_global_skill, create_project, create_project_agent_doc, create_template,
     delete_category, delete_cli_tool, delete_global_doc, delete_global_env_var,
     delete_global_skill, delete_project, delete_template, get_active_instances,

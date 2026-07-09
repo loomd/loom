@@ -188,7 +188,7 @@ pub fn read_agent_logs(instance_id: String) -> Result<Vec<String>> {
     Ok(lines)
 }
 
-fn expand_env_vars(arg: &str, envs: &HashMap<String, String>) -> String {
+pub fn expand_env_vars(arg: &str, envs: &HashMap<String, String>) -> String {
     let mut result = arg.to_string();
 
     // 1. Expand %VAR%
