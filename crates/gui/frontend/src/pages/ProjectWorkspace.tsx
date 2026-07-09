@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, Suspense } from 'react';
 import WindowControlButtons from '../components/WindowControlButtons';
 import {
   getCliTools,
@@ -22,8 +22,11 @@ import type { FileEntry } from '../api';
 import type { Project, CliTool, Template, ProjectSkill, AgentDoc, GlobalSkillTemplate, GlobalDocTemplate } from '../types';
 import { useToast } from '../ToastContext';
 import { useI18n } from '../I18nContext';
-import { TerminalTab } from '../components/TerminalTab';
-import { FileEditor } from '../components/FileEditor';
+import { TerminalPlaceholder } from '../components/TerminalPlaceholder';
+import { EditorPlaceholder } from '../components/EditorPlaceholder';
+
+const TerminalTab = React.lazy(() => import('../components/TerminalTab').then(m => ({ default: m.TerminalTab })));
+const FileEditor = React.lazy(() => import('../components/FileEditor').then(m => ({ default: m.FileEditor })));
 
 interface Props {
   project: Project;
@@ -1399,16 +1402,18 @@ export default function ProjectWorkspace({ project, isVisible, onUnregisterProje
                   minWidth: 0
                 }}
               >
-                <TerminalTab
-                  sessionId={tab.id}
-                  cwd={tab.cwd}
-                  command={tab.command}
-                  args={tab.args}
-                  env={tab.env}
-                  isVisible={isTerminalVisible}
-                  theme={theme}
-                  isTopInVerticalLayout={layoutMode === 'vertical' && idx === 0}
-                />
+                <Suspense fallback={<TerminalPlaceholder />}>
+                  <TerminalTab
+                    sessionId={tab.id}
+                    cwd={tab.cwd}
+                    command={tab.command}
+                    args={tab.args}
+                    env={tab.env}
+                    isVisible={isTerminalVisible}
+                    theme={theme}
+                    isTopInVerticalLayout={layoutMode === 'vertical' && idx === 0}
+                  />
+                </Suspense>
               </div>
             );
           })}
@@ -1431,6 +1436,7 @@ export default function ProjectWorkspace({ project, isVisible, onUnregisterProje
                 boxSizing: 'border-box'
               }}
             >
+              <Suspense fallback={<EditorPlaceholder />}>
               <FileEditor
                 filePath={tab.filePath}
                 onContentDirtyChange={(dirty) => {
@@ -1438,6 +1444,7 @@ export default function ProjectWorkspace({ project, isVisible, onUnregisterProje
                 }}
                 theme={theme}
               />
+            </Suspense>
             </div>
           );
         })}
