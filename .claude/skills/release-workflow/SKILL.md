@@ -73,15 +73,12 @@ gh run view <RUN_ID> --log-failed
    ```bash
    git add Cargo.toml crates/gui/frontend/package.json crates/gui/src-tauri/tauri.conf.json [其他被修改的文件]
    ```
-2. 创建合规的 Git 提交信息（注意在 Windows PowerShell 下使用单引号 here-string，并包含 Co-Authored-By 标识）：
+2. 创建合规的 Git 提交信息：
    ```powershell
    git commit -m @'
-   fix: fix compile errors and bump version to v0.3.5
+   chore: bump version to v0.X.Y
 
-   - Desc of bug fixes
-   - Bump version to v0.3.5
-
-   Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>
+   - Desc of changes
    '@
    ```
 3. 建立版本 Tag 并推送至 GitHub（此操作会触发 `.github/workflows/release.yml` 自动编译构建 NSIS Windows 安装包并发布到 GitHub Release）：
