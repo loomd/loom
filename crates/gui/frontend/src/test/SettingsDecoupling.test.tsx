@@ -49,8 +49,12 @@ describe("GeneralSettingsTab", () => {
     onFontFamilyChange: vi.fn(async () => {}),
     onFontSizeChange: vi.fn(async () => {}),
     onCheckUpdate: vi.fn(async () => {}),
-    rightSidebarEnabled: true,
-    onRightSidebarEnabledChange: vi.fn(),
+    floatingSidebarEnabled: true,
+    onFloatingSidebarEnabledChange: vi.fn(),
+    floatingSidebarPosition: "right" as const,
+    onFloatingSidebarPositionChange: vi.fn(),
+    sidebarCollapseEnabled: false,
+    onSidebarCollapseEnabledChange: vi.fn(),
   };
 
   it("renders theme section", async () => {
@@ -208,8 +212,12 @@ describe("SettingsPage", () => {
     onFontFamilyChange: vi.fn(async () => {}),
     onFontSizeChange: vi.fn(async () => {}),
     onCheckUpdate: vi.fn(async () => {}),
-    rightSidebarEnabled: true,
-    onRightSidebarEnabledChange: vi.fn(),
+    floatingSidebarEnabled: true,
+    onFloatingSidebarEnabledChange: vi.fn(),
+    floatingSidebarPosition: "right" as const,
+    onFloatingSidebarPositionChange: vi.fn(),
+    sidebarCollapseEnabled: false,
+    onSidebarCollapseEnabledChange: vi.fn(),
   };
 
   it("renders page header with title", async () => {

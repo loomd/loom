@@ -7,6 +7,7 @@ interface RightSidebarProps {
   selectedProjectId: string;
   onProjectSelect: (projectId: string) => void;
   enabled: boolean;
+  position: "left" | "right";
   page: "workspace" | "settings";
   onNavigate: (page: "workspace" | "settings") => void;
   onRegisterProject?: () => void;
@@ -17,6 +18,7 @@ export default function RightSidebar({
   selectedProjectId,
   onProjectSelect,
   enabled,
+  position,
   page,
   onNavigate,
   onRegisterProject,
@@ -44,18 +46,24 @@ export default function RightSidebar({
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
       if (!enabled) return;
-      
+
       const windowWidth = window.innerWidth;
       const triggerZone = 10;
-      
-      if (e.clientX >= windowWidth - triggerZone && e.clientY > 40) {
-        showSidebar();
+
+      if (position === "right") {
+        if (e.clientX >= windowWidth - triggerZone && e.clientY > 40) {
+          showSidebar();
+        }
+      } else {
+        if (e.clientX <= triggerZone && e.clientY > 40) {
+          showSidebar();
+        }
       }
     };
 
     window.addEventListener("mousemove", handleMouseMove);
     return () => window.removeEventListener("mousemove", handleMouseMove);
-  }, [enabled, showSidebar]);
+  }, [enabled, showSidebar, position]);
 
   useEffect(() => {
     return () => {
@@ -79,6 +87,8 @@ export default function RightSidebar({
 
   if (!enabled) return null;
 
+  const translateHidden = position === "right" ? "translateX(100%)" : "translateX(-100%)";
+
   return (
     <div
       ref={sidebarRef}
@@ -87,13 +97,14 @@ export default function RightSidebar({
       onMouseLeave={handleMouseLeaveSidebar}
       style={{
         position: "fixed",
-        right: 0,
+        [position]: 0,
         top: 0,
         bottom: 0,
         width: "120px",
         background: "var(--bg-card)",
-        borderLeft: "1px solid var(--border-subtle)",
-        transform: isVisible ? "translateX(0)" : "translateX(100%)",
+        borderLeft: position === "right" ? "1px solid var(--border-subtle)" : "none",
+        borderRight: position === "left" ? "1px solid var(--border-subtle)" : "none",
+        transform: isVisible ? "translateX(0)" : translateHidden,
         opacity: isVisible ? 1 : 0,
         transition: "transform 150ms ease, opacity 150ms ease",
         overflowY: "auto",

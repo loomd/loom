@@ -363,8 +363,11 @@ const zhDict: Dictionary = {
 	"proj.sidebar.title": "项目列表",
 	"proj.sidebar.collapse": "折叠侧边栏",
 	"proj.sidebar.expand": "展开侧边栏",
-	"proj.rightSidebar.enable": "启用右侧悬浮侧边栏",
+	"proj.rightSidebar.enable": "启用悬浮侧边栏",
 	"proj.rightSidebar.title": "项目切换",
+	"proj.floatingSidebar.left": "左侧",
+	"proj.floatingSidebar.right": "右侧",
+	"proj.sidebar.collapse.enable": "启用左侧侧边栏折叠",
 
 	// File Editor
 	"editor.loading": "正在加载文件内容...",
@@ -753,8 +756,11 @@ const enDict: Dictionary = {
 	"proj.sidebar.title": "Projects",
 	"proj.sidebar.collapse": "Collapse Sidebar",
 	"proj.sidebar.expand": "Expand Sidebar",
-	"proj.rightSidebar.enable": "Enable Right Hover Sidebar",
+	"proj.rightSidebar.enable": "Enable Hover Sidebar",
 	"proj.rightSidebar.title": "Project Switch",
+	"proj.floatingSidebar.left": "Left",
+	"proj.floatingSidebar.right": "Right",
+	"proj.sidebar.collapse.enable": "Enable Left Sidebar Collapse",
 
 	// File Editor
 	"editor.loading": "Loading file contents...",

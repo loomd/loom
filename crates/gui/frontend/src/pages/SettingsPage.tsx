@@ -25,8 +25,12 @@ interface Props {
 	onCheckUpdate: (isManual: boolean) => Promise<void>;
 	onInstallUpdate?: () => void;
 	onSkipVersion?: (version: string) => void;
-	rightSidebarEnabled: boolean;
-	onRightSidebarEnabledChange: (enabled: boolean) => void;
+	floatingSidebarEnabled: boolean;
+	onFloatingSidebarEnabledChange: (enabled: boolean) => void;
+	floatingSidebarPosition: "left" | "right";
+	onFloatingSidebarPositionChange: (position: "left" | "right") => void;
+	sidebarCollapseEnabled: boolean;
+	onSidebarCollapseEnabledChange: (enabled: boolean) => void;
 }
 
 type Tab = "general" | "tools" | "env" | "libs";
@@ -42,10 +46,14 @@ export default function SettingsPage({
 	onFontSizeChange,
 	updateInfo,
 	onCheckUpdate,
-onInstallUpdate,
+	onInstallUpdate,
 		onSkipVersion,
-		rightSidebarEnabled,
-		onRightSidebarEnabledChange,
+		floatingSidebarEnabled,
+		onFloatingSidebarEnabledChange,
+		floatingSidebarPosition,
+		onFloatingSidebarPositionChange,
+		sidebarCollapseEnabled,
+		onSidebarCollapseEnabledChange,
 	}: Props) {
 	const { t } = useI18n();
 	const [activeSubTab, setActiveSubTab] = useState<Tab>("general");
@@ -181,8 +189,12 @@ onInstallUpdate,
 						onCheckUpdate={onCheckUpdate}
 						onInstallUpdate={onInstallUpdate}
 						onSkipVersion={onSkipVersion}
-						rightSidebarEnabled={rightSidebarEnabled}
-						onRightSidebarEnabledChange={onRightSidebarEnabledChange}
+						floatingSidebarEnabled={floatingSidebarEnabled}
+						onFloatingSidebarEnabledChange={onFloatingSidebarEnabledChange}
+						floatingSidebarPosition={floatingSidebarPosition}
+						onFloatingSidebarPositionChange={onFloatingSidebarPositionChange}
+						sidebarCollapseEnabled={sidebarCollapseEnabled}
+						onSidebarCollapseEnabledChange={onSidebarCollapseEnabledChange}
 					/>
 				)}
 				{activeSubTab === "tools" && <CliToolsTab />}

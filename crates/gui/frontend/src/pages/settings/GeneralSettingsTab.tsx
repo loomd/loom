@@ -22,8 +22,12 @@ interface Props {
 	onCheckUpdate: (isManual: boolean) => Promise<void>;
 	onInstallUpdate?: () => void;
 	onSkipVersion?: (version: string) => void;
-	rightSidebarEnabled: boolean;
-	onRightSidebarEnabledChange: (enabled: boolean) => void;
+	floatingSidebarEnabled: boolean;
+	onFloatingSidebarEnabledChange: (enabled: boolean) => void;
+	floatingSidebarPosition: "left" | "right";
+	onFloatingSidebarPositionChange: (position: "left" | "right") => void;
+	sidebarCollapseEnabled: boolean;
+	onSidebarCollapseEnabledChange: (enabled: boolean) => void;
 }
 
 const PRESETS = [
@@ -49,8 +53,12 @@ export default function GeneralSettingsTab({
 	onCheckUpdate,
 	onInstallUpdate,
 	onSkipVersion,
-	rightSidebarEnabled,
-	onRightSidebarEnabledChange,
+	floatingSidebarEnabled,
+	onFloatingSidebarEnabledChange,
+	floatingSidebarPosition,
+	onFloatingSidebarPositionChange,
+	sidebarCollapseEnabled,
+	onSidebarCollapseEnabledChange,
 }: Props) {
 	const { t, language, setLanguage } = useI18n();
 	const toast = useToast();
@@ -696,7 +704,7 @@ export default function GeneralSettingsTab({
 						</div>
 					</div>
 
-					{/* Right Sidebar Toggle */}
+					{/* Floating Sidebar Toggle */}
 					<div
 						style={{
 							display: "flex",
@@ -724,16 +732,16 @@ export default function GeneralSettingsTab({
 									marginTop: "4px",
 								}}
 							>
-								鼠标悬浮在右侧边缘时显示项目切换侧边栏
+								鼠标悬浮在边缘时自动滑出项目切换侧边栏
 							</div>
 						</div>
 						<button
-							onClick={() => onRightSidebarEnabledChange(!rightSidebarEnabled)}
+							onClick={() => onFloatingSidebarEnabledChange(!floatingSidebarEnabled)}
 							style={{
-								background: rightSidebarEnabled
+								background: floatingSidebarEnabled
 									? "var(--accent-purple)"
 									: "var(--bg-elevated)",
-								border: rightSidebarEnabled
+								border: floatingSidebarEnabled
 									? "1px solid var(--accent-purple)"
 									: "1px solid var(--border-mid)",
 								borderRadius: "20px",
@@ -749,7 +757,157 @@ export default function GeneralSettingsTab({
 								style={{
 									position: "absolute",
 									top: "2px",
-									left: rightSidebarEnabled ? "26px" : "2px",
+									left: floatingSidebarEnabled ? "26px" : "2px",
+									width: "18px",
+									height: "18px",
+									borderRadius: "50%",
+									background: "#fff",
+									transition: "all 200ms ease",
+									boxShadow: "0 1px 3px rgba(0,0,0,0.2)",
+								}}
+							/>
+						</button>
+					</div>
+
+					{/* Floating Sidebar Position */}
+					<div
+						style={{
+							display: "flex",
+							alignItems: "center",
+							justifyContent: "space-between",
+							marginTop: "16px",
+							paddingTop: "16px",
+							borderTop: "1px solid var(--border-subtle)",
+						}}
+					>
+						<div>
+							<div
+								style={{
+									fontSize: "14px",
+									fontWeight: 500,
+									color: "var(--text-primary)",
+								}}
+							>
+								悬浮侧边栏位置
+							</div>
+							<div
+								style={{
+									fontSize: "12px",
+									color: "var(--text-secondary)",
+									marginTop: "4px",
+								}}
+							>
+								选择悬浮侧边栏出现在窗口左侧或右侧
+							</div>
+						</div>
+						<div style={{ display: "flex", gap: "8px" }}>
+							<button
+								onClick={() => onFloatingSidebarPositionChange("left")}
+								style={{
+									background:
+										floatingSidebarPosition === "left"
+											? "var(--accent-purple)"
+											: "var(--bg-elevated)",
+									border:
+										floatingSidebarPosition === "left"
+											? "1px solid var(--accent-purple)"
+											: "1px solid var(--border-mid)",
+									borderRadius: "6px",
+									padding: "6px 14px",
+									cursor: "pointer",
+									color:
+										floatingSidebarPosition === "left"
+											? "#ffffff"
+											: "var(--text-secondary)",
+									fontSize: "13px",
+									fontWeight: 500,
+									transition: "all 200ms ease",
+								}}
+							>
+								{t("proj.floatingSidebar.left")}
+							</button>
+							<button
+								onClick={() => onFloatingSidebarPositionChange("right")}
+								style={{
+									background:
+										floatingSidebarPosition === "right"
+											? "var(--accent-purple)"
+											: "var(--bg-elevated)",
+									border:
+										floatingSidebarPosition === "right"
+											? "1px solid var(--accent-purple)"
+											: "1px solid var(--border-mid)",
+									borderRadius: "6px",
+									padding: "6px 14px",
+									cursor: "pointer",
+									color:
+										floatingSidebarPosition === "right"
+											? "#ffffff"
+											: "var(--text-secondary)",
+									fontSize: "13px",
+									fontWeight: 500,
+									transition: "all 200ms ease",
+								}}
+							>
+								{t("proj.floatingSidebar.right")}
+							</button>
+						</div>
+					</div>
+
+					{/* Left Sidebar Collapse Toggle */}
+					<div
+						style={{
+							display: "flex",
+							alignItems: "center",
+							justifyContent: "space-between",
+							marginTop: "16px",
+							paddingTop: "16px",
+							borderTop: "1px solid var(--border-subtle)",
+						}}
+					>
+						<div>
+							<div
+								style={{
+									fontSize: "14px",
+									fontWeight: 500,
+									color: "var(--text-primary)",
+								}}
+							>
+								{t("proj.sidebar.collapse.enable")}
+							</div>
+							<div
+								style={{
+									fontSize: "12px",
+									color: "var(--text-secondary)",
+									marginTop: "4px",
+								}}
+							>
+								开启后左侧项目列表可折叠隐藏，ProjectWorkspace 显示展开按钮
+							</div>
+						</div>
+						<button
+							onClick={() => onSidebarCollapseEnabledChange(!sidebarCollapseEnabled)}
+							style={{
+								background: sidebarCollapseEnabled
+									? "var(--accent-purple)"
+									: "var(--bg-elevated)",
+								border: sidebarCollapseEnabled
+									? "1px solid var(--accent-purple)"
+									: "1px solid var(--border-mid)",
+								borderRadius: "20px",
+								width: "48px",
+								height: "24px",
+								position: "relative",
+								cursor: "pointer",
+								transition: "all 200ms ease",
+								padding: 0,
+							}}
+						>
+							<span
+								style={{
+									position: "absolute",
+									top: "2px",
+									left: sidebarCollapseEnabled ? "26px" : "2px",
 									width: "18px",
 									height: "18px",
 									borderRadius: "50%",

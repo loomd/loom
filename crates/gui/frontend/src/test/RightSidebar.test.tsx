@@ -23,6 +23,7 @@ async function renderSidebar(props: Record<string, unknown> = {}) {
         selectedProjectId="p-1"
         onProjectSelect={vi.fn()}
         enabled={true}
+        position="right"
         page="workspace"
         onNavigate={vi.fn()}
         onRegisterProject={vi.fn()}
@@ -42,6 +43,7 @@ describe("RightSidebar", () => {
           selectedProjectId="p-1"
           onProjectSelect={vi.fn()}
           enabled={false}
+          position="right"
           page="workspace"
           onNavigate={vi.fn()}
         />

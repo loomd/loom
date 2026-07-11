@@ -1,9 +1,9 @@
 {
   "productName": "Loom",
-  "version": "0.3.13",
+  "version": "0.3.14",
   "identifier": "com.loom.app",
   "build": {
-    "beforeDevCommand": "npm --prefix frontend run dev",
+    "beforeDevCommand": "npm --prefix ../crates/gui/frontend run dev",
     "beforeBuildCommand": "npm --prefix frontend run build",
     "frontendDist": "../dist",
     "devUrl": "http://localhost:1420"
