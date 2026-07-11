@@ -182,7 +182,7 @@ export default function Sidebar({
 				<div style={{ flexGrow: 1 }}>
 					<NavItem
 						icon="⚙️"
-						label={t("nav.settings")}
+						label={t("nav.settings.short")}
 						page="settings"
 						current={page}
 						onClick={onSettingsClick}
