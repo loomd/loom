@@ -96,11 +96,37 @@ function App() {
 					e.preventDefault();
 					(active as HTMLInputElement | HTMLTextAreaElement).select();
 				}
+				return;
+			}
+
+			if ((e.ctrlKey || e.metaKey) && e.key === ",") {
+				e.preventDefault();
+				e.stopPropagation();
+				setPage(prev => prev === "settings" ? "workspace" : "settings");
+				return;
+			}
+
+			const active = document.activeElement;
+			const isInput = active && (active.tagName === "INPUT" || active.tagName === "TEXTAREA") && !active.classList.contains("xterm-helper-textarea");
+			if (isInput) return;
+
+			if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "tab") {
+				e.preventDefault();
+				e.stopPropagation();
+				window.dispatchEvent(new CustomEvent("loom-shortcut", { detail: "ctrl-tab" }));
+				return;
+			}
+
+			if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "w") {
+				e.preventDefault();
+				e.stopPropagation();
+				window.dispatchEvent(new CustomEvent("loom-shortcut", { detail: "ctrl-w" }));
+				return;
 			}
 		};
-		window.addEventListener("keydown", handleGlobalKeyDown);
-		return () => window.removeEventListener("keydown", handleGlobalKeyDown);
-	}, []);
+		window.addEventListener("keydown", handleGlobalKeyDown, { capture: true });
+		return () => window.removeEventListener("keydown", handleGlobalKeyDown, { capture: true });
+	}, [page]);
 
 	const navigateToPage = (id: string, pg: Page) => { p.setSelectedProjectId(id); setPage(pg); };
 

@@ -72,10 +72,17 @@ export function useTabs(projectRoot: string) {
     setTabs(prev => [...prev, tab]);
   }, []);
 
-  const removeTabById = useCallback((id: string) => {
-    setTabs(prev => prev.filter(t => t.id !== id));
-    setActiveTabId(prev => prev === id ? 'overview' : prev);
-  }, []);
+	const removeTabById = useCallback((id: string) => {
+		setTabs(prev => {
+			const filtered = prev.filter(t => t.id !== id);
+			if (id === activeTabId) {
+				const idx = prev.findIndex(t => t.id === id);
+				const nextId = idx > 0 ? prev[idx - 1].id : (filtered[0]?.id ?? 'overview');
+				setActiveTabId(nextId);
+			}
+			return filtered;
+		});
+	}, [activeTabId]);
 
   const updateTabDirty = useCallback((tabId: string, dirty: boolean) => {
     setTabs(prev => prev.map(t => t.id === tabId ? { ...t, isDirty: dirty } : t));

@@ -1,4 +1,4 @@
-import React, { Suspense } from 'react';
+import React, { Suspense, useEffect } from 'react';
 import WindowControlButtons from '../components/WindowControlButtons';
 import { useTabs } from '../hooks/useTabs';
 import { useWorkspaceData } from '../hooks/useWorkspaceData';
@@ -23,20 +23,38 @@ export default function ProjectWorkspace({ project, isVisible, onUnregisterProje
   const { t } = useI18n();
   const toast = useToast();
   const tabsState = useTabs(project.root_path);
-  const {
-    tabs, activeTabId, setActiveTabId, layoutMode, setLayoutMode,
-    terminals, showGrid, handleAddRawTerminal, handleCloseTerminal,
-    handleOpenFile, updateTabDirty,
-  } = tabsState;
+	const {
+		tabs, activeTabId, setActiveTabId, layoutMode, setLayoutMode,
+		terminals, showGrid, handleAddRawTerminal, handleCloseTerminal,
+		handleOpenFile, updateTabDirty, removeTabById,
+	} = tabsState;
 
-  const data = useWorkspaceData(project, toast, t, {
-    addTab: tabsState.addTab,
-    setActiveTabId,
-    openEditorTab: handleOpenFile,
-    removeTabById: tabsState.removeTabById,
-  });
+	const data = useWorkspaceData(project, toast, t, {
+		addTab: tabsState.addTab,
+		setActiveTabId,
+		openEditorTab: handleOpenFile,
+		removeTabById: tabsState.removeTabById,
+	});
 
-  return (
+	useEffect(() => {
+		const handler = (e: Event) => {
+			const detail = (e as CustomEvent).detail;
+			if (detail === "ctrl-tab") {
+				const idx = tabs.findIndex(t => t.id === activeTabId);
+				const next = (idx + 1) % tabs.length;
+				setLayoutMode("single");
+				setActiveTabId(tabs[next].id);
+			} else if (detail === "ctrl-w") {
+				if (activeTabId !== "overview" && activeTabId !== "agents-skills") {
+					removeTabById(activeTabId);
+				}
+			}
+		};
+		window.addEventListener("loom-shortcut", handler);
+		return () => window.removeEventListener("loom-shortcut", handler);
+	}, [tabs, activeTabId, setActiveTabId, setLayoutMode, removeTabById]);
+
+	return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
       <div data-tauri-drag-region style={{
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',

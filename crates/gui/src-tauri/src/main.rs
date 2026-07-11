@@ -9,6 +9,8 @@ use tauri::{
     Manager,
 };
 use tauri_plugin_autostart::{MacosLauncher, ManagerExt};
+#[cfg(target_os = "windows")]
+use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
 
 #[tauri::command]
 fn update_ime_position(
@@ -1304,6 +1306,24 @@ fn main() {
         }
     }));
 
+    #[cfg(target_os = "windows")]
+    let builder = builder.plugin(
+        tauri_plugin_global_shortcut::Builder::new()
+            .with_handler(|app, _shortcut, event| {
+                if event.state == ShortcutState::Pressed {
+                    if let Some(window) = app.get_webview_window("main") {
+                        if window.is_visible().unwrap_or(false) {
+                            let _ = window.hide();
+                        } else {
+                            let _ = window.show();
+                            let _ = window.set_focus();
+                        }
+                    }
+                }
+            })
+            .build(),
+    );
+
     builder
         .plugin(tauri_plugin_autostart::init(
             MacosLauncher::LaunchAgent,
@@ -1342,6 +1362,11 @@ fn main() {
                     }
                     let _ = window.center();
                 }
+            }
+
+            #[cfg(target_os = "windows")]
+            {
+                let _ = app.global_shortcut().register("Alt+Space");
             }
 
             // Run process synchronization in a background thread to prevent blocking Tauri's main startup thread (which causes the white screen freeze).
