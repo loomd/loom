@@ -45,10 +45,18 @@ export function useTabs(projectRoot: string) {
         const confirmClose = confirm('文件有未保存的更改，确定要关闭吗？');
         if (!confirmClose) return prev;
       }
+      if (id === activeTabId) {
+        const idx = prev.findIndex(t => t.id === id);
+        const filtered = prev.filter(t => t.id !== id);
+        if (idx > 0 && prev[idx - 1].id !== 'agents-skills') {
+          setActiveTabId(prev[idx - 1].id);
+        } else {
+          setActiveTabId(filtered[0]?.id ?? 'overview');
+        }
+      }
       return prev.filter(t => t.id !== id);
     });
-    setActiveTabId(prev => prev === id ? 'overview' : prev);
-  }, []);
+  }, [activeTabId]);
 
   const handleOpenFile = useCallback((file: FileEntry, cwd: string) => {
     const fileId = file.path;
@@ -77,8 +85,11 @@ export function useTabs(projectRoot: string) {
 			const filtered = prev.filter(t => t.id !== id);
 			if (id === activeTabId) {
 				const idx = prev.findIndex(t => t.id === id);
-				const nextId = idx > 0 ? prev[idx - 1].id : (filtered[0]?.id ?? 'overview');
-				setActiveTabId(nextId);
+				if (idx > 0 && prev[idx - 1].id !== 'agents-skills') {
+					setActiveTabId(prev[idx - 1].id);
+				} else {
+					setActiveTabId(filtered[0]?.id ?? 'overview');
+				}
 			}
 			return filtered;
 		});
