@@ -35,3 +35,6 @@ e2e/active_instances.json
 *.key
 
 # Agent/AI assistant metadata (keep specs/ but ignore temporary logs/workspaces)
+
+# Handoff runtime state (AI session collaboration data)
+/.handoff/
