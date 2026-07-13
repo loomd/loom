@@ -156,7 +156,7 @@ export function TerminalTab({ sessionId, cwd, command, args, env, isVisible, the
         const getTargetCursorPosition = (t: Terminal) => {
           const defaultX = t.buffer.active.cursorX;
           const defaultY = t.buffer.active.cursorY;
-          const isHidden = !!(t as any)?._core?.coreService?.isCursorHidden;
+          const isHidden = !!((t as Terminal & { _core?: { coreService?: { isCursorHidden?: boolean } } })?._core?.coreService?.isCursorHidden);
 
           if (!isHidden) {
             return { x: defaultX, y: defaultY };

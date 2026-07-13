@@ -129,7 +129,6 @@ export function useWorkspaceData(
     window.addEventListener('loom-refresh-data', handler);
     const timer = setTimeout(() => {
       loadToolsAndTemplates();
-      loadSkillsAndDocs();
     }, 0);
     return () => {
       window.removeEventListener('loom-refresh-data', handler);

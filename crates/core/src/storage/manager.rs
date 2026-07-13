@@ -2530,50 +2530,29 @@ pub fn scan_project_agent_docs(project_id: String) -> Result<Vec<AgentDoc>> {
     let mut docs = Vec::new();
     let root = &project.root_path;
 
-    fn walk_dir(dir: &Path, root: &Path, docs: &mut Vec<AgentDoc>) {
-        if let Ok(entries) = fs::read_dir(dir) {
-            for entry in entries.flatten() {
-                let path = entry.path();
-                if path.is_dir() {
-                    if let Some(name) = path.file_name() {
-                        let name_str = name.to_string_lossy().to_lowercase();
-                        if name_str == "node_modules"
-                            || name_str == "target"
-                            || name_str == ".git"
-                            || name_str == ".tmp"
-                            || name_str == ".backup"
-                        {
-                            continue;
-                        }
-                    }
-                    walk_dir(&path, root, docs);
-                } else if path.is_file() {
-                    if let Some(file_name_os) = path.file_name() {
-                        let file_name_lower = file_name_os.to_string_lossy().to_lowercase();
-                        if file_name_lower == "agents.md"
-                            || file_name_lower == "claude.md"
-                            || file_name_lower == "gemini.md"
-                            || file_name_lower == "agents_instructions.md"
-                        {
-                            if let Ok(rel_path) = path.strip_prefix(root) {
-                                let mut rel_str = rel_path.to_string_lossy().replace('\\', "/");
-                                if !rel_str.starts_with("./") {
-                                    rel_str = format!("./{}", rel_str);
-                                }
-                                docs.push(AgentDoc {
-                                    relative_path: rel_str,
-                                    absolute_path: path.clone(),
-                                    file_name: file_name_os.to_string_lossy().to_string(),
-                                });
-                            }
-                        }
-                    }
+    if let Ok(entries) = fs::read_dir(root) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if !path.is_file() {
+                continue;
+            }
+            if let Some(file_name_os) = path.file_name() {
+                let file_name_lower = file_name_os.to_string_lossy().to_lowercase();
+                if file_name_lower == "agents.md"
+                    || file_name_lower == "claude.md"
+                    || file_name_lower == "gemini.md"
+                    || file_name_lower == "agents_instructions.md"
+                {
+                    let rel_str = format!("./{}", file_name_os.to_string_lossy());
+                    docs.push(AgentDoc {
+                        relative_path: rel_str,
+                        absolute_path: path.clone(),
+                        file_name: file_name_os.to_string_lossy().to_string(),
+                    });
                 }
             }
         }
     }
-
-    walk_dir(root, root, &mut docs);
     docs.sort_by(|a, b| {
         a.relative_path
             .to_lowercase()

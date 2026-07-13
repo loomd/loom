@@ -91,7 +91,7 @@ describe("CliToolsTab", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     (invoke as ReturnType<typeof vi.fn>).mockImplementation(
-      (cmd: string, _args?: unknown) => {
+      (cmd: string) => {
         if (cmd === "get_categories") return Promise.resolve([]);
         return Promise.resolve([]);
       }

@@ -1,10 +1,10 @@
 import React from "react";
-import { render, screen } from "@testing-library/react";
+import { render } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 let mockTerminalInstance: Record<string, unknown>;
-let mockFitAddonInstance: { fit: ReturnType<typeof vi.fn> };
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function FakeTerminal(this: Record<string, unknown>, _opts: Record<string, unknown>) {
   const textarea = document.createElement("textarea");
   const element = document.createElement("div");
@@ -31,6 +31,7 @@ function FakeTerminal(this: Record<string, unknown>, _opts: Record<string, unkno
       },
     },
   });
+  // eslint-disable-next-line @typescript-eslint/no-this-alias
   mockTerminalInstance = this;
 }
 vi.mock("@xterm/xterm", () => ({
@@ -40,7 +41,6 @@ vi.mock("@xterm/xterm", () => ({
 vi.mock("@xterm/addon-fit", () => ({
   FitAddon: vi.fn(function (this: { fit: ReturnType<typeof vi.fn> }) {
     this.fit = vi.fn();
-    mockFitAddonInstance = this as unknown as { fit: ReturnType<typeof vi.fn> };
   }),
 }));
 
@@ -55,6 +55,7 @@ beforeEach(() => {
     cb(0);
     return 0;
   });
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   function MockResizeObserver(this: { observe: ReturnType<typeof vi.fn>; disconnect: ReturnType<typeof vi.fn> }, _cb: ResizeObserverCallback) {
     this.observe = vi.fn();
     this.disconnect = vi.fn();

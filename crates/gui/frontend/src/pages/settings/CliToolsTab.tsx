@@ -122,8 +122,11 @@ export default function CliToolsTab() {
 	}, [selectedTool]);
 
 	useEffect(() => {
-		loadCategories();
-		loadToolsAndTemplates();
+		const timer = setTimeout(() => {
+			loadCategories();
+			loadToolsAndTemplates();
+		}, 0);
+		return () => clearTimeout(timer);
 	}, [loadCategories, loadToolsAndTemplates]);
 
 	const handleScanPath = async () => {

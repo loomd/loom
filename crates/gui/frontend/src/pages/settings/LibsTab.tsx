@@ -52,7 +52,10 @@ export default function LibsTab() {
 	}, []);
 
 	useEffect(() => {
-		loadGlobalSkillsAndDocs();
+		const timer = setTimeout(() => {
+			loadGlobalSkillsAndDocs();
+		}, 0);
+		return () => clearTimeout(timer);
 	}, [loadGlobalSkillsAndDocs]);
 
 	const handleImportLocalSkillFolder = async () => {

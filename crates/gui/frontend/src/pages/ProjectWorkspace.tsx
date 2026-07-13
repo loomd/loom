@@ -37,6 +37,12 @@ export default function ProjectWorkspace({ project, isVisible, onUnregisterProje
 	});
 
 	useEffect(() => {
+		if (activeTabId === 'agents-skills') {
+			data.loadSkillsAndDocs();
+		}
+	}, [activeTabId, data.loadSkillsAndDocs]);
+
+	useEffect(() => {
 		const handler = (e: Event) => {
 			const detail = (e as CustomEvent).detail;
 			if (detail === "ctrl-tab") {
