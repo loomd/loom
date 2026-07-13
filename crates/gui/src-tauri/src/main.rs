@@ -1228,7 +1228,24 @@ fn get_window_state_path() -> std::path::PathBuf {
 }
 
 fn save_window_state(window: &tauri::Window) {
-    if let (Ok(pos), Ok(size)) = (window.outer_position(), window.outer_size()) {
+    let maximized = window.is_maximized().unwrap_or(false);
+    let fullscreen = window.is_fullscreen().unwrap_or(false);
+
+    if maximized || fullscreen {
+        // Keep original size/pos, only patch state flags.
+        let path = get_window_state_path();
+        if let Ok(content) = std::fs::read_to_string(&path) {
+            if let Ok(mut v) = serde_json::from_str::<serde_json::Value>(&content) {
+                if let Some(obj) = v.as_object_mut() {
+                    obj["maximized"] = serde_json::json!(maximized);
+                    obj["fullscreen"] = serde_json::json!(fullscreen);
+                    if let Ok(json) = serde_json::to_string_pretty(&v) {
+                        let _ = std::fs::write(&path, json);
+                    }
+                }
+            }
+        }
+    } else if let (Ok(pos), Ok(size)) = (window.outer_position(), window.outer_size()) {
         #[derive(serde::Serialize)]
         struct WinState {
             x: i32,
@@ -1236,15 +1253,15 @@ fn save_window_state(window: &tauri::Window) {
             width: u32,
             height: u32,
             maximized: bool,
-            minimized: bool,
+            fullscreen: bool,
         }
         if let Ok(json) = serde_json::to_string_pretty(&WinState {
             x: pos.x,
             y: pos.y,
             width: size.width,
             height: size.height,
-            maximized: window.is_maximized().unwrap_or(false),
-            minimized: window.is_minimized().unwrap_or(false),
+            maximized: false,
+            fullscreen: false,
         }) {
             let _ = std::fs::write(get_window_state_path(), json);
         }
@@ -1351,13 +1368,19 @@ fn main() {
                         y: i32,
                         width: u32,
                         height: u32,
+                        #[serde(default)]
                         maximized: bool,
+                        #[serde(default)]
+                        fullscreen: bool,
                     }
                     if let Ok(state) = serde_json::from_str::<WinState>(&content) {
                         let _ =
                             window.set_size(tauri::PhysicalSize::new(state.width, state.height));
                         let _ = window.set_position(tauri::PhysicalPosition::new(state.x, state.y));
-                        if state.maximized {
+
+                        if state.fullscreen {
+                            let _ = window.set_fullscreen(true);
+                        } else if state.maximized {
                             let _ = window.maximize();
                         }
                     }
