@@ -48,7 +48,7 @@ export default function RightSidebar({
       if (!enabled) return;
 
       const windowWidth = window.innerWidth;
-      const triggerZone = 10;
+      const triggerZone = 24;
 
       if (position === "right") {
         if (e.clientX >= windowWidth - triggerZone && e.clientY > 40) {
