@@ -1235,12 +1235,16 @@ fn save_window_state(window: &tauri::Window) {
             y: i32,
             width: u32,
             height: u32,
+            maximized: bool,
+            minimized: bool,
         }
         if let Ok(json) = serde_json::to_string_pretty(&WinState {
             x: pos.x,
             y: pos.y,
             width: size.width,
             height: size.height,
+            maximized: window.is_maximized().unwrap_or(false),
+            minimized: window.is_minimized().unwrap_or(false),
         }) {
             let _ = std::fs::write(get_window_state_path(), json);
         }
@@ -1347,11 +1351,15 @@ fn main() {
                         y: i32,
                         width: u32,
                         height: u32,
+                        maximized: bool,
                     }
                     if let Ok(state) = serde_json::from_str::<WinState>(&content) {
                         let _ =
                             window.set_size(tauri::PhysicalSize::new(state.width, state.height));
                         let _ = window.set_position(tauri::PhysicalPosition::new(state.x, state.y));
+                        if state.maximized {
+                            let _ = window.maximize();
+                        }
                     }
                 } else {
                     if let Some(monitor) = window.current_monitor().unwrap_or(None) {
