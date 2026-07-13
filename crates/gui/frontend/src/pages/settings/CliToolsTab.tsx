@@ -131,6 +131,7 @@ export default function CliToolsTab() {
 		try {
 			const found = await scanPathEnv();
 			await loadToolsAndTemplates();
+			window.dispatchEvent(new Event('loom-refresh-data'));
 			toast.success(t("db.toast.scanSuccess", { count: found.length }));
 		} catch (e) {
 			toast.error(String(e) || t("db.toast.scanFailed"));
@@ -145,6 +146,7 @@ export default function CliToolsTab() {
 		try {
 			await importCliTool(path.trim());
 			await loadToolsAndTemplates();
+			window.dispatchEvent(new Event('loom-refresh-data'));
 			toast.success(t("db.toast.imported"));
 		} catch (e) {
 			toast.error(String(e) || t("db.toast.importFailed"));
@@ -160,6 +162,7 @@ export default function CliToolsTab() {
 				setSelectedTool(null);
 			}
 			await loadToolsAndTemplates();
+			window.dispatchEvent(new Event('loom-refresh-data'));
 			toast.success(t("db.toast.removed"));
 		} catch (e) {
 			toast.error(String(e) || t("db.toast.removeFailed"));
@@ -170,6 +173,7 @@ export default function CliToolsTab() {
 		try {
 			await assignCliCategory(toolId, catId || null);
 			await loadToolsAndTemplates();
+			window.dispatchEvent(new Event('loom-refresh-data'));
 			toast.success(t("db.toast.catUpdated"));
 		} catch (e) {
 			toast.error(String(e) || t("db.toast.catUpdateFailed"));
@@ -181,6 +185,7 @@ export default function CliToolsTab() {
 		try {
 			await deleteTemplate(id);
 			await loadToolsAndTemplates();
+			window.dispatchEvent(new Event('loom-refresh-data'));
 			toast.success(t("temp.toast.deleted"));
 		} catch (e) {
 			toast.error(String(e) || "Failed to delete template");
@@ -740,6 +745,7 @@ export default function CliToolsTab() {
 						}}
 						onSave={() => {
 							loadToolsAndTemplates();
+							window.dispatchEvent(new Event('loom-refresh-data'));
 						}}
 					/>
 				)}
@@ -751,6 +757,7 @@ export default function CliToolsTab() {
 						onClose={() => setEditingToolConfig(null)}
 						onSave={() => {
 							loadToolsAndTemplates();
+							window.dispatchEvent(new Event('loom-refresh-data'));
 						}}
 					/>
 				)}

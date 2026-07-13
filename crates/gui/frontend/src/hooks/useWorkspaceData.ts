@@ -125,11 +125,16 @@ export function useWorkspaceData(
   }, [project.id]);
 
   useEffect(() => {
+    const handler = () => loadToolsAndTemplates();
+    window.addEventListener('loom-refresh-data', handler);
     const timer = setTimeout(() => {
       loadToolsAndTemplates();
       loadSkillsAndDocs();
     }, 0);
-    return () => clearTimeout(timer);
+    return () => {
+      window.removeEventListener('loom-refresh-data', handler);
+      clearTimeout(timer);
+    };
   }, [project.id, loadToolsAndTemplates, loadSkillsAndDocs]);
 
   const handleToggleSkill = async (skillName: string, enabled: boolean) => {
