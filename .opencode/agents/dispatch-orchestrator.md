@@ -59,6 +59,11 @@ orchestrator:
 - 完成 → `handoff_update` 到 `completed`。
 - 废弃 → `handoff_update` 到 `archived`。
 - 只能改 owner 是自己的 handoff。
+- **handoff_claim 仅限以下场景使用**：
+  - 用户明确说"让 session-X 接手 handoff00X"
+  - orchestrator 明确调度"session-X 去接 handoff00X，接续工作"
+  - 新 session 启动时，orchestrator 告诉它"你去接 handoff00X"
+  - **禁止**：新 session 自行扫描 handoff 后主动 claim，必须有外部指令
 
 ## Handoff 文件格式
 
