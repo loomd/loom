@@ -135,7 +135,7 @@ export default function ProjectWorkspace({ project, isVisible, onUnregisterProje
           })}
         </div>
         <div data-tauri-drag-region onDoubleClick={() => { document.querySelector('.titlebar-tabs-scroll')?.scrollTo({ left: 0, behavior: 'smooth' }); }}
-          style={{ width: '40px', flexShrink: 0, alignSelf: 'stretch', cursor: 'grab' }} title="拖拽窗口 / 双击回到起始位置" />
+          style={{ width: '24px', flexShrink: 0, alignSelf: 'stretch', cursor: 'grab' }} title="拖拽窗口 / 双击回到起始位置" />
         <div style={{ display: 'flex', gap: '2px', alignItems: 'stretch', alignSelf: 'stretch' }}>
           <button onClick={handleAddRawTerminal}
             style={{ display: 'inline-flex', alignItems: 'center', lineHeight: 1, padding: '4px 4px', fontSize: '0.82rem', borderRadius: 'var(--radius-sm, 4px)', cursor: 'pointer', backgroundColor: 'var(--bg-elevated, #18181b)', border: '1px solid var(--border-subtle, #27272a)', color: 'var(--text-primary, #fff)', fontWeight: 500, userSelect: 'none' }}>
