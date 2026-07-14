@@ -41,6 +41,7 @@ fn test_serialization_fidelity() {
         category_id: Some("category-dev".to_string()),
         custom_env,
         custom_args: Vec::new(),
+        is_agent: false,
     };
 
     let category = Category {
@@ -65,24 +66,26 @@ fn test_serialization_fidelity() {
         env_mode: None,
     };
 
-    let original = AppConfig {
-        cli_tools: vec![tool],
-        categories: vec![category],
-        templates: vec![template],
-        env_vars: Vec::new(),
-        language: "zh".to_string(),
-        theme: "dark".to_string(),
-        font_family: "Plus Jakarta Sans".to_string(),
-        font_size: "14px".to_string(),
-        project_column_align: "top".to_string(),
-        projects: Vec::new(),
-        agent_instances: Vec::new(),
-        global_skills: Vec::new(),
-        global_docs: Vec::new(),
-        autostart: false,
-        skipped_version: None,
-        update_check_interval: String::new(),
-    };
+let original = AppConfig {
+		cli_tools: vec![tool],
+		categories: vec![category],
+		templates: vec![template],
+		env_vars: Vec::new(),
+		language: "zh".to_string(),
+		theme: "dark".to_string(),
+		font_family: "Plus Jakarta Sans".to_string(),
+		font_size: "14px".to_string(),
+		project_column_align: "top".to_string(),
+		projects: Vec::new(),
+		agent_instances: Vec::new(),
+		global_skills: Vec::new(),
+		global_docs: Vec::new(),
+		autostart: false,
+		skipped_version: None,
+		update_check_interval: String::new(),
+		has_onboarded: false,
+		agent_skill_map: HashMap::new(),
+	};
 
     // Serialize
     let serialized = serde_json::to_string_pretty(&original).expect("Failed to serialize");
@@ -128,6 +131,7 @@ fn test_atomic_save_load_roundtrip() {
             category_id: None,
             custom_env: HashMap::new(),
             custom_args: Vec::new(),
+            is_agent: false,
         };
         config.cli_tools.push(new_tool);
 
@@ -168,6 +172,7 @@ fn test_crash_safety_on_failed_write() {
             category_id: None,
             custom_env: HashMap::new(),
             custom_args: Vec::new(),
+            is_agent: false,
         });
         save_config(&original_config).expect("failed to save original config");
 

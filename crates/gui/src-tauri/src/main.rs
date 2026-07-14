@@ -1,6 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use loom_core::storage::{self as cstore, AgentDoc, AgentInstance, Category, CliTool, GlobalDocTemplate, GlobalEnvVar, GlobalSkillTemplate, Project, ProjectSkill, Template};
+use loom_core::storage::{self as cstore, AgentDoc, AgentInstance, Category, CliTool, GlobalDocTemplate, GlobalEnvVar, GlobalSkillTemplate, Project, ProjectSkill, ScanResult, Template};
 use std::collections::HashMap;
 use tauri::{
     image::Image,
@@ -162,6 +162,11 @@ fn delete_global_env_var(id: String) -> Result<(), String> {
 #[tauri::command]
 fn delete_cli_tool(cli_id: String) -> Result<(), String> {
     cstore::delete_cli_tool(cli_id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn toggle_cli_tool_agent(cli_id: String) -> Result<CliTool, String> {
+    cstore::toggle_cli_tool_agent(cli_id).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -761,6 +766,36 @@ fn parse_local_skill_dir(path: String) -> Result<GlobalSkillTemplate, String> {
     cstore::parse_local_skill_dir(dir_path).map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+fn scan_and_classify_agents() -> Result<Vec<ScanResult>, String> {
+    cstore::scan_and_classify_agents()
+}
+
+#[tauri::command]
+fn get_onboarded_status() -> Result<bool, String> {
+    cstore::get_onboarded_status()
+}
+
+#[tauri::command]
+fn set_onboarded_status(status: bool) -> Result<(), String> {
+    cstore::set_onboarded_status(status)
+}
+
+#[tauri::command]
+fn create_agent_templates(agents: Vec<(String, String)>) -> Result<Vec<Template>, String> {
+    cstore::create_agent_templates(agents)
+}
+
+#[tauri::command]
+fn get_agent_skill_map() -> Result<HashMap<String, String>, String> {
+    cstore::get_agent_skill_map()
+}
+
+#[tauri::command]
+fn set_agent_skill_map(skill_map: HashMap<String, String>) -> Result<(), String> {
+    cstore::set_agent_skill_map(skill_map)
+}
+
 fn execute_test_command(cmd: &str, args_json: &str) -> Result<String, String> {
     let args: serde_json::Value = serde_json::from_str(args_json)
         .map_err(|e| format!("Failed to parse TAURI_TEST_ARGS: {}", e))?;
@@ -948,6 +983,13 @@ fn execute_test_command(cmd: &str, args_json: &str) -> Result<String, String> {
                 .ok_or_else(|| "Missing argument 'cli_id'".to_string())?;
             delete_cli_tool(cli_id.to_string())?;
             Ok("null".to_string())
+        }
+        "toggle_cli_tool_agent" => {
+            let cli_id = args["cli_id"]
+                .as_str()
+                .ok_or_else(|| "Missing argument 'cli_id'".to_string())?;
+            let res = toggle_cli_tool_agent(cli_id.to_string())?;
+            serde_json::to_string(&res).map_err(|e| e.to_string())
         }
         "delete_category" => {
             let cat_id = args["cat_id"]
@@ -1209,6 +1251,20 @@ fn execute_test_command(cmd: &str, args_json: &str) -> Result<String, String> {
         "select_directory" => {
             let path = args["path"].as_str().map(|s| s.to_string());
             serde_json::to_string(&path).map_err(|e| e.to_string())
+        }
+        "create_agent_templates" => {
+            let agents_arr = args["agents"]
+                .as_array()
+                .ok_or_else(|| "Missing argument 'agents'".to_string())?;
+            let mut agents = Vec::new();
+            for item in agents_arr {
+                let arr = item.as_array().ok_or_else(|| "Each agent must be a [tool_id, name] pair".to_string())?;
+                let tool_id = arr[0].as_str().ok_or_else(|| "Missing tool_id".to_string())?.to_string();
+                let name = arr[1].as_str().ok_or_else(|| "Missing name".to_string())?.to_string();
+                agents.push((tool_id, name));
+            }
+            let res = cstore::create_agent_templates(agents).map_err(|e| e.to_string())?;
+            serde_json::to_string(&res).map_err(|e| e.to_string())
         }
         _ => Err(format!("Unknown command '{}'", cmd)),
     }
@@ -1485,6 +1541,7 @@ fn main() {
             delete_template,
             update_template,
             delete_cli_tool,
+            toggle_cli_tool_agent,
             delete_category,
             run_cli_template,
             kill_cli_instance,
@@ -1549,7 +1606,13 @@ fn main() {
             get_project_column_align,
             set_project_column_align,
             get_update_check_interval,
-            set_update_check_interval
+            set_update_check_interval,
+            scan_and_classify_agents,
+            get_onboarded_status,
+            set_onboarded_status,
+            create_agent_templates,
+            get_agent_skill_map,
+            set_agent_skill_map
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

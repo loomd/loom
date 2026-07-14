@@ -5,6 +5,7 @@ import GeneralSettingsTab from "./settings/GeneralSettingsTab";
 import CliToolsTab from "./settings/CliToolsTab";
 import LibsTab from "./settings/LibsTab";
 import EnvVarsPage from "./EnvVarsPage";
+import type { UseOnboardingReturn } from "../hooks/useOnboarding";
 
 interface Props {
 	theme: "dark" | "day" | "gray";
@@ -31,6 +32,7 @@ interface Props {
 	onFloatingSidebarPositionChange: (position: "left" | "right") => void;
 	sidebarCollapseEnabled: boolean;
 	onSidebarCollapseEnabledChange: (enabled: boolean) => void;
+	onboarding: UseOnboardingReturn;
 }
 
 type Tab = "general" | "tools" | "env" | "libs";
@@ -54,6 +56,7 @@ export default function SettingsPage({
 		onFloatingSidebarPositionChange,
 		sidebarCollapseEnabled,
 		onSidebarCollapseEnabledChange,
+		onboarding,
 	}: Props) {
 	const { t } = useI18n();
 	const [activeSubTab, setActiveSubTab] = useState<Tab>("general");
@@ -73,15 +76,14 @@ export default function SettingsPage({
 				style={{
 					display: "flex",
 					alignItems: "center",
-					justifyContent: "space-between",
 					borderBottom: "1px solid var(--border-subtle)",
 					paddingBottom: "1px",
-					gap: "8px",
 				}}
 			>
 				<button
 					onClick={() => setActiveSubTab("general")}
 					style={{
+						flex: 1,
 						padding: "8px 16px",
 						fontSize: "0.9rem",
 						fontWeight: 500,
@@ -96,13 +98,15 @@ export default function SettingsPage({
 								? "var(--text-primary)"
 								: "var(--text-secondary)",
 						cursor: "pointer",
+						textAlign: "center",
 					}}
 				>
-					⚙️ {t("settings.tab.appearance")}
+					{t("settings.tab.appearance")}
 				</button>
 				<button
 					onClick={() => setActiveSubTab("tools")}
 					style={{
+						flex: 1,
 						padding: "8px 16px",
 						fontSize: "0.9rem",
 						fontWeight: 500,
@@ -117,13 +121,15 @@ export default function SettingsPage({
 								? "var(--text-primary)"
 								: "var(--text-secondary)",
 						cursor: "pointer",
+						textAlign: "center",
 					}}
 				>
-					🛠️ {t("settings.tab.tools")}
+					{t("settings.tab.tools")}
 				</button>
 				<button
 					onClick={() => setActiveSubTab("env")}
 					style={{
+						flex: 1,
 						padding: "8px 16px",
 						fontSize: "0.9rem",
 						fontWeight: 500,
@@ -138,13 +144,15 @@ export default function SettingsPage({
 								? "var(--text-primary)"
 								: "var(--text-secondary)",
 						cursor: "pointer",
+						textAlign: "center",
 					}}
 				>
-					⚡ {t("settings.tab.env")}
+					{t("settings.tab.env")}
 				</button>
 				<button
 					onClick={() => setActiveSubTab("libs")}
 					style={{
+						flex: 1,
 						padding: "8px 16px",
 						fontSize: "0.9rem",
 						fontWeight: 500,
@@ -159,9 +167,10 @@ export default function SettingsPage({
 								? "var(--text-primary)"
 								: "var(--text-secondary)",
 						cursor: "pointer",
+						textAlign: "center",
 					}}
 				>
-					📚 {t("settings.tab.libs")}
+					{t("settings.tab.libs")}
 				</button>
 				<div style={{ display: "flex", gap: "2px", alignItems: "stretch", alignSelf: "stretch" }}>
 					<WindowControlButtons />
@@ -195,6 +204,7 @@ export default function SettingsPage({
 						onFloatingSidebarPositionChange={onFloatingSidebarPositionChange}
 						sidebarCollapseEnabled={sidebarCollapseEnabled}
 						onSidebarCollapseEnabledChange={onSidebarCollapseEnabledChange}
+						onboarding={onboarding}
 					/>
 				)}
 				{activeSubTab === "tools" && <CliToolsTab />}

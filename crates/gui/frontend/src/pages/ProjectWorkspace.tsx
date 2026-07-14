@@ -122,11 +122,11 @@ export default function ProjectWorkspace({ project, isVisible, onUnregisterProje
                   fontSize: '0.82rem', fontWeight: 400, whiteSpace: 'nowrap', userSelect: 'none',
                 }}>
                 {tab.type === 'editor' && <span style={{ fontSize: '0.8rem', opacity: 0.8 }}>📄</span>}
-                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'inline-block', maxWidth: tab.type === 'terminal' ? 'none' : '60px' }}>
+                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'inline-block', minWidth: tab.type === 'terminal' ? '24px' : undefined, maxWidth: tab.type === 'terminal' ? 'none' : '60px' }}>
                   {tab.title}
                 </span>
-                <span onClick={(e) => handleCloseTerminal(tab.id, e)}
-                  style={{ marginLeft: '0px', cursor: 'pointer', display: 'inline-block', width: '12px', height: '12px', textAlign: 'center', lineHeight: '12px', fontSize: tab.isDirty ? '0.6rem' : '0.7rem' }}
+                <span onClick={(e) => { if (!isActive) return; handleCloseTerminal(tab.id, e); }}
+                  style={{ marginLeft: '0px', cursor: 'pointer', display: 'inline-block', width: '12px', height: '12px', textAlign: 'center', lineHeight: '12px', fontSize: tab.isDirty ? '0.6rem' : '0.7rem', visibility: isActive ? 'visible' : 'hidden', pointerEvents: isActive ? 'auto' : 'none' }}
                   className={`tab-close-icon ${tab.isDirty ? 'dirty' : ''}`}
                   title={tab.isDirty ? '有未保存的更改' : undefined}
                 />

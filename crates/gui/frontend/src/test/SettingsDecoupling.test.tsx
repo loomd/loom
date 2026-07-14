@@ -55,6 +55,27 @@ describe("GeneralSettingsTab", () => {
     onFloatingSidebarPositionChange: vi.fn(),
     sidebarCollapseEnabled: false,
     onSidebarCollapseEnabledChange: vi.fn(),
+    onboarding: {
+      state: {
+        showWizard: false,
+        currentStep: 0,
+        isScanning: false,
+        isCompleting: false,
+        agents: [],
+        tools: [],
+        allResults: [],
+        selectedAgents: new Set<string>(),
+      },
+      checkOnboarding: vi.fn(async () => false),
+      startScan: vi.fn(async () => {}),
+      reopenWizard: vi.fn(async () => {}),
+      goNext: vi.fn(),
+      goPrev: vi.fn(),
+      selectAgentResult: vi.fn(),
+      toggleAllSelected: vi.fn(),
+      closeWizard: vi.fn(async () => {}),
+      skipWizard: vi.fn(async () => {}),
+    },
   };
 
   it("renders theme section", async () => {
@@ -218,6 +239,27 @@ describe("SettingsPage", () => {
     onFloatingSidebarPositionChange: vi.fn(),
     sidebarCollapseEnabled: false,
     onSidebarCollapseEnabledChange: vi.fn(),
+    onboarding: {
+      state: {
+        showWizard: false,
+        currentStep: 0,
+        isScanning: false,
+        isCompleting: false,
+        agents: [],
+        tools: [],
+        allResults: [],
+        selectedAgents: new Set<string>(),
+      },
+      checkOnboarding: vi.fn(async () => false),
+      startScan: vi.fn(async () => {}),
+      reopenWizard: vi.fn(async () => {}),
+      goNext: vi.fn(),
+      goPrev: vi.fn(),
+      selectAgentResult: vi.fn(),
+      toggleAllSelected: vi.fn(),
+      closeWizard: vi.fn(async () => {}),
+      skipWizard: vi.fn(async () => {}),
+    },
   };
 
   it("renders page header with title", async () => {

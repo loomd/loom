@@ -10,9 +10,11 @@ import AppLayout from "./components/AppLayout";
 import Sidebar from "./components/Sidebar";
 import UpdateToast from "./components/UpdateToast";
 import NewProjectModal from "./components/NewProjectModal";
+import OnboardingWizard from "./components/OnboardingWizard";
 import { useProjects } from "./hooks/useProjects";
 import { useTheme } from "./hooks/useTheme";
 import { useUpdateChecker } from "./hooks/useUpdateChecker";
+import { useOnboarding } from "./hooks/useOnboarding";
 
 type Page = "workspace" | "settings";
 
@@ -35,6 +37,15 @@ function App() {
 	const p = useProjects(toast, t);
 	const theme = useTheme(toast);
 	const updater = useUpdateChecker(t, toast);
+	const onboarding = useOnboarding();
+
+	// Check onboarding status on first load with 500ms delay
+	useEffect(() => {
+		const timer = setTimeout(() => {
+			onboarding.checkOnboarding();
+		}, 500);
+		return () => clearTimeout(timer);
+	}, [onboarding]);
 
 	const [sidebarWidth, setSidebarWidth] = useState<number>(() => {
 		const saved = localStorage.getItem("loom_sidebar_width");
@@ -160,7 +171,7 @@ function App() {
 							)}
 						</div>
 						<div style={{ display: page === "settings" ? "flex" : "none", flexDirection: "column", flex: 1, minHeight: 0, overflow: "hidden" }}>
-							<SettingsPage theme={theme.theme} onThemeChange={theme.handleThemeChange} projectColumnAlign={theme.projectColumnAlign} onProjectColumnAlignChange={theme.handleProjectColumnAlignChange} fontFamily={theme.fontFamily} fontSize={theme.fontSize} onFontFamilyChange={theme.handleFontFamilyChange} onFontSizeChange={theme.handleFontSizeChange} updateInfo={updater.updateInfo} onCheckUpdate={updater.performUpdateCheck} onInstallUpdate={updater.handleInstallUpdate} onSkipVersion={updater.handleSkipVersion} floatingSidebarEnabled={floatingSidebarEnabled} onFloatingSidebarEnabledChange={setFloatingSidebarEnabled} floatingSidebarPosition={floatingSidebarPosition} onFloatingSidebarPositionChange={setFloatingSidebarPosition} sidebarCollapseEnabled={sidebarCollapseEnabled} onSidebarCollapseEnabledChange={setSidebarCollapseEnabled} />
+							<SettingsPage theme={theme.theme} onThemeChange={theme.handleThemeChange} projectColumnAlign={theme.projectColumnAlign} onProjectColumnAlignChange={theme.handleProjectColumnAlignChange} fontFamily={theme.fontFamily} fontSize={theme.fontSize} onFontFamilyChange={theme.handleFontFamilyChange} onFontSizeChange={theme.handleFontSizeChange} updateInfo={updater.updateInfo} onCheckUpdate={updater.performUpdateCheck} onInstallUpdate={updater.handleInstallUpdate} onSkipVersion={updater.handleSkipVersion} floatingSidebarEnabled={floatingSidebarEnabled} onFloatingSidebarEnabledChange={setFloatingSidebarEnabled} floatingSidebarPosition={floatingSidebarPosition} onFloatingSidebarPositionChange={setFloatingSidebarPosition} sidebarCollapseEnabled={sidebarCollapseEnabled} onSidebarCollapseEnabledChange={setSidebarCollapseEnabled} onboarding={onboarding} />
 						</div>
 					</>
 				}
@@ -175,6 +186,9 @@ function App() {
 			)}
 			{p.showModal && (
 				<NewProjectModal t={t} newProjName={p.newProjName} newProjPath={p.newProjPath} creating={p.creating} onNameChange={p.setNewProjName} onPathChange={p.setNewProjPath} onBrowse={p.handleBrowseFolder} onRegister={() => p.handleRegisterProject(setPage)} onCancel={() => p.setShowModal(false)} />
+			)}
+			{onboarding.state.showWizard && (
+				<OnboardingWizard onboarding={onboarding} />
 			)}
 		</div>
 	);

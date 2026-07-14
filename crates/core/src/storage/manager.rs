@@ -62,6 +62,151 @@ pub fn save_active_instances_list(list: &[ActiveInstance]) {
     }
 }
 
+// ─── AI Agent Classification ────────────────────────────────────────────────
+
+const KNOWN_AGENTS: &[&str] = &[
+    "opencode",
+    "claude",
+    "codex",
+    "gemini",
+    "copilot",
+    "cursor",
+    "aider",
+    "windsurf",
+    "swe-agent",
+    "langchain",
+    "vibe",
+];
+
+fn is_likely_agent(name: &str) -> bool {
+    let stem = name.to_lowercase();
+    KNOWN_AGENTS
+        .iter()
+        .any(|&agent| stem == agent || stem.starts_with(agent))
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct ScanResult {
+    pub name: String,
+    pub path: std::path::PathBuf,
+    pub is_agent: bool,
+    pub provider: Option<String>,
+    pub is_installed: bool,
+    pub is_registered: bool,
+    pub tool_id: Option<String>,
+}
+
+pub fn scan_and_classify_agents() -> std::result::Result<Vec<ScanResult>, String> {
+    let tools = scan_path_env()
+        .map_err(|e| format!("Failed to scan PATH: {}", e))?;
+    let config = load_config()
+        .map_err(|e| format!("Failed to load config: {}", e))?;
+    let mut results = Vec::new();
+
+    for tool in tools {
+        let stem = tool.name.to_lowercase();
+        let is_agent = is_likely_agent(&stem) || tool.is_agent;
+
+        let provider = if is_agent {
+            KNOWN_AGENTS
+                .iter()
+                .find(|&&agent| stem.contains(agent))
+                .map(|&agent| agent.to_string())
+        } else {
+            None
+        };
+
+        let has_template = is_agent && config.templates.iter().any(|t| t.cli_id == tool.id);
+        let path = tool.path.clone();
+        results.push(ScanResult {
+            name: tool.name,
+            path: path.clone(),
+            is_agent,
+            provider,
+            is_installed: path.exists(),
+            is_registered: has_template,
+            tool_id: Some(tool.id),
+        });
+    }
+
+    results.sort_by(|a, b| {
+        b.is_agent
+            .cmp(&a.is_agent)
+            .then(a.name.cmp(&b.name))
+    });
+
+    Ok(results)
+}
+
+pub fn get_onboarded_status() -> std::result::Result<bool, String> {
+    let config = load_config()
+        .map_err(|e| format!("Failed to load config: {}", e))?;
+    Ok(config.has_onboarded)
+}
+
+pub fn set_onboarded_status(status: bool) -> std::result::Result<(), String> {
+    let mut config = load_config()
+        .map_err(|e| format!("Failed to load config: {}", e))?;
+    config.has_onboarded = status;
+    save_config(&config)
+        .map_err(|e| format!("Failed to save config: {}", e))?;
+    Ok(())
+}
+
+pub fn create_agent_templates(
+    agents: Vec<(String, String)>,
+) -> std::result::Result<Vec<Template>, String> {
+    let mut config = load_config()
+        .map_err(|e| format!("Failed to load config: {}", e))?;
+    let mut created = Vec::new();
+
+    for (tool_id, name) in agents {
+        if config.templates.iter().any(|t| t.cli_id == tool_id && t.name == name) {
+            continue;
+        }
+        if !config.cli_tools.iter().any(|t| t.id == tool_id) {
+            continue;
+        }
+        let template = Template {
+            id: uuid::Uuid::new_v4().to_string(),
+            cli_id: tool_id,
+            name,
+            args: Vec::new(),
+            env: HashMap::new(),
+            env_var_ids: Vec::new(),
+            pwd: None,
+            last_run: None,
+            cmd_override: None,
+            env_mode: None,
+        };
+        config.templates.push(template.clone());
+        created.push(template);
+    }
+
+    if !created.is_empty() {
+        save_config(&config)
+            .map_err(|e| format!("Failed to save config: {}", e))?;
+    }
+    Ok(created)
+}
+
+pub fn get_agent_skill_map() -> std::result::Result<HashMap<String, String>, String> {
+    let config = load_config()
+        .map_err(|e| format!("Failed to load config: {}", e))?;
+    Ok(config.agent_skill_map.clone())
+}
+
+pub fn set_agent_skill_map(
+    skill_map: HashMap<String, String>,
+) -> std::result::Result<(), String> {
+    let mut config = load_config()
+        .map_err(|e| format!("Failed to load config: {}", e))?;
+    config.agent_skill_map = skill_map;
+    save_config(&config)
+        .map_err(|e| format!("Failed to save config: {}", e))?;
+    Ok(())
+}
+
 #[cfg(target_os = "windows")]
 pub fn kill_process_tree(pid: u32) -> std::io::Result<()> {
     let mut cmd = Command::new("taskkill");
@@ -644,14 +789,16 @@ pub fn import_cli_tool(path: String) -> Result<CliTool> {
         .unwrap_or_default()
         .to_string_lossy()
         .to_string();
+    let is_agent = is_likely_agent(&name);
     let new_tool = CliTool {
         id: uuid::Uuid::new_v4().to_string(),
         name,
         path: path_buf,
-        version: "1.0.0".to_string(),
+        version: String::new(),
         category_id: None,
         custom_env: HashMap::new(),
         custom_args: Vec::new(),
+        is_agent,
     };
     config.cli_tools.push(new_tool.clone());
     save_config(&config)?;
@@ -723,14 +870,16 @@ pub fn scan_path_env() -> Result<Vec<CliTool>> {
                                 })?
                                 .clone()
                         } else {
+                            let is_agent = is_likely_agent(&name_str);
                             let new_tool = CliTool {
                                 id: uuid::Uuid::new_v4().to_string(),
                                 name: name_str,
                                 path: path.clone(),
-                                version: "1.0.0".to_string(),
+                                version: String::new(),
                                 category_id: None,
                                 custom_env: HashMap::new(),
                                 custom_args: Vec::new(),
+                                is_agent,
                             };
                             config.cli_tools.push(new_tool.clone());
                             new_tool
@@ -826,14 +975,16 @@ pub fn scan_directory(path: String) -> Result<Vec<CliTool>> {
                                 .expect("tool must exist after .any() check")
                                 .clone()
                         } else {
+                            let is_agent = is_likely_agent(&name_str);
                             let new_tool = CliTool {
                                 id: uuid::Uuid::new_v4().to_string(),
                                 name: name_str,
                                 path: entry_path.clone(),
-                                version: "1.0.0".to_string(),
+                                version: String::new(),
                                 category_id: None,
                                 custom_env: HashMap::new(),
                                 custom_args: Vec::new(),
+                                is_agent,
                             };
                             config.cli_tools.push(new_tool.clone());
                             new_tool
@@ -1125,6 +1276,19 @@ pub fn delete_cli_tool(cli_id: String) -> Result<()> {
     config.templates.retain(|t| t.cli_id != cli_id);
     save_config(&config)?;
     Ok(())
+}
+
+pub fn toggle_cli_tool_agent(cli_id: String) -> Result<CliTool> {
+    let mut config = load_config()?;
+    let tool = config
+        .cli_tools
+        .iter_mut()
+        .find(|t| t.id == cli_id)
+        .ok_or_else(|| StorageError::CliToolNotFound(cli_id))?;
+    tool.is_agent = !tool.is_agent;
+    let result = tool.clone();
+    save_config(&config)?;
+    Ok(result)
 }
 
 pub fn delete_category(cat_id: String) -> Result<()> {

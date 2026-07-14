@@ -115,3 +115,13 @@ export interface AgentInstance {
   end_time?: string;
   pid?: number;
 }
+
+export interface ScanResult {
+  name: string;
+  path: string;
+  is_agent: boolean;
+  provider: string | null;
+  is_installed: boolean;
+  is_registered: boolean;
+  tool_id: string | null;
+}

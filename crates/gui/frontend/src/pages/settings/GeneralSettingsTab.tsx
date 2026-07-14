@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from "react";
 import { useI18n } from "../../I18nContext";
 import { useToast } from "../../ToastContext";
+import { setOnboardedStatus } from "../../api";
 import { getAutostart, setAutostart, getUpdateCheckInterval, setUpdateCheckInterval } from "../../api";
+import type { UseOnboardingReturn } from "../../hooks/useOnboarding";
 
 interface Props {
 	theme: "dark" | "day" | "gray";
@@ -28,6 +30,7 @@ interface Props {
 	onFloatingSidebarPositionChange: (position: "left" | "right") => void;
 	sidebarCollapseEnabled: boolean;
 	onSidebarCollapseEnabledChange: (enabled: boolean) => void;
+	onboarding: UseOnboardingReturn;
 }
 
 const PRESETS = [
@@ -59,6 +62,7 @@ export default function GeneralSettingsTab({
 	onFloatingSidebarPositionChange,
 	sidebarCollapseEnabled,
 	onSidebarCollapseEnabledChange,
+	onboarding,
 }: Props) {
 	const { t, language, setLanguage } = useI18n();
 	const toast = useToast();
@@ -124,6 +128,15 @@ export default function GeneralSettingsTab({
 			console.error("Failed to set autostart status:", err);
 			toast.error(t("settings.toast.autostartSaveFailed"));
 		}
+	};
+
+	const handleReopenOnboarding = async () => {
+		try {
+			await setOnboardedStatus(false);
+		} catch (err) {
+			console.error("Failed to reset onboarding status:", err);
+		}
+		onboarding.reopenWizard();
 	};
 
 	const handleThemeSelect = async (newTheme: "dark" | "day" | "gray") => {
@@ -982,6 +995,70 @@ export default function GeneralSettingsTab({
 									transition: "all 200ms ease",
 								}}
 							/>
+						</button>
+					</div>
+
+					{/* Re-open Onboarding */}
+					<div
+						style={{
+							display: "flex",
+							alignItems: "center",
+							justifyContent: "space-between",
+							marginTop: "16px",
+							paddingTop: "16px",
+							borderTop: "1px solid var(--border-subtle)",
+						}}
+					>
+						<div>
+							<div
+								style={{
+									fontSize: "14px",
+									fontWeight: 500,
+									color: "var(--text-primary)",
+								}}
+							>
+								{t("settings.system.reopenOnboarding")}
+							</div>
+							<div
+								style={{
+									fontSize: "12px",
+									color: "var(--text-secondary)",
+									marginTop: "4px",
+								}}
+							>
+								{t("settings.system.reopenOnboardingDesc")}
+							</div>
+						</div>
+						<button
+							onClick={handleReopenOnboarding}
+							style={{
+								display: "inline-flex",
+								alignItems: "center",
+								justifyContent: "center",
+								gap: "6px",
+								padding: "6px 14px",
+								borderRadius: "var(--radius-sm, 6px)",
+								backgroundColor: "var(--accent-purple, #9b5de5)",
+								color: "#ffffff",
+								border: "none",
+								cursor: "pointer",
+								fontSize: "13px",
+								fontWeight: 500,
+								transition: "all 200ms ease",
+								boxShadow: "none",
+							}}
+							onMouseEnter={(e) => {
+								e.currentTarget.style.transform = "translateY(-1px)";
+								e.currentTarget.style.filter = "brightness(1.1)";
+								e.currentTarget.style.boxShadow = "0 4px 12px rgba(155, 93, 229, 0.2)";
+							}}
+							onMouseLeave={(e) => {
+								e.currentTarget.style.transform = "none";
+								e.currentTarget.style.filter = "none";
+								e.currentTarget.style.boxShadow = "none";
+							}}
+						>
+							{t("settings.system.reopenOnboarding")}
 						</button>
 					</div>
 				</div>

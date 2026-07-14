@@ -73,6 +73,7 @@ Execute the following commands from the project root directory:
 - **Communication Language / Target language**: **You MUST communicate in Simplified Chinese (简体中文) for all conversation, responses, and chats.**
 - **Version Updates**: Maximum of 21 patches per minor version. Increment the minor version and reset the patch version to 1 once reached (e.g., `0.1.21` -> `0.2.1`).
 - **GitHub Operations**: Perform all repository, issues, and PR interactions via the GitHub CLI (`gh`) tool.
+- **Emoji Usage**: Do not use emojis in responses or code unless explicitly requested by the user. When modifying the UI, do not add emojis to interface elements without explicit permission.
 
 ### 2. Rust Idioms
 - **Error Handling**: Use the standard `thiserror` crate inside `crates/core` to build typed `StorageError` variants. Never swallow errors silently.
@@ -85,7 +86,12 @@ Execute the following commands from the project root directory:
 - **Global Settings & Theme Rules**: Manage UI theme properties (themes, custom fonts, locales) using standard React contexts. Style elements utilizing raw CSS variables (`index.css`) on the `:root` pseudo-class for seamless real-time rendering.
 - **IME Asian Characters**: When typing in terminal panels, absolute-position the underlying xterm textarea directly over the cursor location via computed style overrides (`--ime-left`, `--ime-top`) to prevent browser scroll mismatches.
 
-### 4. Code Quality & Mod Rules
+### 4. Security: Never Execute Discovered CLI Tools
+- **CRITICAL**: Never spawn/execute CLI tools found via PATH scanning or directory enumeration. Running `--version` or any subcommand on discovered executables is strictly forbidden — these binaries could be viruses, ransomware, or destructive scripts.
+- **PATH scanning must only enumerate file names and paths, never execute them.** Version detection by running the binary is prohibited.
+- **Never auto-trigger PATH scans on startup or wizard open.** All PATH scanning must be explicitly triggered by user action (button click), never automatic.
+
+### 5. Code Quality & Mod Rules
 - **Surgical Code Updates**: Minimize diff size. Match single/double quoting and naming styles of surrounding files. Clean up unused imports or variables introduced by your own changes. Avoid full-file reformats.
 - **Simplicity**: Prevent premature abstractions. Write direct execution paths. Avoid configurations for variables that will not change.
 

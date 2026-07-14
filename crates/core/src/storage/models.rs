@@ -15,6 +15,8 @@ pub struct CliTool {
     pub custom_env: HashMap<String, String>,
     #[serde(default)]
     pub custom_args: Vec<String>,
+    #[serde(default)]
+    pub is_agent: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -74,6 +76,10 @@ pub fn default_project_column_align() -> String {
 
 pub fn default_update_check_interval() -> String {
     String::new()
+}
+
+pub fn default_has_onboarded() -> bool {
+    false
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -156,6 +162,10 @@ pub struct LoomStorage {
     pub skipped_version: Option<String>,
     #[serde(default = "default_update_check_interval")]
     pub update_check_interval: String,
+    #[serde(default = "default_has_onboarded")]
+    pub has_onboarded: bool,
+    #[serde(default)]
+    pub agent_skill_map: HashMap<String, String>,
 }
 
 impl Default for LoomStorage {
@@ -177,6 +187,8 @@ impl Default for LoomStorage {
             autostart: false,
             skipped_version: None,
             update_check_interval: default_update_check_interval(),
+            has_onboarded: default_has_onboarded(),
+            agent_skill_map: HashMap::new(),
         }
     }
 }

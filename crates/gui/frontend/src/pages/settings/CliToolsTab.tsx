@@ -10,11 +10,15 @@ import {
 	getTemplates,
 	deleteTemplate,
 	reorderCliTools,
+	scanAndClassifyAgents,
+	toggleCliToolAgent,
 } from "../../api";
 import type { CliTool, Category, Template } from "../../types";
 import CliToolConfigModal from "../../components/CliToolConfigModal";
 import { TemplateModal } from "../TemplatesPage";
 import { invoke } from "@tauri-apps/api/core";
+
+const OTHER_TOOLS_PAGE_SIZE = 50;
 
 export default function CliToolsTab() {
 	const { t } = useI18n();
@@ -33,6 +37,11 @@ export default function CliToolsTab() {
 		null,
 	);
 	const [scanningTools, setScanningTools] = useState(false);
+	const [agentToolNames, setAgentToolNames] = useState<Set<string>>(new Set());
+	const [reDetecting, setReDetecting] = useState(false);
+	const [otherToolsOpen, setOtherToolsOpen] = useState(false);
+	const [otherToolsPage, setOtherToolsPage] = useState(1);
+	const [togglingAgent, setTogglingAgent] = useState<string | null>(null);
 
 	const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
 	const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
@@ -107,27 +116,37 @@ export default function CliToolsTab() {
 
 			const templatesData = await getTemplates();
 			setTemplates(templatesData);
-
-			if (selectedTool) {
-				const updated = toolsData.find((t) => t.id === selectedTool.id);
-				if (updated) {
-					setSelectedTool(updated);
-				}
-			} else if (toolsData.length > 0) {
-				setSelectedTool(toolsData[0]);
-			}
 		} catch (e) {
 			console.error("Failed to load tools and templates:", e);
 		}
-	}, [selectedTool]);
+	}, []);
 
 	useEffect(() => {
 		const timer = setTimeout(() => {
 			loadCategories();
 			loadToolsAndTemplates();
+			scanAndClassifyAgents()
+				.then((results) => {
+					setAgentToolNames(
+						new Set(results.filter((r) => r.is_agent).map((r) => r.name)),
+					);
+				})
+				.catch(() => {
+					setAgentToolNames(new Set());
+				});
 		}, 0);
 		return () => clearTimeout(timer);
 	}, [loadCategories, loadToolsAndTemplates]);
+
+	useEffect(() => {
+		if (cliTools.length === 0) {
+			setSelectedTool(null);
+		} else if (selectedTool && !cliTools.find((t) => t.id === selectedTool.id)) {
+			setSelectedTool(null);
+		} else if (!selectedTool && cliTools.length > 0) {
+			setSelectedTool(cliTools[0]);
+		}
+	}, [cliTools]);
 
 	const handleScanPath = async () => {
 		setScanningTools(true);
@@ -140,6 +159,24 @@ export default function CliToolsTab() {
 			toast.error(String(e) || t("db.toast.scanFailed"));
 		} finally {
 			setScanningTools(false);
+		}
+	};
+
+	const handleReDetect = async () => {
+		setReDetecting(true);
+		try {
+			const results = await scanAndClassifyAgents();
+			const names = new Set(
+				results.filter((r) => r.is_agent).map((r) => r.name),
+			);
+			setAgentToolNames(names);
+			await loadToolsAndTemplates();
+			window.dispatchEvent(new Event('loom-refresh-data'));
+			toast.success(t("db.toast.scanSuccess", { count: results.length }));
+		} catch (e) {
+			toast.error(String(e) || t("db.toast.scanFailed"));
+		} finally {
+			setReDetecting(false);
 		}
 	};
 
@@ -169,6 +206,19 @@ export default function CliToolsTab() {
 			toast.success(t("db.toast.removed"));
 		} catch (e) {
 			toast.error(String(e) || t("db.toast.removeFailed"));
+		}
+	};
+
+	const handleToggleAgent = async (toolId: string) => {
+		setTogglingAgent(toolId);
+		try {
+			await toggleCliToolAgent(toolId);
+			await loadToolsAndTemplates();
+			window.dispatchEvent(new Event('loom-refresh-data'));
+		} catch (e) {
+			toast.error(String(e) || "Failed to toggle agent status");
+		} finally {
+			setTogglingAgent(null);
 		}
 	};
 
@@ -205,8 +255,227 @@ export default function CliToolsTab() {
 		return matchSearch && matchCat;
 	});
 
+	const filteredAgentTools = filteredTools.filter((t) =>
+		agentToolNames.has(t.name),
+	);
+	const filteredOtherTools = filteredTools.filter((t) =>
+		!agentToolNames.has(t.name),
+	);
+
 	const getToolTemplates = (toolId: string) => {
 		return templates.filter((t) => t.cli_id === toolId);
+	};
+
+	const handleToggleAgentClick = async (e: React.MouseEvent, tool: CliTool) => {
+		e.stopPropagation();
+		await handleToggleAgent(tool.id);
+	};
+
+	// ─── Render a single tool item (shared between agent and other sections) ──
+	const renderToolItem = (tool: CliTool, isAgent: boolean) => {
+		const index = cliTools.findIndex((t) => t.id === tool.id);
+		const isSelected = selectedTool?.id === tool.id;
+		const isDragging = index === draggedIndex;
+		const isDragOver = index === dragOverIndex;
+		const showTopLine =
+			isDragOver && draggedIndex !== null && draggedIndex > index;
+		const showBottomLine =
+			isDragOver && draggedIndex !== null && draggedIndex < index;
+
+		return (
+			<div
+				key={tool.id}
+				draggable={!isFilterActive}
+				onDragStart={(e) => handleDragStart(e, index)}
+				onDragOver={(e) => handleDragOver(e, index)}
+				onDragLeave={handleDragLeave}
+				onDrop={(e) => handleDrop(e, index)}
+				onDragEnd={handleDragEnd}
+				onClick={() => setSelectedTool(tool)}
+				style={{
+					display: "flex",
+					justifyContent: "space-between",
+					alignItems: "center",
+					padding: "10px 12px",
+					borderRadius: "var(--radius-sm)",
+					backgroundColor: isSelected
+						? "var(--bg-active)"
+						: isAgent
+							? "var(--accent-purple-dim)"
+							: "var(--bg-card)",
+					border: isSelected
+						? "1px solid var(--accent-purple)"
+						: "1px solid var(--border-subtle)",
+					borderTop: showTopLine
+						? "2px solid var(--accent-purple)"
+						: isSelected
+							? "1px solid var(--accent-purple)"
+							: "1px solid var(--border-subtle)",
+					borderBottom: showBottomLine
+						? "2px solid var(--accent-purple)"
+						: isSelected
+							? "1px solid var(--accent-purple)"
+							: "1px solid var(--border-subtle)",
+					opacity: isDragging ? 0.4 : 1,
+					cursor: isFilterActive ? "pointer" : "grab",
+					transition: "background 0.2s",
+				}}
+			>
+				<div
+					style={{
+						display: "flex",
+						alignItems: "center",
+						gap: "8px",
+						flexGrow: 1,
+						overflow: "hidden",
+					}}
+				>
+					{!isFilterActive && (
+						<div
+							style={{
+								color: "var(--text-tertiary)",
+								cursor: "grab",
+								userSelect: "none",
+								paddingRight: "4px",
+							}}
+						>
+							⋮⋮
+						</div>
+					)}
+					<div
+						style={{
+							display: "flex",
+							flexDirection: "column",
+							gap: "2px",
+							overflow: "hidden",
+							flexGrow: 1,
+						}}
+					>
+						<span
+							style={{
+								display: "flex",
+								alignItems: "center",
+								gap: "6px",
+								fontWeight: 600,
+								color: "var(--text-primary)",
+								fontSize: "0.9rem",
+							}}
+						>
+							{tool.name}
+							{isAgent && (
+								<span
+									style={{
+										fontSize: "0.65rem",
+										fontWeight: 600,
+										backgroundColor: "var(--accent-purple, #9b5de5)",
+										color: "#fff",
+										padding: "1px 5px",
+										borderRadius: "8px",
+									}}
+								>
+									{t("db.agentBadge")}
+								</span>
+							)}
+						</span>
+						<span
+							style={{
+								fontSize: "0.75rem",
+								color: "var(--text-tertiary)",
+								overflow: "hidden",
+								textOverflow: "ellipsis",
+								whiteSpace: "nowrap",
+							}}
+							title={tool.path}
+						>
+							{tool.path}
+						</span>
+						<div
+							style={{
+								display: "flex",
+								gap: "6px",
+								alignItems: "center",
+								marginTop: "4px",
+							}}
+						>
+							<select
+								value={tool.category_id || ""}
+								onChange={(e) =>
+									handleCategoryChange(tool.id, e.target.value)
+								}
+								onClick={(e) => e.stopPropagation()}
+								style={{
+									fontSize: "0.7rem",
+									padding: "2px 4px",
+									borderRadius: "4px",
+									border: "1px solid var(--border-subtle)",
+									backgroundColor: "var(--bg-input)",
+									color: "var(--text-secondary)",
+								}}
+							>
+								<option value="">
+									{t("db.tool.noCategory")}
+								</option>
+								{categories.map((c) => (
+									<option key={c.id} value={c.id}>
+										{c.name}
+									</option>
+								))}
+							</select>
+							<button
+								onClick={(e) => {
+									e.stopPropagation();
+									setEditingToolConfig(tool);
+								}}
+								className="btn btn-ghost"
+								style={{
+									fontSize: "0.7rem",
+									padding: "2px 6px",
+									borderRadius: "4px",
+									cursor: "pointer",
+									height: "auto",
+									minHeight: "auto",
+									lineHeight: "1",
+								}}
+							>
+								{t("db.tool.config") || "配置"}
+							</button>
+							<button
+								onClick={(e) => handleToggleAgentClick(e, tool)}
+								disabled={togglingAgent === tool.id}
+								className="btn btn-ghost"
+								style={{
+									fontSize: "0.7rem",
+									padding: "2px 6px",
+									borderRadius: "4px",
+									cursor: "pointer",
+									height: "auto",
+									minHeight: "auto",
+									lineHeight: "1",
+									color: isAgent ? "var(--accent-amber)" : "var(--accent-purple)",
+									borderColor: isAgent ? "rgba(251,191,36,0.3)" : "rgba(139,92,246,0.3)",
+								}}
+							>
+								{isAgent ? "AI" : "+AI"}
+							</button>
+						</div>
+					</div>
+				</div>
+
+				<button
+					onClick={(e) => handleDeleteTool(e, tool.id)}
+					style={{
+						background: "none",
+						border: "none",
+						color: "var(--accent-red)",
+						cursor: "pointer",
+						padding: "4px",
+					}}
+					title="Remove CLI Tool"
+				>
+					✕
+				</button>
+			</div>
+		);
 	};
 
 	return (
@@ -240,14 +509,24 @@ export default function CliToolsTab() {
 					>
 						{scanningTools
 							? t("db.btn.scanning")
-							: `🔍 ${t("db.btn.scan")}`}
+							: t("db.btn.scan")}
 					</button>
 					<button
 						className="btn btn-ghost"
 						onClick={handleImportTool}
 						style={{ flex: 1, fontSize: "0.8rem", padding: "6px 8px" }}
 					>
-						📥 {t("db.btn.import")}
+						{t("db.btn.import")}
+					</button>
+					<button
+						className="btn btn-ghost"
+						onClick={handleReDetect}
+						disabled={reDetecting}
+						style={{ flex: 1, fontSize: "0.8rem", padding: "6px 8px" }}
+					>
+						{reDetecting
+							? t("db.btn.scanning")
+							: t("db.btn.reDetect")}
 					</button>
 				</div>
 
@@ -281,6 +560,7 @@ export default function CliToolsTab() {
 					</select>
 				</div>
 
+				{/* Tool List: AI Agents + Other Tools */}
 				<div
 					style={{
 						display: "flex",
@@ -301,177 +581,83 @@ export default function CliToolsTab() {
 							{t("db.empty.noResults")}
 						</div>
 					) : (
-						filteredTools.map((tool) => {
-							const index = cliTools.findIndex((t) => t.id === tool.id);
-							const isSelected = selectedTool?.id === tool.id;
-							const isDragging = index === draggedIndex;
-							const isDragOver = index === dragOverIndex;
-							const showTopLine =
-								isDragOver &&
-								draggedIndex !== null &&
-								draggedIndex > index;
-							const showBottomLine =
-								isDragOver &&
-								draggedIndex !== null &&
-								draggedIndex < index;
-							return (
-								<div
-									key={tool.id}
-									draggable={!isFilterActive}
-									onDragStart={(e) => handleDragStart(e, index)}
-									onDragOver={(e) => handleDragOver(e, index)}
-									onDragLeave={handleDragLeave}
-									onDrop={(e) => handleDrop(e, index)}
-									onDragEnd={handleDragEnd}
-									onClick={() => setSelectedTool(tool)}
-									style={{
-										display: "flex",
-										justifyContent: "space-between",
-										alignItems: "center",
-										padding: "10px 12px",
-										borderRadius: "var(--radius-sm)",
-										backgroundColor: isSelected
-											? "var(--bg-active)"
-											: "var(--bg-card)",
-										border: isSelected
-											? "1px solid var(--accent-purple)"
-											: "1px solid var(--border-subtle)",
-										borderTop: showTopLine
-											? "2px solid var(--accent-purple)"
-											: isSelected
-												? "1px solid var(--accent-purple)"
-												: "1px solid var(--border-subtle)",
-										borderBottom: showBottomLine
-											? "2px solid var(--accent-purple)"
-											: isSelected
-												? "1px solid var(--accent-purple)"
-												: "1px solid var(--border-subtle)",
-										opacity: isDragging ? 0.4 : 1,
-										cursor: isFilterActive ? "pointer" : "grab",
-										transition: "background 0.2s",
-									}}
-								>
+						<>
+							{/* AI Agent Tools Section */}
+							{filteredAgentTools.length > 0 && (
+								<React.Fragment>
 									<div
 										style={{
-											display: "flex",
-											alignItems: "center",
-											gap: "8px",
-											flexGrow: 1,
-											overflow: "hidden",
+											fontSize: "0.75rem",
+											fontWeight: 600,
+											color: "var(--accent-purple, #9b5de5)",
+											padding: "4px 4px",
+											textTransform: "uppercase",
+											letterSpacing: "0.5px",
 										}}
 									>
-										{!isFilterActive && (
-											<div
-												style={{
-													color: "var(--text-tertiary)",
-													cursor: "grab",
-													userSelect: "none",
-													paddingRight: "4px",
-												}}
-											>
-												⋮⋮
-											</div>
-										)}
+										{t("db.aiAgents")} ({filteredAgentTools.length})
+									</div>
+									{filteredAgentTools.map((tool) =>
+										renderToolItem(tool, true),
+									)}
+								</React.Fragment>
+							)}
+
+							{/* Other Tools Section (collapsible, lazy-loaded) */}
+							{filteredOtherTools.length > 0 && (
+								<React.Fragment>
+									{filteredAgentTools.length > 0 && (
 										<div
 											style={{
-												display: "flex",
-												flexDirection: "column",
-												gap: "2px",
-												overflow: "hidden",
-												flexGrow: 1,
+												height: "1px",
+												backgroundColor: "var(--border-subtle)",
+												margin: "6px 0",
 											}}
-										>
-											<span
-												style={{
-													fontWeight: 600,
-													color: "var(--text-primary)",
-													fontSize: "0.9rem",
-												}}
-											>
-												{tool.name}
-											</span>
-											<span
-												style={{
-													fontSize: "0.75rem",
-													color: "var(--text-tertiary)",
-													overflow: "hidden",
-													textOverflow: "ellipsis",
-													whiteSpace: "nowrap",
-												}}
-												title={tool.path}
-											>
-												{tool.path}
-											</span>
-											<div
-												style={{
-													display: "flex",
-													gap: "6px",
-													alignItems: "center",
-													marginTop: "4px",
-												}}
-											>
-												<select
-													value={tool.category_id || ""}
-													onChange={(e) =>
-														handleCategoryChange(tool.id, e.target.value)
-													}
-													onClick={(e) => e.stopPropagation()}
-													style={{
-														fontSize: "0.7rem",
-														padding: "2px 4px",
-														borderRadius: "4px",
-														border: "1px solid var(--border-subtle)",
-														backgroundColor: "var(--bg-input)",
-														color: "var(--text-secondary)",
-													}}
-												>
-													<option value="">
-														{t("db.tool.noCategory")}
-													</option>
-													{categories.map((c) => (
-														<option key={c.id} value={c.id}>
-															{c.name}
-														</option>
-													))}
-												</select>
-												<button
-													onClick={(e) => {
-														e.stopPropagation();
-														setEditingToolConfig(tool);
-													}}
-													className="btn btn-ghost"
-													style={{
-														fontSize: "0.7rem",
-														padding: "2px 6px",
-														borderRadius: "4px",
-														cursor: "pointer",
-														height: "auto",
-														minHeight: "auto",
-														lineHeight: "1",
-													}}
-												>
-													⚙️ {t("db.tool.config") || "配置"}
-												</button>
-											</div>
-										</div>
-									</div>
-
-									<button
-										onClick={(e) => handleDeleteTool(e, tool.id)}
-										style={{
-											background: "none",
-											border: "none",
-											color: "var(--accent-red)",
-											cursor: "pointer",
-											padding: "4px",
+										/>
+									)}
+									<div
+										onClick={() => {
+											setOtherToolsOpen(!otherToolsOpen);
+											setOtherToolsPage(1);
 										}}
-										title="Remove CLI Tool"
+										style={{
+											fontSize: "0.75rem",
+											fontWeight: 600,
+											color: "var(--text-secondary)",
+											padding: "4px 4px",
+											textTransform: "uppercase",
+											letterSpacing: "0.5px",
+											cursor: "pointer",
+											display: "flex",
+											alignItems: "center",
+											gap: "6px",
+											userSelect: "none",
+										}}
 									>
-										✕
-									</button>
-								</div>
-							);
-						})
+										<span style={{ fontSize: "0.6rem" }}>
+											{otherToolsOpen ? "\u25BC" : "\u25B6"}
+										</span>
+										{t("db.otherTools")} ({filteredOtherTools.length})
+									</div>
+									{otherToolsOpen && (
+										<>
+											{filteredOtherTools.slice(0, otherToolsPage * OTHER_TOOLS_PAGE_SIZE).map((tool) =>
+												renderToolItem(tool, false),
+											)}
+											{filteredOtherTools.length > otherToolsPage * OTHER_TOOLS_PAGE_SIZE && (
+												<button
+													className="btn btn-ghost"
+													onClick={() => setOtherToolsPage(p => p + 1)}
+													style={{ fontSize: "0.75rem", padding: "4px 8px" }}
+												>
+													{t("db.showMore", { count: Math.min(OTHER_TOOLS_PAGE_SIZE, filteredOtherTools.length - otherToolsPage * OTHER_TOOLS_PAGE_SIZE) })}
+												</button>
+											)}
+										</>
+									)}
+								</React.Fragment>
+							)}
+						</>
 					)}
 				</div>
 			</div>
@@ -500,9 +686,6 @@ export default function CliToolsTab() {
 							color: "var(--text-tertiary)",
 						}}
 					>
-						<span style={{ fontSize: "2.5rem", marginBottom: "12px" }}>
-							🛠️
-						</span>
 						<p
 							style={{
 								margin: 0,
@@ -543,8 +726,8 @@ export default function CliToolsTab() {
 										fontSize: "1.1rem",
 										color: "var(--text-primary)",
 									}}
-								>
-									📋 {selectedTool.name} {t("temp.title")}
+		>
+			{selectedTool.name} {t("temp.title")}
 								</h3>
 								<span
 									style={{

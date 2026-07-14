@@ -12,6 +12,7 @@ import type {
 	AgentInstance,
 	ProjectSkill,
 	AgentDoc,
+	ScanResult,
 } from "./types";
 
 // ─── CLI Tools ────────────────────────────────────────────
@@ -27,6 +28,9 @@ export const scanDirectory = (path: string): Promise<CliTool[]> =>
 
 export const deleteCliTool = (cliId: string): Promise<void> =>
 	invoke("delete_cli_tool", { cliId });
+
+export const toggleCliToolAgent = (cliId: string): Promise<CliTool> =>
+	invoke("toggle_cli_tool_agent", { cliId });
 
 export const reorderCliTools = (ids: string[]): Promise<void> =>
 	invoke("reorder_cli_tools", { ids });
@@ -359,3 +363,25 @@ export const getUpdateCheckInterval = (): Promise<string> =>
 
 export const setUpdateCheckInterval = (interval: string): Promise<void> =>
 	invoke("set_update_check_interval", { interval });
+
+// ─── AI Agent Classification & Onboarding ────────────────────
+export const scanAndClassifyAgents = (): Promise<ScanResult[]> =>
+	invoke("scan_and_classify_agents");
+
+export const getOnboardedStatus = (): Promise<boolean> =>
+	invoke("get_onboarded_status");
+
+export const setOnboardedStatus = (status: boolean): Promise<void> =>
+	invoke("set_onboarded_status", { status });
+
+export const createAgentTemplates = (
+	agents: Array<[string, string]>,
+): Promise<Template[]> =>
+	invoke("create_agent_templates", { agents });
+
+export const getAgentSkillMap = (): Promise<Record<string, string>> =>
+	invoke("get_agent_skill_map");
+
+export const setAgentSkillMap = (
+	skillMap: Record<string, string>,
+): Promise<void> => invoke("set_agent_skill_map", { skillMap });

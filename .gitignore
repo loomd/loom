@@ -38,3 +38,5 @@ e2e/active_instances.json
 
 # Handoff runtime state (AI session collaboration data)
 /.handoff/
+
+jaccess*.log
