@@ -59,7 +59,7 @@ export default function OnboardingWizard({ onboarding }: { onboarding: UseOnboar
 		}
 	}, [allSelected, agents, onboarding]);
 
-	const canFinish = currentStep === 1 && selectedAgentResults.length > 0;
+	const canFinish = currentStep === 1;
 
 	return (
 		<div
