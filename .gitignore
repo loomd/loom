@@ -33,6 +33,7 @@ e2e/active_instances.json
 
 # Tauri signing keys
 *.key
+*.key.pub
 
 # Agent/AI assistant metadata (keep specs/ but ignore temporary logs/workspaces)
 
