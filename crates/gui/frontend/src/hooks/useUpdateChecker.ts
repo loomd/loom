@@ -43,7 +43,7 @@ export function useUpdateChecker(
 						hasUpdate: true,
 						latestVersion: updateResult.version,
 						body: updateResult.body,
-						url: "https://github.com/GoldTest/Loom/releases/latest",
+						url: "https://github.com/loomd/loom/releases/latest",
 					});
 					setUpdateDownload(updateResult);
 

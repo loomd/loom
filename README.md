@@ -14,7 +14,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/GoldTest/Loom/actions/workflows/ci.yml"><img src="https://github.com/GoldTest/Loom/actions/workflows/ci.yml/badge.svg" alt="Rust & Frontend CI Status" /></a>&nbsp;<a href="https://github.com/GoldTest/Loom/releases"><img src="https://img.shields.io/github/v/release/GoldTest/Loom?color=blue" alt="Latest Release" /></a>&nbsp;<a href="LICENSE"><img src="https://img.shields.io/github/license/GoldTest/Loom?color=green" alt="MIT License" /></a>
+  <a href="https://github.com/loomd/loom/actions/workflows/ci.yml"><img src="https://github.com/loomd/loom/actions/workflows/ci.yml/badge.svg" alt="Rust & Frontend CI Status" /></a>&nbsp;<a href="https://github.com/loomd/loom/releases"><img src="https://img.shields.io/github/v/release/loomd/loom?color=blue" alt="Latest Release" /></a>&nbsp;<a href="LICENSE"><img src="https://img.shields.io/github/license/loomd/loom?color=green" alt="MIT License" /></a>
   <br />
   <br />
   <a href="#english">English</a> | <a href="#简体中文">简体中文</a>
@@ -65,7 +65,7 @@ It enables developers to scan, import, categorize, and execute CLI commands with
 
 Clone the repository:
 ```bash
-git clone https://github.com/GoldTest/Loom.git
+git clone https://github.com/loomd/loom.git
 cd Loom
 ```
 
@@ -174,7 +174,7 @@ Loom 是一个本地命令行工具（CLI）管理与监视面板。它包含高
 
 克隆项目仓库：
 ```bash
-git clone https://github.com/GoldTest/Loom.git
+git clone https://github.com/loomd/loom.git
 cd Loom
 ```
 

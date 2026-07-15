@@ -80,7 +80,7 @@ jobs:
                       platforms = @{
                           "windows-x86_64" = @{
                               signature = $signature
-                              url = "https://github.com/GoldTest/Loom/releases/download/v${version}/${exeName}"
+                              url = "https://github.com/loomd/loom/releases/download/v${version}/${exeName}"
                           }
                       }
                   }
