@@ -67,13 +67,16 @@ gh run view <RUN_ID> --log-failed
    "version": "0.3.5"
    ```
 
-### 第五步：生成提交、附加 Tag 并推送到远端
+### 第五步：提交版本变更（推 tag 前的强制约束）
+
+**🚨 关键规则：必须先提交版本变更，再打 tag 推送。tag 必须指向包含版本号提升的 commit。** 0.4.6 发布事故（tag 指向了 0.4.5 的 commit，导致安装包名仍是 0.4.5）就是因为违反了这个顺序。
 
 1. 添加所有有变更的修正文件和版本配置文件：
    ```bash
    git add Cargo.toml crates/gui/frontend/package.json crates/gui/src-tauri/tauri.conf.json [其他被修改的文件]
    ```
-2. 创建合规的 Git 提交信息：
+
+2. 创建合规的 Git 提交信息，**必须先提交**：
    ```powershell
    git commit -m @'
    chore: bump version to v0.X.Y
@@ -81,7 +84,20 @@ gh run view <RUN_ID> --log-failed
    - Desc of changes
    '@
    ```
-3. 建立版本 Tag 并推送至 GitHub（此操作会触发 `.github/workflows/release.yml` 自动编译构建 NSIS Windows 安装包并发布到 GitHub Release）：
+
+3. **【强制校验】** 检查已提交的版本号是否与目标 tag 一致，确认版本文件在已提交的内容中而不是仅仅在暂存区：
+   ```powershell
+   # 检查已提交的版本号（而非工作区/暂存区）
+   git show HEAD:Cargo.toml | Select-String 'version = "'
+   git show HEAD:crates/gui/src-tauri/tauri.conf.json | Select-String '"version"'
+   git show HEAD:crates/gui/frontend/package.json | Select-String '"version"'
+
+   # 确认没有未提交的版本变更残留
+   git diff --name-only
+   # 输出应为空。若还有文件未提交，则回到第 1 步重新添加提交
+   ```
+
+4. **工作区必须干净**之后，才能建立版本 Tag 并推送至 GitHub（此操作会触发 `.github/workflows/release.yml` 自动编译构建 NSIS Windows 安装包并发布到 GitHub Release）：
    ```bash
    git tag v0.3.5
    git push origin master v0.3.5

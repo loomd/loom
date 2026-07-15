@@ -1,8 +1,10 @@
 import { useEffect, useRef } from 'react';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
+import { WebLinksAddon } from '@xterm/addon-web-links';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
+import { openUrl } from '../api';
 import '@xterm/xterm/css/xterm.css';
 
 interface TerminalTabProps {
@@ -265,6 +267,11 @@ export function TerminalTab({ sessionId, cwd, command, args, env, isVisible, the
 
       const fitAddon = new FitAddon();
       term.loadAddon(fitAddon);
+      const webLinksAddon = new WebLinksAddon((event, uri) => {
+        event.preventDefault();
+        openUrl(uri);
+      });
+      term.loadAddon(webLinksAddon);
       term.open(containerRef.current);
 
       const textarea = term.textarea;
