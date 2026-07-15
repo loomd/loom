@@ -6,9 +6,7 @@
   <a href="https://github.com/loomd/loom/actions/workflows/ci.yml"><img src="https://github.com/loomd/loom/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>&nbsp;<a href="https://github.com/loomd/loom/releases"><img src="https://img.shields.io/github/v/release/loomd/loom?color=blue" alt="Release" /></a>&nbsp;<a href="LICENSE"><img src="https://img.shields.io/github/license/loomd/loom?color=green" alt="MIT" /></a>
 </p>
 
-## Loom
-
-多项目统一管理，多 agent 并行开发。
+Loom 是一个支持多项目统一管理，多 agent 并行开发的终端管理工具，集成了文件管理和skills管理的功能。
 
 ## 功能
 
