@@ -436,7 +436,7 @@ const enDict: Dictionary = {
 	"nav.instances": "Instances",
 	"nav.manage": "Manage",
 	"nav.run": "Run",
-	"nav.logoSubtitle": "Multi-Project Management & Distribution",
+	"nav.logoSubtitle": "多项目统一管理，多agent并行开发",
 	"nav.stats.tools": "Tools",
 	"nav.stats.running": "Running",
 	"nav.stats.categories": "Categories",

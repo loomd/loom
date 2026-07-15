@@ -8,9 +8,9 @@
 </p>
 
 <p align="center">
-  <b>Multi-Project Management & Distribution Platform built with Rust & Tauri.</b>
+  <b>多项目统一管理，多agent并行开发</b>
   <br />
-  <b>基于 Rust 和 Tauri 构建的现代化多项目管理与分发平台。</b>
+  <b>多项目统一管理，多agent并行开发</b>
 </p>
 
 <p align="center">

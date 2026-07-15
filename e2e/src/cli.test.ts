@@ -55,12 +55,12 @@ describe('loom CLI E2E tests', () => {
   test('test_cli_help_menu', async () => {
     const res = await runCli(['--help']);
     expect(res.exitCode).toBe(0);
-    expect(res.stdout).toContain('loom - Multi-Project Management & Distribution');
+    expect(res.stdout).toContain('loom - 多项目统一管理，多agent并行开发');
     expect(res.stdout).toContain('Usage:');
 
     const resShort = await runCli(['-h']);
     expect(resShort.exitCode).toBe(0);
-    expect(resShort.stdout).toContain('loom - Multi-Project Management & Distribution');
+    expect(resShort.stdout).toContain('loom - 多项目统一管理，多agent并行开发');
   });
 
   test('test_cli_version_info', async () => {

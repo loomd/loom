@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use loom_core::storage::{get_cli_tools, get_templates, get_global_env_vars};
 
 fn print_help() {
-    println!("loom - Multi-Project Management & Distribution");
+    println!("loom - 多项目统一管理，多agent并行开发");
     println!("Usage:");
     println!("  loom [options] <command> [args]");
     println!();
