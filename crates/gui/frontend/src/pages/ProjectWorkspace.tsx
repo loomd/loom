@@ -148,11 +148,11 @@ const [agentStateMap, setAgentStateMap] = useState<Record<string, AgentStateInfo
                     style={{ marginRight: '4px' }}
                   />
                 )}
-                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'inline-block', minWidth: tab.type === 'terminal' ? '24px' : undefined, maxWidth: tab.type === 'terminal' ? 'none' : '60px' }}>
+                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'inline-block', lineHeight: 1.3, transform: 'translateY(-0.06em)', minWidth: tab.type === 'terminal' ? '24px' : 0, maxWidth: tab.type === 'terminal' ? 'none' : '60px' }}>
                   {tab.title}
                 </span>
                 <span onClick={(e) => { if (!isActive) return; handleCloseTerminal(tab.id, e); }}
-                  style={{ marginLeft: '0px', cursor: 'pointer', display: 'inline-block', width: '12px', height: '12px', textAlign: 'center', lineHeight: '12px', fontSize: tab.isDirty ? '0.6rem' : '0.7rem', visibility: isActive ? 'visible' : 'hidden', pointerEvents: isActive ? 'auto' : 'none' }}
+                  style={{ marginLeft: '2px', cursor: 'pointer', display: 'inline-block', width: '12px', height: '12px', textAlign: 'center', lineHeight: '12px', fontSize: tab.isDirty ? '0.6rem' : '0.7rem', visibility: isActive ? 'visible' : 'hidden', pointerEvents: isActive ? 'auto' : 'none' }}
                   className={`tab-close-icon ${tab.isDirty ? 'dirty' : ''}`}
                   title={tab.isDirty ? '有未保存的更改' : undefined}
                 />
