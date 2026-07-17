@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   getCliTools,
   getTemplates,
@@ -18,7 +18,7 @@ import {
   importGlobalDocToProject,
 } from '../api';
 import type { FileEntry } from '../api';
-import type { Project, CliTool, Template, ProjectSkill, AgentDoc, GlobalSkillTemplate, GlobalDocTemplate } from '../types';
+import type { Project, CliTool, Template, ProjectSkill, AgentDoc, GlobalSkillTemplate, GlobalDocTemplate, GlobalEnvVar } from '../types';
 import { mergeCliArgs } from '../utils';
 import type { ConsoleTab } from './useTabs';
 
@@ -67,6 +67,10 @@ export function useWorkspaceData(
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; file: FileEntry } | null>(null);
 
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
+
+  // Pre-cache global env vars so handleRunTemplate can add tabs synchronously
+  // (avoiding the async race where tab array order differs from click order).
+  const globalVarsCache = useRef<GlobalEnvVar[] | null>(null);
 
   const loadFiles = useCallback(async (path: string) => {
     setLoadingFiles(true);
@@ -130,6 +134,8 @@ export function useWorkspaceData(
     const timer = setTimeout(() => {
       loadToolsAndTemplates();
     }, 0);
+    // Eagerly cache global env vars so handleRunTemplate doesn't need await
+    getGlobalEnvVars().then(vars => { globalVarsCache.current = vars; });
     return () => {
       window.removeEventListener('loom-refresh-data', handler);
       clearTimeout(timer);
@@ -237,8 +243,11 @@ export function useWorkspaceData(
       return;
     }
     setTemplateLaunching(tpl.id);
+    // Use cached env vars to avoid async race (see globalVarsCache above).
+    // Cache is populated eagerly in the init useEffect. If somehow still
+    // empty (edge case), fall through to async fetch.
     try {
-      const globalVars = await getGlobalEnvVars();
+      const globalVars = globalVarsCache.current ?? await getGlobalEnvVars();
       const customEnvs: Record<string, string> = { ...tool.custom_env };
       for (const gvId of tpl.env_var_ids) {
         const gv = globalVars.find(v => v.id === gvId);
