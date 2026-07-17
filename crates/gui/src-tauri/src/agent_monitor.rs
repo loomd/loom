@@ -76,7 +76,7 @@ impl AgentMonitor {
         let session_id = 'outer: {
             // Only accept sessions created within the last 10 minutes
             let threshold = now.saturating_sub(10 * 60_000);
-            let mut stmt = match conn.prepare("SELECT id, time_created FROM session WHERE directory LIKE ?1 AND time_created >= ?2 ORDER BY time_created DESC LIMIT 1") {
+            let mut stmt = match conn.prepare("SELECT id, time_created FROM session WHERE directory LIKE ?1 AND time_created >= ?2 AND (parent_id IS NULL OR parent_id = '') ORDER BY time_created DESC LIMIT 1") {
                 Ok(s) => s,
                 Err(e) => {
                     eprintln!("[AgentPoll] session prepare failed: {}, Idle", e);
