@@ -1447,7 +1447,9 @@ fn main() {
                     if let Ok(state) = serde_json::from_str::<WinState>(&content) {
                         let _ =
                             window.set_size(tauri::PhysicalSize::new(state.width, state.height));
-                        let _ = window.set_position(tauri::PhysicalPosition::new(state.x, state.y));
+                        let sane_x = if state.x < -10000 || state.x > 10000 { 0 } else { state.x };
+                        let sane_y = if state.y < -10000 || state.y > 10000 { 0 } else { state.y };
+                        let _ = window.set_position(tauri::PhysicalPosition::new(sane_x, sane_y));
 
                         if state.fullscreen {
                             let _ = window.set_fullscreen(true);
