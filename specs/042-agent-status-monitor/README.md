@@ -21,17 +21,19 @@ tags:
 
 ```typescript
 enum AgentState {
-  Idle = 'idle',           // 15s 无活动 / 初始空闲
-  Thinking = 'thinking',   // 模型推理中
-  Running = 'running',     // 工具调用 / 执行中
-  Done = 'done',           // 正常完成
-  Error = 'error',         // 工具执行出错
-  AgentCall = 'agent_call', // 子 agent 运行中
-  Offline = 'offline',     // Agent 进程已退出
+  Idle = 'idle',           // 15s 无活动 / 初始空闲（紫色静灯）
+  Running = 'running',     // 模型推理 / 工具执行 / 流式输出（翠绿呼吸）
+  Waiting = 'waiting',     // 工具完成 / step-stop 停顿（天蓝静灯）
+  Error = 'error',         // 工具执行出错（红静灯）
+  AgentCall = 'agent_call', // 子 agent 运行中（粉红呼吸）
+  Question = 'question',   // 等待用户回答问题（琥珀呼吸）
 }
 ```
 
-指示灯映射：Idle=灰静, Thinking=蓝呼吸, Running=绿呼吸, Done=绿静, Error=红静, AgentCall=黄呼吸, Offline=无
+注：Spec 早期设计的 `Thinking`、`Done`、`Offline` 状态在实际实现中已合并/裁撤：
+- `Thinking` → `Running`（推理也是运行的一部分，无需单独状态）
+- `Done` → `Waiting`（工具完成后的停顿态，等待下一轮用户输入）
+- `Offline` 移除（Agent 进程退出后前端直接停止轮询，不显示指示灯）
 
 ### 2. OpenCode SQLite 适配器
 
@@ -42,13 +44,21 @@ enum AgentState {
 
 | part.type | 附加条件 | 映射状态 |
 |-----------|---------|----------|
-| `reasoning` | - | Thinking |
-| `tool` | state.status=running | Running |
+| `reasoning` | - | Running |
+| `tool` | state.status=running, tool!=question | Running |
+| `tool` | state.status=running, tool=question | Question |
 | `tool` | state.status=error | Error |
+| `tool` | state.status=completed | Waiting |
+| `tool` | tool=task, state.status=running | AgentCall |
 | `agent` | - | AgentCall |
-| `step-finish` / `text`(有 time.end) | - | Done |
-| `text`(无 time.end) | 正在流式输出 | Running |
+| `step-finish` | reason=stop 无后续 part | Waiting |
+| `step-finish` | 其他情况 | Running |
+| `step-start` | - | Running |
+| `text` | 正在流式输出 | Running |
+| 最新 part 是 `step-finish` + `reason=stop` | - | Waiting |
 | 15s 无 part 更新 | 活跃态超时 | Idle |
+
+完全的状态流转逻辑见 `agent_monitor.rs:195` `parse_state()` + `poll_parts()`。
 - 纯只读，不修改数据库
 
 ### 3. Tauri 后端实现
@@ -61,9 +71,20 @@ enum AgentState {
 ### 4. 前端状态展示
 
 - [x] ProjectsPage agent card 显示状态指示灯
-- [x] `agent-status-dot` CSS 类：呼吸态用 @keyframes pulse-dot 动画
+- [x] `agent-status-dot` CSS 类 + 状态名称作为 class 名（如 `.agent-status-dot.running`），呼吸态用 `@keyframes pulse-dot` 动画
 - [x] `agent-status-text` 类：显示状态文字
 - [x] `useEffect` + `setInterval` 每 2s 调用 `pollAgentState` 轮询状态
+
+各状态的 CSS 呈现：
+
+| 状态 | 背景色 | box-shadow | 动画 |
+|------|--------|-----------|------|
+| idle | `#a855f7`（紫色） | 无 | 无 |
+| running | `var(--accent-emerald)` | 0 0 6px 翠绿 | pulse-dot 1s infinite |
+| waiting | `var(--accent-sky)`（天蓝） | 无 | 无 |
+| error | `var(--accent-red)`（红） | 无 | 无 |
+| agent_call | `var(--accent-pink)` | 0 0 6px 粉红 | pulse-dot 1s infinite |
+| question | `var(--accent-amber)` | 0 0 8px 琥珀 | pulse-dot 0.8s infinite |
 
 ## 非目标
 
@@ -74,11 +95,12 @@ enum AgentState {
 
 ## 验收标准
 
-- [x] OpenCode 推理时显示蓝色呼吸灯（Thinking）
-- [x] OpenCode 执行工具时显示绿色呼吸灯（Running）
-- [x] OpenCode 完成回复时显示绿色静灯（Done）
-- [x] OpenCode 执行工具出错时显示红色灯（Error）
-- [x] 子 agent 运行时显示黄色呼吸灯（AgentCall）
-- [x] 空闲超 15s 显示灰色静灯（Idle）
-- [x] Agent 退出后指示灯消失（Offline）
+- [x] OpenCode 推理时显示翠绿呼吸灯（Running）
+- [x] OpenCode 执行工具时显示翠绿呼吸灯（Running）
+- [x] OpenCode 完成回复后显示天蓝静灯（Waiting）
+- [x] OpenCode 执行工具出错时显示红色静灯（Error）
+- [x] 子 agent 运行时显示粉红呼吸灯（AgentCall）
+- [x] 空闲超 15s 显示紫色静灯（Idle）
+- [x] Agent 提问等待回答时显示琥珀呼吸灯（Question）
+- [x] Agent 退出后前端停止轮询，不显示指示灯
 - [x] 轮询不造成 UI 卡顿或高 CPU 占用

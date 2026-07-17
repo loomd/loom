@@ -59,6 +59,7 @@ body {
 
   --accent-purple: #9061f9; /* Softer accent purple */
   --accent-purple-dim: rgba(144,97,249,0.15);
+  --accent-pink:   #ec4899;
   --accent-emerald:#10b981;
   --accent-emerald-dim: rgba(16,185,129,0.12);
   --accent-red:    #ef4444;
@@ -1006,8 +1007,8 @@ body.theme-day select.input option {
   background-color: var(--accent-red);
 }
 .agent-status-dot.agent_call {
-  background-color: var(--accent-amber);
-  box-shadow: 0 0 6px var(--accent-amber);
+  background-color: var(--accent-pink);
+  box-shadow: 0 0 6px var(--accent-pink);
   animation: pulse-dot 1s ease-in-out infinite;
 }
 .agent-status-dot.question {
@@ -1024,7 +1025,7 @@ body.theme-day select.input option {
 .agent-status-text.running { color: var(--accent-emerald); }
 .agent-status-text.waiting { color: var(--accent-sky); }
 .agent-status-text.error { color: var(--accent-red); }
-.agent-status-text.agent_call { color: var(--accent-amber); }
+.agent-status-text.agent_call { color: var(--accent-pink); }
 .agent-status-text.question { color: var(--accent-amber); }
 
 /* ─── Misc Utilities ─────────────────────────────────────── */
