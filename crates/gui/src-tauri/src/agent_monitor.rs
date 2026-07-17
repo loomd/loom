@@ -4,13 +4,52 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Mutex, OnceLock};
 
-/// Cache: PTY session_id → (opencode_session_id, last_active_ms)
+/// Per-PTY cache: pty_session_id → (opencode_session_id, last_active_ms)
 static SESSION_CACHE: OnceLock<Mutex<HashMap<String, (String, i64)>>> = OnceLock::new();
 
-fn get_pty_spawn_time(pty_session_id: &str) -> Option<i64> {
-    let map = crate::pty::PTY_SPAWN_TIMES.get()?;
-    let guard = map.lock().ok()?;
-    guard.get(pty_session_id).map(|&ts| ts as i64)
+/// Session ownership lock: opencode_session_id → pty_session_id.
+/// The first PTY that claims a session becomes its owner. Other PTYs
+/// cannot see this session — they stay Idle instead.
+static SESSION_OWNER: OnceLock<Mutex<HashMap<String, String>>> = OnceLock::new();
+
+/// PTY spawn timestamps: pty_session_id → spawn_time_ms
+static PTY_SPAWNS: OnceLock<Mutex<HashMap<String, i64>>> = OnceLock::new();
+
+/// Tracks which PTY most recently received real (non-escape) user input.
+/// Only the single last-active PTY is allowed to claim new sessions.
+static LAST_ACTIVE_PTY: OnceLock<Mutex<Option<(String, i64)>>> = OnceLock::new();
+
+const ACTIVE_WINDOW_MS: i64 = 30_000;
+
+/// Record when a PTY terminal was spawned. Sessions created before this
+/// timestamp belong to a previous application run and won't be claimed.
+pub fn record_pty_spawn(pty_session_id: &str) {
+    PTY_SPAWNS.get_or_init(|| Mutex::new(HashMap::new()))
+        .lock().unwrap()
+        .insert(pty_session_id.to_string(), now_ms());
+}
+
+/// Mark a PTY as having received real (non-escape) user input.
+/// Sets this PTY as the globally last-active PTY, which is the only one
+/// allowed to claim new opencode sessions.
+pub fn mark_pty_active(pty_session_id: &str) {
+    *LAST_ACTIVE_PTY.get_or_init(|| Mutex::new(None))
+        .lock().unwrap() = Some((pty_session_id.to_string(), now_ms()));
+}
+
+/// Remove a PTY's state when its terminal is closed.
+pub fn cleanup_pty(pty_session_id: &str) {
+    if let Some(last) = LAST_ACTIVE_PTY.get() {
+        let mut guard = last.lock().unwrap();
+        if let Some((id, _)) = &*guard {
+            if id == pty_session_id {
+                *guard = None;
+            }
+        }
+    }
+    if let Some(sp) = PTY_SPAWNS.get() {
+        sp.lock().unwrap().remove(pty_session_id);
+    }
 }
 
 fn now_ms() -> i64 {
@@ -127,20 +166,16 @@ impl AgentMonitor {
         match session_id {
             None => {
                 eprintln!("[AgentPoll] no session for workspace, Idle");
-                return Some(idle());
+                Some(idle())
             }
             Some(sid) => self.poll_parts(&conn, &sid),
         }
     }
 
-    /// Check if a session is already claimed by another PTY in the cache (excluding ourselves)
-    fn session_claimed_by_other(cache: &HashMap<String, (String, i64)>, session_id: &str, my_pty: &str) -> bool {
-        cache.iter().any(|(pty, (sid, _))| pty != my_pty && sid == session_id)
-    }
-
     /// Poll agent state scoped to a specific PTY terminal.
-    /// Each PTY tracks its own session via cache, preventing multiple terminals
-    /// from sharing the same session.
+    /// Session ownership is first-claim-first-own. A session created before
+    /// the PTY was spawned belongs to a previous application run and won't
+    /// be claimed — keeping the indicator dark until a new conversation starts.
     pub fn poll_state_for_pty(&self, workspace_dir: &str, pty_session_id: &str) -> Option<AgentStateInfo> {
         let idle = || AgentStateInfo {
             state: AgentState::Idle,
@@ -164,81 +199,101 @@ impl AgentMonitor {
 
         let pattern = format!("{}%", workspace_dir.replace('\\', "/"));
         let now = now_ms();
-        let idle_timeout = 15_000; // 15s of inactivity → stale
         let cache = SESSION_CACHE.get_or_init(|| Mutex::new(HashMap::new()));
+        let owners = SESSION_OWNER.get_or_init(|| Mutex::new(HashMap::new()));
+        let spawns = PTY_SPAWNS.get_or_init(|| Mutex::new(HashMap::new()));
+        let threshold = now.saturating_sub(10 * 60_000);
 
-        // 1. Check cache: does this PTY already have a tracked session?
-        {
-            let mut guard = cache.lock().unwrap();
-            if let Some((cached_sid, _last_active)) = guard.get(pty_session_id).cloned() {
-                let result = self.poll_parts(&conn, &cached_sid);
-                if let Some(info) = result {
-                    // Check if session is still active (not idle AND not stale Waiting)
-                    let is_stale = if info.state == AgentState::Waiting {
-                        // Check if the latest part is older than idle_timeout
-                        let latest_ts: i64 = conn
-                            .query_row(
-                                "SELECT time_created FROM part WHERE session_id = ?1 ORDER BY time_created DESC LIMIT 1",
-                                rusqlite::params![cached_sid],
-                                |row| row.get(0),
-                            )
-                            .unwrap_or(0);
-                        now - latest_ts > idle_timeout
-                    } else {
-                        info.state == AgentState::Idle
-                    };
-
-                    if !is_stale {
-                        guard.insert(pty_session_id.to_string(), (cached_sid, now));
-                        return Some(info);
-                    }
-                }
-
-                // Session is stale — remove from cache and fall through to find a new one
-                eprintln!("[AgentPoll:pty={}] cached session {} stale, releasing", pty_session_id, cached_sid);
-                guard.remove(pty_session_id);
-            }
-        }
-
-        // 2. Find an unclaimed session for this PTY
-        let spawn_time = get_pty_spawn_time(pty_session_id).unwrap_or(0);
-        let threshold = now.saturating_sub(10 * 60_000).max(spawn_time);
-
-        // Iterate sessions newest-first, pick the first not claimed by other PTYs
-        let mut guard = cache.lock().unwrap();
-        let session_id: Option<String> = conn
-            .prepare(
-                "SELECT id FROM session WHERE directory LIKE ?1 AND time_created >= ?2 AND (parent_id IS NULL OR parent_id = '') ORDER BY time_created DESC",
-            )
+        // 1. Query the latest session for this workspace (with time_created).
+        //    Do this first — we need it for both cache-hit and new-claim paths.
+        let latest_info: Option<(String, i64)> = conn
+            .prepare("SELECT id, time_created FROM session WHERE directory LIKE ?1 AND time_created >= ?2 AND (parent_id IS NULL OR parent_id = '') ORDER BY time_created DESC LIMIT 1")
             .ok()
             .and_then(|mut stmt| {
-                let mut rows = stmt.query(rusqlite::params![pattern, threshold]).ok()?;
-                loop {
-                    match rows.next() {
-                        Ok(Some(r)) => {
-                            if let Ok(sid) = r.get::<_, String>(0) {
-                                if !Self::session_claimed_by_other(&guard, &sid, pty_session_id) {
-                                    return Some(sid);
-                                }
-                            }
-                        }
-                        _ => return None,
-                    }
-                }
+                stmt.query_row(rusqlite::params![pattern, threshold], |row| {
+                    let id: String = row.get(0)?;
+                    let ts: i64 = row.get(1)?;
+                    Ok((id, ts))
+                }).ok()
             });
 
-        match session_id {
-            Some(sid) => {
-                guard.insert(pty_session_id.to_string(), (sid.clone(), now));
-                drop(guard);
-                eprintln!("[AgentPoll:pty={}] claimed session {}", pty_session_id, sid);
-                self.poll_parts(&conn, &sid)
-            }
+        let (latest_sid, session_time) = match latest_info {
+            Some(info) => info,
             None => {
-                eprintln!("[AgentPoll:pty={}] no unclaimed session, Idle", pty_session_id);
-                Some(idle())
+                eprintln!("[AgentPoll:pty={}] no session for workspace, Idle", pty_session_id);
+                return Some(idle());
+            }
+        };
+
+        // 2. Input gate: only the globally last-active PTY can CLAIM new sessions.
+        //    Stale entries older than ACTIVE_WINDOW_MS are ignored.
+        //    But if we already own a cached session, keep showing its state.
+        {
+            let guard = LAST_ACTIVE_PTY.get_or_init(|| Mutex::new(None))
+                .lock().unwrap();
+            let can_claim = match &*guard {
+                Some((id, ts)) if id == pty_session_id && now - *ts <= ACTIVE_WINDOW_MS => true,
+                _ => false,
+            };
+            if !can_claim {
+                let cache_guard = cache.lock().unwrap();
+                if let Some((cached, _)) = cache_guard.get(pty_session_id) {
+                    eprintln!("[AgentPoll:pty={}] not active, polling cached session {}", pty_session_id, cached);
+                    return self.poll_parts(&conn, cached);
+                }
+                eprintln!("[AgentPoll:pty={}] not active, Idle", pty_session_id);
+                return Some(idle());
             }
         }
+
+        // 3. Check cache: does this PTY already track the latest session?
+        {
+            let guard = cache.lock().unwrap();
+            if let Some((cached, _)) = guard.get(pty_session_id) {
+                if cached == &latest_sid {
+                    eprintln!("[AgentPoll:pty={}] cached session {} unchanged", pty_session_id, cached);
+                    return self.poll_parts(&conn, cached);
+                }
+                eprintln!("[AgentPoll:pty={}] latest session changed (was {}, now {}), trying to claim new session", pty_session_id, cached, latest_sid);
+            }
+        }
+
+        // 4. Session from a previous run? Don't claim it.
+        let spawn_time_opt = spawns.lock().unwrap().get(pty_session_id).copied();
+        eprintln!("[AgentPoll:pty={}] spawn_time={:?} session_time={}", pty_session_id, spawn_time_opt, session_time);
+        if let Some(spawn_time) = spawn_time_opt {
+            if session_time < spawn_time {
+                eprintln!("[AgentPoll:pty={}] session {} created before PTY spawn ({} < {}), not claiming", pty_session_id, latest_sid, session_time, spawn_time);
+                return Some(idle());
+            }
+        }
+
+        // 5. Check session ownership.
+        {
+            let guard = owners.lock().unwrap();
+            if let Some(owner) = guard.get(&latest_sid) {
+                if owner != pty_session_id {
+                    eprintln!("[AgentPoll:pty={}] session {} owned by {}, fallback to cached session", pty_session_id, latest_sid, owner);
+                    let cache_guard = cache.lock().unwrap();
+                    if let Some((cached, _)) = cache_guard.get(pty_session_id) {
+                        return self.poll_parts(&conn, cached);
+                    }
+                    return Some(idle());
+                }
+            }
+        }
+
+        // 6. Claim ownership if free.
+        {
+            let mut guard = owners.lock().unwrap();
+            if !guard.contains_key(&latest_sid) {
+                guard.insert(latest_sid.clone(), pty_session_id.to_string());
+                eprintln!("[AgentPoll:pty={}] claimed session {}", pty_session_id, latest_sid);
+            }
+        }
+
+        cache.lock().unwrap().insert(pty_session_id.to_string(), (latest_sid.clone(), now));
+        self.poll_parts(&conn, &latest_sid)
     }
 
     fn poll_parts(&self, conn: &Connection, session_id: &str) -> Option<AgentStateInfo> {

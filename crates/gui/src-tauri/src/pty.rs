@@ -395,6 +395,7 @@ pub fn pty_spawn(
     cols: u16,
     rows: u16,
 ) -> Result<(), String> {
+    crate::agent_monitor::record_pty_spawn(&session_id);
     spawn_pty_session(app, &state, session_id, command, args, env, cwd, cols, rows)
 }
 #[tauri::command]
@@ -410,6 +411,11 @@ pub fn pty_write(
         .get(&session_id)
         .cloned()
         .ok_or_else(|| "Session not found".to_string())?;
+
+    // Mark PTY as having real user input (ignore escape sequences like \x1b[I/O).
+    if !data.is_empty() && data[0] != 0x1B {
+        crate::agent_monitor::mark_pty_active(&session_id);
+    }
 
     let mut writer = session.stdin_writer.lock().unwrap();
     writer
@@ -473,5 +479,6 @@ pub fn pty_close(state: tauri::State<'_, PtyState>, session_id: String) -> Resul
     if let Some(s) = session {
         *s.is_running.lock().unwrap() = false;
     }
+    crate::agent_monitor::cleanup_pty(&session_id);
     Ok(())
 }
