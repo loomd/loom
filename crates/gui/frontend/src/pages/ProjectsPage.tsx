@@ -505,15 +505,10 @@ export default function ProjectsPage() {
                         }
                       }}
                     >
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+<div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                         <span style={{ fontWeight: 600, color: 'var(--text-primary)', fontSize: '1rem' }}>
                           {agent.command}
                         </span>
-                        {/* Dynamic breathing light status */}
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                          <span className="status-light running" style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: 'var(--accent-emerald)', boxShadow: '0 0 8px var(--accent-emerald)' }}></span>
-                          <span style={{ fontSize: '0.75rem', color: 'var(--accent-emerald)' }}>{t('proj.status.running')}</span>
-                        </div>
                       </div>
                       
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>

@@ -385,3 +385,10 @@ export const getAgentSkillMap = (): Promise<Record<string, string>> =>
 export const setAgentSkillMap = (
 	skillMap: Record<string, string>,
 ): Promise<void> => invoke("set_agent_skill_map", { skillMap });
+
+// ─── Agent Status Monitor ───────────────────────────────────
+import type { AgentStateInfo } from "./types";
+
+export const pollAgentState = (
+	workspaceDir: string,
+): Promise<AgentStateInfo | null> => invoke("poll_agent_state", { workspaceDir });

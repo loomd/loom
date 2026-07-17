@@ -259,6 +259,8 @@ export function useWorkspaceData(
         args: getMergedArgs(tool, tpl),
         env: customEnvs,
       };
+      const isOpencode = tool.name.toLowerCase().includes('opencode') || tool.path.toLowerCase().includes('opencode');
+      if (isOpencode) newTab.isOpencode = true;
       tabActions.addTab(newTab);
       tabActions.setActiveTabId(newSessionId);
       toast.success(t('temp.toast.launched') + ': ' + tpl.name);

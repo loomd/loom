@@ -125,3 +125,10 @@ export interface ScanResult {
   is_registered: boolean;
   tool_id: string | null;
 }
+
+export type AgentState = 'idle' | 'running' | 'waiting' | 'error' | 'agent_call' | 'question';
+
+export interface AgentStateInfo {
+  state: AgentState;
+  session_id: string;
+}

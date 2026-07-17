@@ -7,6 +7,7 @@ export interface ConsoleTab {
   type: 'overview' | 'terminal' | 'editor' | 'agents-skills';
   cwd: string;
   command?: string;
+  isOpencode?: boolean;
   args?: string[];
   env?: Record<string, string>;
   filePath?: string;

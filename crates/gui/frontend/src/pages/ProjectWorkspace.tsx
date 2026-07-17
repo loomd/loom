@@ -1,4 +1,4 @@
-import React, { Suspense, useEffect } from 'react';
+import React, { Suspense, useEffect, useState } from 'react';
 import WindowControlButtons from '../components/WindowControlButtons';
 import { useTabs } from '../hooks/useTabs';
 import { useWorkspaceData } from '../hooks/useWorkspaceData';
@@ -7,7 +7,8 @@ import { FileExplorerPanel } from '../components/FileExplorerPanel';
 import { useToast } from '../ToastContext';
 import { useI18n } from '../I18nContext';
 import { EditorPlaceholder } from '../components/EditorPlaceholder';
-import type { Project } from '../types';
+import { pollAgentState } from '../api';
+import type { Project, AgentStateInfo } from '../types';
 const FileEditor = React.lazy(() => import('../components/FileEditor').then(m => ({ default: m.FileEditor })));
 
 interface Props {
@@ -28,6 +29,31 @@ export default function ProjectWorkspace({ project, isVisible, onUnregisterProje
 		terminals, showGrid, handleAddRawTerminal, handleCloseTerminal,
 		handleOpenFile, updateTabDirty, removeTabById,
 	} = tabsState;
+  const [activeTerminals, setActiveTerminals] = useState(terminals.filter(t => t.isOpencode).length);
+const [agentStateInfo, setAgentStateInfo] = useState<AgentStateInfo | null>(null);
+
+  useEffect(() => {
+    const opencodeCount = terminals.filter(t => t.isOpencode).length;
+    const prev = activeTerminals;
+    setActiveTerminals(opencodeCount);
+    if (prev !== opencodeCount) {
+      console.log('[AgentPoll]', `terminals: ${terminals.length}, isOpencode: ${opencodeCount}, reset agent state`);
+    }
+  }, [terminals]);
+
+  useEffect(() => {
+    if (activeTerminals === 0) {
+      setAgentStateInfo(null);
+      return;
+    }
+    const interval = setInterval(async () => {
+      try {
+        const info = await pollAgentState(project.root_path);
+        setAgentStateInfo(info);
+      } catch { /* DB not available */ }
+    }, 2000);
+    return () => clearInterval(interval);
+  }, [project.root_path, activeTerminals]);
 
 	const data = useWorkspaceData(project, toast, t, {
 		addTab: tabsState.addTab,
@@ -122,6 +148,13 @@ export default function ProjectWorkspace({ project, isVisible, onUnregisterProje
                   fontSize: '0.82rem', fontWeight: 400, whiteSpace: 'nowrap', userSelect: 'none',
                 }}>
                 {tab.type === 'editor' && <span style={{ fontSize: '0.8rem', opacity: 0.8 }}>📄</span>}
+                {tab.type === 'terminal' && tab.isOpencode && (
+                  <span
+                    className={`agent-status-dot ${agentStateInfo?.state || 'idle'}`}
+                    title={t(`agent.status.${agentStateInfo?.state || 'idle'}`)}
+                    style={{ marginRight: '4px' }}
+                  />
+                )}
                 <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'inline-block', minWidth: tab.type === 'terminal' ? '24px' : undefined, maxWidth: tab.type === 'terminal' ? 'none' : '60px' }}>
                   {tab.title}
                 </span>

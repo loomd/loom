@@ -777,6 +777,17 @@ fn get_onboarded_status() -> Result<bool, String> {
 }
 
 #[tauri::command]
+fn poll_agent_state(workspace_dir: String) -> Result<Option<agent_monitor::AgentStateInfo>, String> {
+    let monitor = agent_monitor::AgentMonitor::new();
+    Ok(monitor.poll_state(&workspace_dir))
+}
+
+#[tauri::command]
+fn reset_agent_idle() {
+    agent_monitor::AgentMonitor::new().reset_idle();
+}
+
+#[tauri::command]
 fn set_onboarded_status(status: bool) -> Result<(), String> {
     cstore::set_onboarded_status(status)
 }
@@ -1276,6 +1287,7 @@ fn log_frontend(level: String, message: String) {
 }
 
 mod pty;
+mod agent_monitor;
 
 fn get_window_state_path() -> std::path::PathBuf {
     let mut path = cstore::get_config_path();
@@ -1456,8 +1468,7 @@ fn main() {
                 let _ = app.global_shortcut().register("Alt+Space");
             }
 
-            // Run process synchronization in a background thread to prevent blocking Tauri's main startup thread (which causes the white screen freeze).
-            std::thread::spawn(|| {
+std::thread::spawn(|| {
                 let _ = cstore::sync_running_processes();
             });
 
@@ -1612,7 +1623,9 @@ fn main() {
             set_onboarded_status,
             create_agent_templates,
             get_agent_skill_map,
-            set_agent_skill_map
+            set_agent_skill_map,
+            poll_agent_state,
+            reset_agent_idle
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

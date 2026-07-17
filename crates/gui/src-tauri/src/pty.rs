@@ -220,31 +220,9 @@ pub fn spawn_pty_session(
         {
             // Detect shell with priority: pwsh -> powershell -> cmd
             let find_pwsh = || -> Option<String> {
-                let check_path = |p: &str| -> Option<String> {
-                    let path = std::path::Path::new(p);
-                    if path.exists() {
-                        if let Ok(metadata) = std::fs::metadata(path) {
-                            if metadata.len() > 0 {
-                                return Some(p.to_string());
-                            }
-                        }
-                    }
-                    None
-                };
-
-                if let Some(p) = check_path("C:\\Program Files\\PowerShell\\7\\pwsh.exe") {
-                    return Some(p);
-                }
-                if let Some(p) = check_path("C:\\Program Files\\PowerShell\\6\\pwsh.exe") {
-                    return Some(p);
-                }
-
+                // Check PATH first (covers Microsoft Store installs, custom paths, etc.)
                 if let Ok(path) = which::which("pwsh") {
-                    if let Ok(metadata) = std::fs::metadata(&path) {
-                        if metadata.len() > 0 {
-                            return Some(path.to_string_lossy().to_string());
-                        }
-                    }
+                    return Some(path.to_string_lossy().to_string());
                 }
                 None
             };

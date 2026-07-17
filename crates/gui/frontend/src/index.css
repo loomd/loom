@@ -64,6 +64,8 @@ body {
   --accent-red:    #ef4444;
   --accent-amber:  #f59e0b;
   --accent-blue:   #3b82f6;
+  --accent-sky:    #0ea5e9;
+  --accent-sky:    #0ea5e9;
 
   --radius-sm:  8px;
   --radius-md:  14px;
@@ -129,6 +131,8 @@ body.theme-gray {
   --accent-emerald:#10b981;
   --accent-emerald-dim: rgba(16,185,129,0.10);
   --accent-blue:   #3b82f6;
+  --accent-sky:    #0ea5e9;
+  --accent-sky:    #0ea5e9;
 
   --bg-sidebar:    rgba(255,255,255,0.018);
   --bg-card-outer: rgba(255,255,255,0.025);
@@ -170,6 +174,7 @@ body.theme-day {
   --accent-emerald:#059669; /* Deeper emerald for readability */
   --accent-emerald-dim: rgba(5,150,105,0.09);
   --accent-blue:   #1d4ed8;
+  --accent-sky:    #0284c7;
 
   --bg-sidebar:    rgba(0,0,0,0.015);
   --bg-card-outer: rgba(0,0,0,0.012);
@@ -969,6 +974,58 @@ body.theme-day select.input option {
   50% { opacity: 0.4; }
 }
 .dot-green { animation: pulse-dot 2s ease-in-out infinite; }
+
+/* ─── Agent Status Dot ──────────────────────────────────────── */
+.agent-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  inline-size: 8px;
+  block-size: 8px;
+}
+.agent-status-dot.idle {
+  background-color: #a855f7;
+}
+.agent-status-dot.thinking {
+  background-color: var(--accent-emerald);
+  box-shadow: 0 0 6px var(--accent-emerald);
+  animation: pulse-dot 1s ease-in-out infinite;
+}
+.agent-status-dot.running {
+  background-color: var(--accent-emerald);
+  box-shadow: 0 0 6px var(--accent-emerald);
+  animation: pulse-dot 1s ease-in-out infinite;
+}
+.agent-status-done {
+  background-color: var(--accent-emerald);
+}
+.agent-status-dot.waiting {
+  background-color: var(--accent-sky);
+}
+.agent-status-dot.error {
+  background-color: var(--accent-red);
+}
+.agent-status-dot.agent_call {
+  background-color: var(--accent-amber);
+  box-shadow: 0 0 6px var(--accent-amber);
+  animation: pulse-dot 1s ease-in-out infinite;
+}
+.agent-status-dot.question {
+  background-color: var(--accent-amber);
+  box-shadow: 0 0 8px var(--accent-amber);
+  animation: pulse-dot 0.8s ease-in-out infinite;
+}
+
+.agent-status-text {
+  font-size: 0.75rem;
+}
+.agent-status-text.idle { color: var(--text-tertiary); }
+.agent-status-text.thinking { color: var(--accent-emerald); }
+.agent-status-text.running { color: var(--accent-emerald); }
+.agent-status-text.waiting { color: var(--accent-sky); }
+.agent-status-text.error { color: var(--accent-red); }
+.agent-status-text.agent_call { color: var(--accent-amber); }
+.agent-status-text.question { color: var(--accent-amber); }
 
 /* ─── Misc Utilities ─────────────────────────────────────── */
 .flex { display: flex; }
