@@ -71,6 +71,9 @@ impl Drop for JobObject {
 
 pub static GLOBAL_JOB: OnceLock<JobObject> = OnceLock::new();
 
+/// Maps PTY session_id → spawn timestamp (ms since epoch)
+pub static PTY_SPAWN_TIMES: OnceLock<Mutex<HashMap<String, u128>>> = OnceLock::new();
+
 #[cfg(target_os = "windows")]
 pub fn init_process_session_job() {
     if let Ok(job) = JobObject::new() {
@@ -341,6 +344,17 @@ pub fn spawn_pty_session(
         .lock()
         .unwrap()
         .insert(session_id.clone(), session);
+
+    // Record PTY spawn time for agent monitor session association
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or(0);
+    PTY_SPAWN_TIMES
+        .get_or_init(|| Mutex::new(HashMap::new()))
+        .lock()
+        .unwrap()
+        .insert(session_id.clone(), now);
 
     // Read loop thread
     let session_id_clone = session_id.clone();

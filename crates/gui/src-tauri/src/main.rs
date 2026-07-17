@@ -777,9 +777,12 @@ fn get_onboarded_status() -> Result<bool, String> {
 }
 
 #[tauri::command]
-fn poll_agent_state(workspace_dir: String) -> Result<Option<agent_monitor::AgentStateInfo>, String> {
+fn poll_agent_state(workspace_dir: String, pty_session_id: Option<String>) -> Result<Option<agent_monitor::AgentStateInfo>, String> {
     let monitor = agent_monitor::AgentMonitor::new();
-    Ok(monitor.poll_state(&workspace_dir))
+    match pty_session_id {
+        Some(pid) => Ok(monitor.poll_state_for_pty(&workspace_dir, &pid)),
+        None => Ok(monitor.poll_state(&workspace_dir)),
+    }
 }
 
 #[tauri::command]

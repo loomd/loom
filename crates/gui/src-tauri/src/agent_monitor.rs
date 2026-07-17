@@ -1,6 +1,24 @@
 ﻿use rusqlite::Connection;
 use serde::Serialize;
+use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::{Mutex, OnceLock};
+
+/// Cache: PTY session_id → (opencode_session_id, last_active_ms)
+static SESSION_CACHE: OnceLock<Mutex<HashMap<String, (String, i64)>>> = OnceLock::new();
+
+fn get_pty_spawn_time(pty_session_id: &str) -> Option<i64> {
+    let map = crate::pty::PTY_SPAWN_TIMES.get()?;
+    let guard = map.lock().ok()?;
+    guard.get(pty_session_id).map(|&ts| ts as i64)
+}
+
+fn now_ms() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0)
+}
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
 #[serde(rename_all = "snake_case")]
@@ -112,6 +130,114 @@ impl AgentMonitor {
                 return Some(idle());
             }
             Some(sid) => self.poll_parts(&conn, &sid),
+        }
+    }
+
+    /// Check if a session is already claimed by another PTY in the cache (excluding ourselves)
+    fn session_claimed_by_other(cache: &HashMap<String, (String, i64)>, session_id: &str, my_pty: &str) -> bool {
+        cache.iter().any(|(pty, (sid, _))| pty != my_pty && sid == session_id)
+    }
+
+    /// Poll agent state scoped to a specific PTY terminal.
+    /// Each PTY tracks its own session via cache, preventing multiple terminals
+    /// from sharing the same session.
+    pub fn poll_state_for_pty(&self, workspace_dir: &str, pty_session_id: &str) -> Option<AgentStateInfo> {
+        let idle = || AgentStateInfo {
+            state: AgentState::Idle,
+            session_id: String::new(),
+        };
+
+        let db_path = match Self::get_db_path() {
+            Some(p) => p,
+            None => {
+                eprintln!("[AgentPoll:pty={}] no DB path, Idle", pty_session_id);
+                return Some(idle());
+            }
+        };
+        let conn = match Connection::open(&db_path) {
+            Ok(c) => c,
+            Err(e) => {
+                eprintln!("[AgentPoll:pty={}] open DB failed: {}, Idle", pty_session_id, e);
+                return Some(idle());
+            }
+        };
+
+        let pattern = format!("{}%", workspace_dir.replace('\\', "/"));
+        let now = now_ms();
+        let idle_timeout = 15_000; // 15s of inactivity → stale
+        let cache = SESSION_CACHE.get_or_init(|| Mutex::new(HashMap::new()));
+
+        // 1. Check cache: does this PTY already have a tracked session?
+        {
+            let mut guard = cache.lock().unwrap();
+            if let Some((cached_sid, _last_active)) = guard.get(pty_session_id).cloned() {
+                let result = self.poll_parts(&conn, &cached_sid);
+                if let Some(info) = result {
+                    // Check if session is still active (not idle AND not stale Waiting)
+                    let is_stale = if info.state == AgentState::Waiting {
+                        // Check if the latest part is older than idle_timeout
+                        let latest_ts: i64 = conn
+                            .query_row(
+                                "SELECT time_created FROM part WHERE session_id = ?1 ORDER BY time_created DESC LIMIT 1",
+                                rusqlite::params![cached_sid],
+                                |row| row.get(0),
+                            )
+                            .unwrap_or(0);
+                        now - latest_ts > idle_timeout
+                    } else {
+                        info.state == AgentState::Idle
+                    };
+
+                    if !is_stale {
+                        guard.insert(pty_session_id.to_string(), (cached_sid, now));
+                        return Some(info);
+                    }
+                }
+
+                // Session is stale — remove from cache and fall through to find a new one
+                eprintln!("[AgentPoll:pty={}] cached session {} stale, releasing", pty_session_id, cached_sid);
+                guard.remove(pty_session_id);
+            }
+        }
+
+        // 2. Find an unclaimed session for this PTY
+        let spawn_time = get_pty_spawn_time(pty_session_id).unwrap_or(0);
+        let threshold = now.saturating_sub(10 * 60_000).max(spawn_time);
+
+        // Iterate sessions newest-first, pick the first not claimed by other PTYs
+        let mut guard = cache.lock().unwrap();
+        let session_id: Option<String> = conn
+            .prepare(
+                "SELECT id FROM session WHERE directory LIKE ?1 AND time_created >= ?2 AND (parent_id IS NULL OR parent_id = '') ORDER BY time_created DESC",
+            )
+            .ok()
+            .and_then(|mut stmt| {
+                let mut rows = stmt.query(rusqlite::params![pattern, threshold]).ok()?;
+                loop {
+                    match rows.next() {
+                        Ok(Some(r)) => {
+                            if let Ok(sid) = r.get::<_, String>(0) {
+                                if !Self::session_claimed_by_other(&guard, &sid, pty_session_id) {
+                                    return Some(sid);
+                                }
+                            }
+                        }
+                        _ => return None,
+                    }
+                }
+            });
+
+        match session_id {
+            Some(sid) => {
+                guard.insert(pty_session_id.to_string(), (sid.clone(), now));
+                drop(guard);
+                eprintln!("[AgentPoll:pty={}] claimed session {}", pty_session_id, sid);
+                self.poll_parts(&conn, &sid)
+            }
+            None => {
+                eprintln!("[AgentPoll:pty={}] no unclaimed session, Idle", pty_session_id);
+                Some(idle())
+            }
         }
     }
 

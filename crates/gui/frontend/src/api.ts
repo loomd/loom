@@ -391,4 +391,5 @@ import type { AgentStateInfo } from "./types";
 
 export const pollAgentState = (
 	workspaceDir: string,
-): Promise<AgentStateInfo | null> => invoke("poll_agent_state", { workspaceDir });
+	ptySessionId?: string,
+): Promise<AgentStateInfo | null> => invoke("poll_agent_state", { workspaceDir, ptySessionId: ptySessionId ?? null });

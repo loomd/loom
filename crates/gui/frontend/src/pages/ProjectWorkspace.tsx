@@ -1,4 +1,4 @@
-import React, { Suspense, useEffect, useState } from 'react';
+import React, { Suspense, useEffect, useMemo, useState } from 'react';
 import WindowControlButtons from '../components/WindowControlButtons';
 import { useTabs } from '../hooks/useTabs';
 import { useWorkspaceData } from '../hooks/useWorkspaceData';
@@ -29,31 +29,24 @@ export default function ProjectWorkspace({ project, isVisible, onUnregisterProje
 		terminals, showGrid, handleAddRawTerminal, handleCloseTerminal,
 		handleOpenFile, updateTabDirty, removeTabById,
 	} = tabsState;
-  const [activeTerminals, setActiveTerminals] = useState(terminals.filter(t => t.isOpencode).length);
-const [agentStateInfo, setAgentStateInfo] = useState<AgentStateInfo | null>(null);
+const activeTerminals = useMemo(() => terminals.filter(t => t.isOpencode).length, [terminals]);
+const [agentStateMap, setAgentStateMap] = useState<Record<string, AgentStateInfo>>({});
 
   useEffect(() => {
-    const opencodeCount = terminals.filter(t => t.isOpencode).length;
-    const prev = activeTerminals;
-    setActiveTerminals(opencodeCount);
-    if (prev !== opencodeCount) {
-      console.log('[AgentPoll]', `terminals: ${terminals.length}, isOpencode: ${opencodeCount}, reset agent state`);
-    }
-  }, [terminals]);
-
-  useEffect(() => {
-    if (activeTerminals === 0) {
-      setAgentStateInfo(null);
-      return;
-    }
+    if (activeTerminals === 0) return;
     const interval = setInterval(async () => {
-      try {
-        const info = await pollAgentState(project.root_path);
-        setAgentStateInfo(info);
-      } catch { /* DB not available */ }
+      const opencodeTerms = terminals.filter(t => t.isOpencode);
+      const results: Record<string, AgentStateInfo> = {};
+      for (const term of opencodeTerms) {
+        try {
+          const info = await pollAgentState(project.root_path, term.id);
+          if (info) results[term.id] = info;
+        } catch { /* DB not available */ }
+      }
+      setAgentStateMap(results);
     }, 2000);
     return () => clearInterval(interval);
-  }, [project.root_path, activeTerminals]);
+  }, [project.root_path, activeTerminals, terminals]);
 
 	const data = useWorkspaceData(project, toast, t, {
 		addTab: tabsState.addTab,
@@ -150,8 +143,8 @@ const [agentStateInfo, setAgentStateInfo] = useState<AgentStateInfo | null>(null
                 {tab.type === 'editor' && <span style={{ fontSize: '0.8rem', opacity: 0.8 }}>📄</span>}
                 {tab.type === 'terminal' && tab.isOpencode && (
                   <span
-                    className={`agent-status-dot ${agentStateInfo?.state || 'idle'}`}
-                    title={t(`agent.status.${agentStateInfo?.state || 'idle'}`)}
+                    className={`agent-status-dot ${agentStateMap[tab.id]?.state || 'idle'}`}
+                    title={t(`agent.status.${agentStateMap[tab.id]?.state || 'idle'}`)}
                     style={{ marginRight: '4px' }}
                   />
                 )}
