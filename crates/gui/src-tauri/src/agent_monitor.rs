@@ -50,6 +50,12 @@ pub fn cleanup_pty(pty_session_id: &str) {
     if let Some(sp) = PTY_SPAWNS.get() {
         sp.lock().unwrap().remove(pty_session_id);
     }
+    if let Some(cache) = SESSION_CACHE.get() {
+        cache.lock().unwrap().remove(pty_session_id);
+    }
+    if let Some(owners) = SESSION_OWNER.get() {
+        owners.lock().unwrap().retain(|_, v| v != pty_session_id);
+    }
 }
 
 fn now_ms() -> i64 {
@@ -125,22 +131,16 @@ impl AgentMonitor {
 
         let pattern = format!("{}%", workspace_dir.replace('\\', "/"));
         eprintln!("[AgentPoll] workspace_dir: {}, pattern: {}", workspace_dir, pattern);
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_millis() as i64)
-            .unwrap_or(0);
 
         let session_id = 'outer: {
-            // Only accept sessions created within the last 10 minutes
-            let threshold = now.saturating_sub(10 * 60_000);
-            let mut stmt = match conn.prepare("SELECT id, time_created FROM session WHERE directory LIKE ?1 AND time_created >= ?2 AND (parent_id IS NULL OR parent_id = '') ORDER BY time_created DESC LIMIT 1") {
+            let mut stmt = match conn.prepare("SELECT id, time_created FROM session WHERE directory LIKE ?1 AND (parent_id IS NULL OR parent_id = '') ORDER BY time_created DESC LIMIT 1") {
                 Ok(s) => s,
                 Err(e) => {
                     eprintln!("[AgentPoll] session prepare failed: {}, Idle", e);
                     break 'outer None;
                 }
             };
-            let mut rows = match stmt.query(rusqlite::params![pattern, threshold]) {
+            let mut rows = match stmt.query(rusqlite::params![pattern]) {
                 Ok(r) => r,
                 Err(e) => {
                     eprintln!("[AgentPoll] session query failed: {}, Idle", e);
@@ -202,15 +202,14 @@ impl AgentMonitor {
         let cache = SESSION_CACHE.get_or_init(|| Mutex::new(HashMap::new()));
         let owners = SESSION_OWNER.get_or_init(|| Mutex::new(HashMap::new()));
         let spawns = PTY_SPAWNS.get_or_init(|| Mutex::new(HashMap::new()));
-        let threshold = now.saturating_sub(10 * 60_000);
 
         // 1. Query the latest session for this workspace (with time_created).
         //    Do this first — we need it for both cache-hit and new-claim paths.
         let latest_info: Option<(String, i64)> = conn
-            .prepare("SELECT id, time_created FROM session WHERE directory LIKE ?1 AND time_created >= ?2 AND (parent_id IS NULL OR parent_id = '') ORDER BY time_created DESC LIMIT 1")
+            .prepare("SELECT id, time_created FROM session WHERE directory LIKE ?1 AND (parent_id IS NULL OR parent_id = '') ORDER BY time_created DESC LIMIT 1")
             .ok()
             .and_then(|mut stmt| {
-                stmt.query_row(rusqlite::params![pattern, threshold], |row| {
+                stmt.query_row(rusqlite::params![pattern], |row| {
                     let id: String = row.get(0)?;
                     let ts: i64 = row.get(1)?;
                     Ok((id, ts))
