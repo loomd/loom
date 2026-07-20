@@ -85,6 +85,8 @@ let original = AppConfig {
 		update_check_interval: String::new(),
 		has_onboarded: false,
 		agent_skill_map: HashMap::new(),
+		floating_sidebar_enabled: true,
+		floating_sidebar_position: "right".to_string(),
 	};
 
     // Serialize

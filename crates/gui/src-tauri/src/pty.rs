@@ -120,12 +120,13 @@ impl TerminalBuffer {
     }
 }
 
-// Active PTY Handle struct
+// Active PTY session struct
 pub struct PtySession {
     pub pty_master: Mutex<Box<dyn portable_pty::MasterPty + Send>>,
     pub stdin_writer: Arc<Mutex<Box<dyn Write + Send>>>,
     pub buffer: Arc<Mutex<TerminalBuffer>>,
     pub is_running: Arc<Mutex<bool>>,
+    pub child_pid: u32,
 }
 
 #[derive(Default)]
@@ -312,11 +313,12 @@ pub fn spawn_pty_session(
     }
 
     let pty_slave = pair.slave;
-    let _child = pty_slave
+    let child = pty_slave
         .spawn_command(cmd_builder)
         .map_err(|e| format!("Failed to spawn child: {}", e))?;
 
-    // Drop slave to prevent stdout hang on read
+    let child_pid = child.process_id().unwrap();
+    drop(child);
     drop(pty_slave);
 
     let reader = pair
@@ -337,6 +339,7 @@ pub fn spawn_pty_session(
         stdin_writer: Arc::new(Mutex::new(writer)),
         buffer: ring_buffer.clone(),
         is_running: is_running.clone(),
+        child_pid,
     });
 
     state
@@ -475,9 +478,22 @@ pub fn pty_history(
 
 #[tauri::command]
 pub fn pty_close(state: tauri::State<'_, PtyState>, session_id: String) -> Result<(), String> {
+    use winapi::um::handleapi::CloseHandle;
+    use winapi::um::processthreadsapi::{OpenProcess, TerminateProcess};
+    use winapi::um::winnt::PROCESS_TERMINATE;
+
     let session = state.sessions.lock().unwrap().remove(&session_id);
     if let Some(s) = session {
         *s.is_running.lock().unwrap() = false;
+
+        let pid = s.child_pid;
+        let handle = unsafe { OpenProcess(PROCESS_TERMINATE, 0, pid) };
+        if !handle.is_null() {
+            unsafe {
+                TerminateProcess(handle, 1);
+                CloseHandle(handle);
+            }
+        }
     }
     crate::agent_monitor::cleanup_pty(&session_id);
     Ok(())
