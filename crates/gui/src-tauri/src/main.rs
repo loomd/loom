@@ -1,5 +1,8 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+const MIN_WINDOW_WIDTH: u32 = 800;
+const MIN_WINDOW_HEIGHT: u32 = 560;
+
 use loom_core::storage::{self as cstore, AgentDoc, AgentInstance, Category, CliTool, GlobalDocTemplate, GlobalEnvVar, GlobalSkillTemplate, Project, ProjectSkill, ScanResult, Template};
 use std::collections::HashMap;
 use tauri::{
@@ -291,6 +294,26 @@ fn get_font_size() -> Result<String, String> {
 #[tauri::command]
 fn set_font_size(size: String) -> Result<(), String> {
     cstore::set_font_size(size).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn get_floating_sidebar_enabled() -> Result<bool, String> {
+    cstore::get_floating_sidebar_enabled().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn set_floating_sidebar_enabled(enabled: bool) -> Result<(), String> {
+    cstore::set_floating_sidebar_enabled(enabled).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn get_floating_sidebar_position() -> Result<String, String> {
+    cstore::get_floating_sidebar_position().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn set_floating_sidebar_position(position: String) -> Result<(), String> {
+    cstore::set_floating_sidebar_position(position).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -1120,6 +1143,28 @@ fn execute_test_command(cmd: &str, args_json: &str) -> Result<String, String> {
             set_font_size(size.to_string())?;
             Ok("null".to_string())
         }
+        "get_floating_sidebar_enabled" => {
+            let res = get_floating_sidebar_enabled()?;
+            serde_json::to_string(&res).map_err(|e| e.to_string())
+        }
+        "set_floating_sidebar_enabled" => {
+            let enabled = args["enabled"]
+                .as_bool()
+                .ok_or_else(|| "Missing argument 'enabled'".to_string())?;
+            set_floating_sidebar_enabled(enabled)?;
+            Ok("null".to_string())
+        }
+        "get_floating_sidebar_position" => {
+            let res = get_floating_sidebar_position()?;
+            serde_json::to_string(&res).map_err(|e| e.to_string())
+        }
+        "set_floating_sidebar_position" => {
+            let position = args["position"]
+                .as_str()
+                .ok_or_else(|| "Missing argument 'position'".to_string())?;
+            set_floating_sidebar_position(position.to_string())?;
+            Ok("null".to_string())
+        }
         "get_global_env_vars" => {
             let res = get_global_env_vars()?;
             serde_json::to_string(&res).map_err(|e| e.to_string())
@@ -1338,11 +1383,13 @@ fn save_window_state(window: &tauri::Window) {
             maximized: bool,
             fullscreen: bool,
         }
+        let width = std::cmp::max(size.width, MIN_WINDOW_WIDTH);
+        let height = std::cmp::max(size.height, MIN_WINDOW_HEIGHT);
         if let Ok(json) = serde_json::to_string_pretty(&WinState {
             x: pos.x,
             y: pos.y,
-            width: size.width,
-            height: size.height,
+            width,
+            height,
             maximized: false,
             fullscreen: false,
         }) {
@@ -1457,8 +1504,10 @@ fn main() {
                         fullscreen: bool,
                     }
                     if let Ok(state) = serde_json::from_str::<WinState>(&content) {
+                        let w = std::cmp::max(state.width, MIN_WINDOW_WIDTH);
+                        let h = std::cmp::max(state.height, MIN_WINDOW_HEIGHT);
                         let _ =
-                            window.set_size(tauri::PhysicalSize::new(state.width, state.height));
+                            window.set_size(tauri::PhysicalSize::new(w, h));
                         let sane_x = if state.x < -10000 || state.x > 10000 { 0 } else { state.x };
                         let sane_y = if state.y < -10000 || state.y > 10000 { 0 } else { state.y };
                         let _ = window.set_position(tauri::PhysicalPosition::new(sane_x, sane_y));
@@ -1561,7 +1610,19 @@ std::thread::spawn(|| {
             Ok(())
         })
         .on_window_event(|window, event| match event {
-            tauri::WindowEvent::Resized(_) | tauri::WindowEvent::Moved(_) => {
+            tauri::WindowEvent::Resized(size) => {
+                if !window.is_maximized().unwrap_or(false)
+                    && !window.is_fullscreen().unwrap_or(false)
+                {
+                    if size.width < MIN_WINDOW_WIDTH || size.height < MIN_WINDOW_HEIGHT {
+                        let new_w = std::cmp::max(size.width, MIN_WINDOW_WIDTH);
+                        let new_h = std::cmp::max(size.height, MIN_WINDOW_HEIGHT);
+                        let _ = window.set_size(tauri::PhysicalSize::new(new_w, new_h));
+                    }
+                }
+                save_window_state(&window);
+            }
+            tauri::WindowEvent::Moved(_) => {
                 save_window_state(&window);
             }
             tauri::WindowEvent::CloseRequested { api, .. } => {
@@ -1609,6 +1670,10 @@ std::thread::spawn(|| {
             set_font_family,
             get_font_size,
             set_font_size,
+            get_floating_sidebar_enabled,
+            set_floating_sidebar_enabled,
+            get_floating_sidebar_position,
+            set_floating_sidebar_position,
             log_frontend,
             get_projects,
             create_project,

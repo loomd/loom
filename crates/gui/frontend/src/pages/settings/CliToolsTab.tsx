@@ -658,6 +658,7 @@ export default function CliToolsTab() {
 
 			{/* Right Column: Templates for Selected Tool */}
 			<div
+				data-tour-target="templates-section"
 				style={{
 					width: "60%",
 					display: "flex",

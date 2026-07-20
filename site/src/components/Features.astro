@@ -1,0 +1,59 @@
+---
+interface Feature {
+  icon: string;
+  color: 'purple' | 'emerald' | 'blue' | 'sky';
+  title: string;
+  description: string;
+}
+
+const features: Feature[] = [
+  {
+    icon: '📦',
+    color: 'purple',
+    title: 'Project Management',
+    description: 'Manage project files, skills, and AGENTS.md with independent configuration per project.'
+  },
+  {
+    icon: '🔍',
+    color: 'emerald',
+    title: 'Agent Discovery',
+    description: 'Automatically scans locally installed CLI tools with support for manual registration. Just discover and use.'
+  },
+  {
+    icon: '🛡',
+    color: 'blue',
+    title: 'Environment Isolation',
+    description: 'Each agent gets its own isolated environment with custom variables, preventing configuration conflicts.'
+  },
+  {
+    icon: '💻',
+    color: 'sky',
+    title: 'Terminal Aggregation',
+    description: 'Centralized terminal management across all agents. View every agent\'s status and logs in one place.'
+  },
+];
+---
+
+<section id="features" class="features-section">
+  <div class="container">
+    <header class="features-header">
+      <span class="section-label">Features</span>
+      <h2 class="section-title">Everything You Need</h2>
+      <p class="section-desc">
+        A complete solution for managing your CLI tools, AI agents, and project environments.
+      </p>
+    </header>
+
+    <div class="features-grid">
+      {features.map((feature, i) => (
+        <article class={`feature-card`} style={i > 0 ? `transition-delay: ${i * 60}ms` : ''}>
+          <div class={`feature-card-icon ${feature.color}`}>
+            {feature.icon}
+          </div>
+          <h3 class="feature-card-title">{feature.title}</h3>
+          <p class="feature-card-desc">{feature.description}</p>
+        </article>
+      ))}
+    </div>
+  </div>
+</section>

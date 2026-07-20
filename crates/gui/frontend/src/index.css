@@ -1488,3 +1488,133 @@ body.theme-day select.input option {
   100% { transform: translateX(-100%); }
 }
 
+/* ─── Tour Overlay ───────────────────────────────────── */
+.tour-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9000;
+}
+
+.tour-overlay-dark {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  pointer-events: auto;
+  transition: clip-path 300ms var(--ease-out-expo), webkit-clip-path 300ms var(--ease-out-expo);
+}
+
+.tour-spotlight {
+  position: absolute;
+  z-index: 1;
+  border: 2px solid var(--accent-purple);
+  border-radius: var(--radius-md);
+  box-shadow: 0 0 30px rgba(144, 97, 249, 0.3);
+  transition: all 300ms var(--ease-out-expo);
+  pointer-events: none;
+}
+
+.tour-card {
+  position: absolute;
+  z-index: 2;
+  width: 320px;
+  background: var(--bg-modal);
+  border: 1px solid var(--border-mid);
+  border-radius: var(--radius-lg);
+  padding: 20px;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.4);
+  cursor: default;
+  pointer-events: auto;
+}
+
+/* ─── Tour Card Header ─────────────────────────────── */
+.tour-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.tour-card-progress {
+  display: flex;
+  gap: 6px;
+}
+
+.tour-progress-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--border-mid);
+  transition: all 200ms ease;
+}
+
+.tour-progress-dot.active {
+  background: var(--accent-purple);
+  box-shadow: 0 0 8px rgba(144, 97, 249, 0.4);
+}
+
+.tour-progress-dot.done {
+  background: var(--accent-emerald);
+}
+
+.tour-card-counter {
+  font-size: var(--fs-10);
+  color: var(--text-tertiary);
+}
+
+/* ─── Tour Card Content ────────────────────────────── */
+.tour-card-title {
+  font-size: var(--fs-15);
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 8px;
+  letter-spacing: -0.02em;
+}
+
+.tour-card-desc {
+  font-size: var(--fs-12);
+  color: var(--text-secondary);
+  line-height: 1.5;
+  margin-bottom: 12px;
+}
+
+.tour-card-shortcut {
+  display: inline-block;
+  padding: 4px 8px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  margin-bottom: 16px;
+}
+
+.tour-card-shortcut kbd {
+  font-family: var(--font-family, monospace);
+  font-size: var(--fs-10);
+  color: var(--accent-purple);
+}
+
+/* ─── Tour Card Actions ────────────────────────────── */
+.tour-card-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+.btn-sm {
+  padding: 6px 12px;
+  font-size: var(--fs-11);
+  border-radius: var(--radius-sm);
+}
+
+/* ─── Tour Animations ──────────────────────────────── */
+@keyframes tourCardIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+

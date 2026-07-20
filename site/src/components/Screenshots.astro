@@ -1,0 +1,46 @@
+---
+interface Screenshot {
+  src: string;
+  alt: string;
+  label: string;
+}
+
+const screenshots: Screenshot[] = [
+  {
+    src: '/20260706-124556.jpg',
+    alt: 'Loom Project Dashboard',
+    label: 'Project Dashboard'
+  },
+  {
+    src: '/20260706-124559.jpg',
+    alt: 'Loom Agent Terminal',
+    label: 'Agent Terminal'
+  },
+  {
+    src: '/20260706-124601.jpg',
+    alt: 'Loom Settings',
+    label: 'Settings'
+  }
+];
+---
+
+<section id="screenshots" class="screenshots-section">
+  <div class="container">
+    <div class="screenshots-header-wrap">
+      <span class="section-label">Screenshots</span>
+      <h2 class="section-title">Built for Focus</h2>
+      <p class="section-desc">
+        Clean, minimal interface with everything you need right at your fingertips.
+      </p>
+    </div>
+
+    <div class="screenshots-zones">
+      {screenshots.map((shot, i) => (
+        <div class={`screenshot-zone`} style={i > 0 ? `transition-delay: ${i * 60}ms` : ''}>
+          <img src={shot.src} alt={shot.alt} width="400" height="320" loading="lazy" />
+          <div class="screenshot-zone-label">{shot.label}</div>
+        </div>
+      ))}
+    </div>
+  </div>
+</section>

@@ -438,6 +438,25 @@ const zhDict: Dictionary = {
 	"onboard.skill.none": "— 不关联 —",
 	"onboard.skill.placeholder": "输入 skill 名称…",
 	"onboard.skill.remove": "移除关联",
+
+	// Tour Overlay
+	"tour.title": "功能引导",
+	"tour.btn.next": "下一步",
+	"tour.btn.prev": "上一步",
+	"tour.btn.finish": "完成引导",
+	"tour.btn.skip": "跳过引导",
+
+	// Tour Steps
+	"tour.step.scan.title": "发现 AI Agents",
+	"tour.step.scan.desc": "Loom 会自动扫描 PATH，发现您已安装的 AI 编程助手。",
+	"tour.step.project.title": "创建项目",
+	"tour.step.project.desc": "为您的工作选择一个项目目录，Loom 会在此管理 Agent 和环境。",
+	"tour.step.env.title": "环境变量",
+	"tour.step.env.desc": "配置环境变量，模板中可以通过 %VAR% 引用它们。",
+	"tour.step.template.title": "创建模板",
+	"tour.step.template.desc": "创建模板来定义如何运行你的 Agent，可以绑定环境变量和默认参数。",
+	"tour.step.run.title": "运行 Agent",
+	"tour.step.run.desc": "最后一步，让我们实际跑一次你的 Agent 模板。",
 };
 
 const enDict: Dictionary = {
@@ -894,6 +913,25 @@ const enDict: Dictionary = {
 	"onboard.skill.none": "— None —",
 	"onboard.skill.placeholder": "Enter skill name…",
 	"onboard.skill.remove": "Remove mapping",
+
+	// Tour Overlay
+	"tour.title": "Feature Tour",
+	"tour.btn.next": "Next",
+	"tour.btn.prev": "Previous",
+	"tour.btn.finish": "Finish Tour",
+	"tour.btn.skip": "Skip Tour",
+
+	// Tour Steps
+	"tour.step.scan.title": "Discover AI Agents",
+	"tour.step.scan.desc": "Loom scans your PATH and finds installed AI coding assistants.",
+	"tour.step.project.title": "Create a Project",
+	"tour.step.project.desc": "Select a project directory. Loom manages agents and environment here.",
+	"tour.step.env.title": "Environment Variables",
+	"tour.step.env.desc": "Configure environment variables, reference them via %VAR% in templates.",
+	"tour.step.template.title": "Create Templates",
+	"tour.step.template.desc": "Define templates to run your agents with environment variables and default arguments.",
+	"tour.step.run.title": "Run an Agent",
+	"tour.step.run.desc": "Last step, let's actually run your agent template.",
 };
 
 const dictionaries: Record<Language, Dictionary> = {

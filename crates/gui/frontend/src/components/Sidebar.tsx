@@ -189,6 +189,7 @@ export default function Sidebar({
 					/>
 				</div>
 				<button
+					data-tour-target="new-project-btn"
 					onClick={onAddClick}
 					className="sidebar-add-btn"
 					style={{ marginRight: "-6px" }}

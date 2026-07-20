@@ -189,9 +189,9 @@ const [agentStateMap, setAgentStateMap] = useState<Record<string, AgentStateInfo
       <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', height: '100%' }}>
         {activeTabId === 'overview' && !showGrid && (
           <div style={{ flexGrow: 1, minHeight: 0, display: 'flex', flexDirection: 'row', gap: '24px', padding: '24px', position: 'relative', overflow: 'hidden' }}>
-            <div style={{ flex: 1, minWidth: '180px', display: 'flex', flexDirection: 'column', gap: '16px', paddingTop: '2px', overflowY: 'auto' }}>
-              <h3 style={{ margin: 0, fontSize: '1.0rem', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                {t('proj.launcher.title') || 'Quick Spawn'}
+<div data-tour-target="templates-section" style={{ flex: 1, minWidth: '180px', display: 'flex', flexDirection: 'column', gap: '16px', paddingTop: '2px', overflowY: 'auto' }}>
+				<h3 style={{ margin: 0, fontSize: '1.0rem', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+					{t('proj.launcher.title') || 'Quick Spawn'}
               </h3>
               {data.templates.length === 0 ? (
                 <div style={{ color: 'var(--text-tertiary)', fontSize: '0.85rem', fontStyle: 'italic', padding: '8px 0' }}>
@@ -199,13 +199,14 @@ const [agentStateMap, setAgentStateMap] = useState<Record<string, AgentStateInfo
                 </div>
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', width: '100%' }}>
-                  {data.templates.map((tpl, i) => (
-                    <button key={tpl.id} draggable={true}
-                      onDragStart={(e) => data.handleDragStart(e, i)}
-                      onDragEnter={() => data.handleDragEnter(i)}
-                      onDragEnd={data.handleDragEnd}
-                      onDragOver={(e) => e.preventDefault()}
-                      onClick={() => data.handleRunTemplate(tpl)}
+{data.templates.map((tpl, i) => (
+						<button key={tpl.id} draggable={true}
+							data-tour-target="run-btn"
+							onDragStart={(e) => data.handleDragStart(e, i)}
+							onDragEnter={() => data.handleDragEnter(i)}
+							onDragEnd={data.handleDragEnd}
+							onDragOver={(e) => e.preventDefault()}
+							onClick={() => data.handleRunTemplate(tpl)}
                       disabled={data.templateLaunching === tpl.id}
                       className="btn btn-ghost"
                       style={{

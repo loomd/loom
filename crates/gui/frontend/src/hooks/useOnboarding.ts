@@ -9,6 +9,7 @@ import type { ScanResult } from "../types";
 
 export interface OnboardingState {
 	showWizard: boolean;
+	showTour: boolean;
 	currentStep: number;
 	isScanning: boolean;
 	isCompleting: boolean;
@@ -30,10 +31,13 @@ export interface UseOnboardingReturn {
 	toggleAllSelected: () => void;
 	closeWizard: () => Promise<void>;
 	skipWizard: () => Promise<void>;
+	startTour: () => void;
+	closeTour: () => void;
 }
 
 export function useOnboarding(): UseOnboardingReturn {
 	const [showWizard, setShowWizard] = useState(false);
+	const [showTour, setShowTour] = useState(false);
 	const [currentStep, setCurrentStep] = useState(0);
 	const [isScanning, setIsScanning] = useState(false);
 	const [isCompleting, setIsCompleting] = useState(false);
@@ -113,10 +117,11 @@ export function useOnboarding(): UseOnboardingReturn {
 			}
 			await setOnboardedStatus(true);
 			window.dispatchEvent(new CustomEvent("loom-refresh-data"));
+			setShowWizard(false);
+			setShowTour(true);
 		} catch (e) {
 			console.error("Failed to save onboarding data:", e);
 		} finally {
-			setShowWizard(false);
 			setIsCompleting(false);
 			setHasScanned(false);
 			setCurrentStep(0);
@@ -149,10 +154,20 @@ export function useOnboarding(): UseOnboardingReturn {
 		setAllResults([]);
 		setSelectedAgents(new Set());
 		setShowWizard(true);
+		setShowTour(false);
+	}, []);
+
+	const startTour = useCallback(() => {
+		setShowTour(true);
+	}, []);
+
+	const closeTour = useCallback(() => {
+		setShowTour(false);
 	}, []);
 
 	const state: OnboardingState = {
 		showWizard,
+		showTour,
 		currentStep,
 		isScanning,
 		isCompleting,
@@ -174,5 +189,7 @@ export function useOnboarding(): UseOnboardingReturn {
 		toggleAllSelected,
 		closeWizard,
 		skipWizard,
+		startTour,
+		closeTour,
 	};
 }

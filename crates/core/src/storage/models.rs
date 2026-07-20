@@ -82,6 +82,14 @@ pub fn default_has_onboarded() -> bool {
     false
 }
 
+pub fn default_floating_sidebar_enabled() -> bool {
+    true
+}
+
+pub fn default_floating_sidebar_position() -> String {
+    "right".to_string()
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Project {
     pub id: String,
@@ -164,6 +172,10 @@ pub struct LoomStorage {
     pub update_check_interval: String,
     #[serde(default = "default_has_onboarded")]
     pub has_onboarded: bool,
+    #[serde(default = "default_floating_sidebar_enabled")]
+    pub floating_sidebar_enabled: bool,
+    #[serde(default = "default_floating_sidebar_position")]
+    pub floating_sidebar_position: String,
     #[serde(default)]
     pub agent_skill_map: HashMap<String, String>,
 }
@@ -188,6 +200,8 @@ impl Default for LoomStorage {
             skipped_version: None,
             update_check_interval: default_update_check_interval(),
             has_onboarded: default_has_onboarded(),
+            floating_sidebar_enabled: default_floating_sidebar_enabled(),
+            floating_sidebar_position: default_floating_sidebar_position(),
             agent_skill_map: HashMap::new(),
         }
     }

@@ -180,12 +180,25 @@ export const setProjectColumnAlign = (align: string): Promise<void> =>
 export const getFontFamily = (): Promise<string> => invoke("get_font_family");
 
 export const setFontFamily = (font: string): Promise<void> =>
-	invoke("set_font_family", { font });
+  invoke("set_font_family", { font });
 
 export const getFontSize = (): Promise<string> => invoke("get_font_size");
 
 export const setFontSize = (size: string): Promise<void> =>
-	invoke("set_font_size", { size });
+  invoke("set_font_size", { size });
+
+// ─── Floating Sidebar Configurations ────────────────────────
+export const getFloatingSidebarEnabled = (): Promise<boolean> =>
+  invoke("get_floating_sidebar_enabled");
+
+export const setFloatingSidebarEnabled = (enabled: boolean): Promise<void> =>
+  invoke("set_floating_sidebar_enabled", { enabled });
+
+export const getFloatingSidebarPosition = (): Promise<string> =>
+  invoke("get_floating_sidebar_position");
+
+export const setFloatingSidebarPosition = (position: string): Promise<void> =>
+  invoke("set_floating_sidebar_position", { position });
 
 // ─── Projects ─────────────────────────────────────────────
 export const getProjects = (): Promise<Project[]> => invoke("get_projects");

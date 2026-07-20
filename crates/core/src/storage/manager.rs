@@ -2048,6 +2048,30 @@ pub fn set_font_size(size: String) -> Result<()> {
     Ok(())
 }
 
+pub fn get_floating_sidebar_enabled() -> Result<bool> {
+    let config = load_config()?;
+    Ok(config.floating_sidebar_enabled)
+}
+
+pub fn set_floating_sidebar_enabled(enabled: bool) -> Result<()> {
+    let mut config = load_config()?;
+    config.floating_sidebar_enabled = enabled;
+    save_config(&config)?;
+    Ok(())
+}
+
+pub fn get_floating_sidebar_position() -> Result<String> {
+    let config = load_config()?;
+    Ok(config.floating_sidebar_position.clone())
+}
+
+pub fn set_floating_sidebar_position(position: String) -> Result<()> {
+    let mut config = load_config()?;
+    config.floating_sidebar_position = position;
+    save_config(&config)?;
+    Ok(())
+}
+
 pub fn get_global_env_vars() -> Result<Vec<GlobalEnvVar>> {
     let config = load_config()?;
     Ok(config.env_vars.clone())

@@ -11,11 +11,13 @@ import Sidebar from "./components/Sidebar";
 import UpdateToast from "./components/UpdateToast";
 import NewProjectModal from "./components/NewProjectModal";
 import OnboardingWizard from "./components/OnboardingWizard";
+import OnboardingTour from "./pages/OnboardingTour";
 import SpawnAgentPanel from "./components/SpawnAgentPanel";
 import { useProjects } from "./hooks/useProjects";
 import { useTheme } from "./hooks/useTheme";
 import { useUpdateChecker } from "./hooks/useUpdateChecker";
 import { useOnboarding } from "./hooks/useOnboarding";
+import { getFloatingSidebarEnabled, setFloatingSidebarEnabled, getFloatingSidebarPosition, setFloatingSidebarPosition } from "./api";
 import type { Template } from "./types";
 
 type Page = "workspace" | "settings";
@@ -26,7 +28,7 @@ function EmptyState({ onAdd, t }: { onAdd: () => void; t: (key: string) => strin
 			<div style={{ fontSize: "3rem" }}>📁</div>
 			<h2>{t("proj.empty.noProjects")}</h2>
 			<p style={{ maxWidth: "400px", color: "var(--text-tertiary)", fontSize: "0.9rem" }}>{t("proj.empty.desc")}</p>
-			<button className="btn-primary" onClick={onAdd}>{t("proj.btn.new")}</button>
+			<button className="btn-primary" data-tour-target="new-project-btn" onClick={onAdd}>{t("proj.btn.new")}</button>
 		</div>
 	);
 }
@@ -81,6 +83,28 @@ function App() {
 	useEffect(() => { localStorage.setItem("loom_sidebar_collapse_enabled", sidebarCollapseEnabled.toString()); }, [sidebarCollapseEnabled]);
 	useEffect(() => { localStorage.setItem("loom_floating_sidebar_enabled", floatingSidebarEnabled.toString()); }, [floatingSidebarEnabled]);
 	useEffect(() => { localStorage.setItem("loom_floating_sidebar_position", floatingSidebarPosition); }, [floatingSidebarPosition]);
+
+	// Auto-navigate to the correct page when tour highlights a target
+	useEffect(() => {
+		const handler = (e: Event) => {
+			const detail = (e as CustomEvent<{ target: string }>).detail;
+			if (!detail?.target) return;
+			if (detail.target === "env-vars-section" || detail.target === "templates-section") {
+				setPage("settings");
+			} else if (detail.target === "run-btn") {
+				if (p.projects.length > 0) {
+					setPage("workspace");
+					if (p.projects.length > 0 && !p.selectedProjectId) {
+						p.setSelectedProjectId(p.projects[0].id);
+					}
+				}
+			} else if (detail.target === "new-project-btn") {
+				setPage("workspace");
+			}
+		};
+		window.addEventListener("tour-navigate", handler);
+		return () => window.removeEventListener("tour-navigate", handler);
+	}, [p]);
 
 	const handleMouseDown = useCallback((e: React.MouseEvent) => {
 		e.preventDefault();
@@ -205,6 +229,9 @@ function App() {
 			)}
 			{onboarding.state.showWizard && (
 				<OnboardingWizard onboarding={onboarding} />
+			)}
+			{onboarding.state.showTour && (
+				<OnboardingTour onboarding={onboarding} projectCount={p.projects.length} />
 			)}
 			{showSpawnPanel && (
 				<SpawnAgentPanel

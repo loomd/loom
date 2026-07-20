@@ -107,17 +107,17 @@ export default function EnvVarsPage() {
   const grouped = groupByKey(allVars);
   const groupEntries = Array.from(grouped.entries());
 
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-      <div className="page-header">
-        <div>
-          <div className="page-title">{t('env.title')}</div>
-          <div className="page-subtitle">{t('env.desc')}</div>
-        </div>
-        <button className="btn btn-primary" onClick={() => openNew()} style={{ fontSize: 12 }}>
-          <span>＋</span> {t('env.btn.newVar')}
-        </button>
-      </div>
+return (
+		<div data-tour-target="env-vars-page" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+			<div className="page-header">
+				<div>
+					<div className="page-title">{t('env.title')}</div>
+					<div className="page-subtitle">{t('env.desc')}</div>
+				</div>
+				<button className="btn btn-primary" onClick={() => openNew()} style={{ fontSize: 12 }}>
+					<span>＋</span> {t('env.btn.newVar')}
+				</button>
+			</div>
 
       <div className="page-body" style={{ display: 'flex', flexDirection: 'column', gap: 12, flexGrow: 1, minHeight: 0 }}>
         <div className="search-input-wrap" style={{ width: '100%', maxWidth: '320px', marginBottom: 4, flex: 'none' }}>

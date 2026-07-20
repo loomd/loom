@@ -109,7 +109,7 @@ export default function Dashboard({ categories, onToolsChange, onSelectTool, sel
           <button className="btn btn-ghost" onClick={handleImport} style={{ fontSize: 12 }}>
             <span>＋</span> {t('db.btn.import')}
           </button>
-          <button className="btn btn-primary" onClick={handleScanPath} disabled={scanning} style={{ fontSize: 12 }}>
+          <button data-tour-target="scan-agents-btn" className="btn btn-primary" onClick={handleScanPath} disabled={scanning} style={{ fontSize: 12 }}>
             {scanning ? <span className="scan-spinner" /> : <span>⟳</span>}
             {scanning ? t('db.btn.scanning') : t('db.btn.scan')}
           </button>

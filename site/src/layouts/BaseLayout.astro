@@ -1,0 +1,53 @@
+---
+import '../styles/global.css';
+
+interface Props {
+  title?: string;
+  description?: string;
+}
+
+const {
+  title = 'Loom',
+  description = 'Multi-Project Management & Multi-Agent Parallel Development — A powerful desktop application to manage, categorize, and run all your project CLI processes and environments from one place.'
+} = Astro.props;
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content={title} />
+    <meta name="twitter:description" content={description} />
+    <meta name="twitter:image" content="/20260706-124550.jpg" />
+  </head>
+  <body>
+    <slot />
+    <script>
+      (function () {
+        const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        if (prefersReducedMotion) return;
+
+        const els = document.querySelectorAll('[data-reveal]');
+        els.forEach(e => e.classList.add('revealed'));
+
+        const observer = new IntersectionObserver((entries) => {
+          for (const entry of entries) {
+            if (entry.isIntersecting) {
+              entry.target.classList.add('revealed');
+              observer.unobserve(entry.target);
+            }
+          }
+        }, { threshold: 0.15, rootMargin: '0px 0px -40px 0px' });
+
+        document.querySelectorAll('.feature-card, .screenshot-zone, .download-card, .features-header, .screenshots-header-wrap').forEach((el) => {
+          observer.observe(el);
+        });
+      })();
+    </script>
+  </body>
+</html>

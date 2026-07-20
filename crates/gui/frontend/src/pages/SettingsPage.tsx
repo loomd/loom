@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useI18n } from "../I18nContext";
 import WindowControlButtons from "../components/WindowControlButtons";
 import GeneralSettingsTab from "./settings/GeneralSettingsTab";
@@ -60,6 +60,16 @@ export default function SettingsPage({
 	}: Props) {
 	const { t } = useI18n();
 	const [activeSubTab, setActiveSubTab] = useState<Tab>("general");
+
+	useEffect(() => {
+		const handler = (e: Event) => {
+			const detail = (e as CustomEvent<{ target: string }>).detail;
+			if (detail?.target === "env-vars-section") setActiveSubTab("env");
+			else if (detail?.target === "templates-section") setActiveSubTab("tools");
+		};
+		window.addEventListener("tour-navigate", handler);
+		return () => window.removeEventListener("tour-navigate", handler);
+	}, []);
 	const tabStyle = (active: boolean) => ({
 		flex: 1,
 		display: "flex",
@@ -107,11 +117,11 @@ export default function SettingsPage({
 						{t("settings.tab.tools")}
 					</span>
 				</div>
-				<div style={tabStyle(activeSubTab === "env")}>
-					<span onClick={() => setActiveSubTab("env")} style={tabLabelStyle(activeSubTab === "env")}>
-						{t("settings.tab.env")}
-					</span>
-				</div>
+<div data-tour-target="env-vars-section" style={tabStyle(activeSubTab === "env")}>
+				<span onClick={() => setActiveSubTab("env")} style={tabLabelStyle(activeSubTab === "env")}>
+					{t("settings.tab.env")}
+				</span>
+			</div>
 				<div style={tabStyle(activeSubTab === "libs")}>
 					<span onClick={() => setActiveSubTab("libs")} style={tabLabelStyle(activeSubTab === "libs")}>
 						{t("settings.tab.libs")}

@@ -58,9 +58,11 @@ describe("GeneralSettingsTab", () => {
     onboarding: {
       state: {
         showWizard: false,
+        showTour: false,
         currentStep: 0,
         isScanning: false,
         isCompleting: false,
+        hasScanned: false,
         agents: [],
         tools: [],
         allResults: [],
@@ -75,6 +77,8 @@ describe("GeneralSettingsTab", () => {
       toggleAllSelected: vi.fn(),
       closeWizard: vi.fn(async () => {}),
       skipWizard: vi.fn(async () => {}),
+      startTour: vi.fn(),
+      closeTour: vi.fn(),
     },
   };
 
@@ -243,9 +247,11 @@ describe("SettingsPage", () => {
     onboarding: {
       state: {
         showWizard: false,
+        showTour: false,
         currentStep: 0,
         isScanning: false,
         isCompleting: false,
+        hasScanned: false,
         agents: [],
         tools: [],
         allResults: [],
@@ -260,6 +266,8 @@ describe("SettingsPage", () => {
       toggleAllSelected: vi.fn(),
       closeWizard: vi.fn(async () => {}),
       skipWizard: vi.fn(async () => {}),
+      startTour: vi.fn(),
+      closeTour: vi.fn(),
     },
   };
 
