@@ -47,7 +47,7 @@ export default function TourOverlay({
       if (!t) {
         dark.style.background = "rgba(0, 0, 0, 0.55)";
         (dark.style as CSSProperties).clipPath = "";
-        (dark.style as CSSProperties).webkitClipPath = "";
+        (dark.style as CSSProperties).WebkitClipPath = "";
         if (card) {
           card.style.left = `${(window.innerWidth - CARD_WIDTH) / 2}px`;
           card.style.top = `${(window.innerHeight - 220) / 2}px`;
@@ -64,7 +64,7 @@ export default function TourOverlay({
       dark.style.background = "rgba(0, 0, 0, 0.55)";
       const bottomInset = Math.max(0, window.innerHeight - mt - mh);
       (dark.style as CSSProperties).clipPath = `inset(${mt}px 0 ${bottomInset}px ${ml}px round var(--radius-md, 8px))`;
-      (dark.style as CSSProperties).webkitClipPath = `inset(${mt}px 0 ${bottomInset}px ${ml}px round var(--radius-md, 8px))`;
+      (dark.style as CSSProperties).WebkitClipPath = `inset(${mt}px 0 ${bottomInset}px ${ml}px round var(--radius-md, 8px))`;
 
       spotlight.style.left = `${ml}px`;
       spotlight.style.top = `${mt}px`;
