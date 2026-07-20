@@ -12,6 +12,7 @@ export interface OnboardingState {
 	currentStep: number;
 	isScanning: boolean;
 	isCompleting: boolean;
+	hasScanned: boolean;
 	agents: ScanResult[];
 	tools: ScanResult[];
 	allResults: ScanResult[];
@@ -36,6 +37,7 @@ export function useOnboarding(): UseOnboardingReturn {
 	const [currentStep, setCurrentStep] = useState(0);
 	const [isScanning, setIsScanning] = useState(false);
 	const [isCompleting, setIsCompleting] = useState(false);
+	const [hasScanned, setHasScanned] = useState(false);
 	const [allResults, setAllResults] = useState<ScanResult[]>([]);
 	const [selectedAgents, setSelectedAgents] = useState<Set<string>>(new Set());
 
@@ -60,6 +62,7 @@ export function useOnboarding(): UseOnboardingReturn {
 		try {
 			const results = await scanAndClassifyAgents();
 			setAllResults(results);
+			setHasScanned(true);
 
 			const unregistered = results.filter((r) => r.is_agent && !r.is_registered);
 			setSelectedAgents(new Set(unregistered.map((a) => a.path)));
@@ -115,6 +118,7 @@ export function useOnboarding(): UseOnboardingReturn {
 		} finally {
 			setShowWizard(false);
 			setIsCompleting(false);
+			setHasScanned(false);
 			setCurrentStep(0);
 			setAllResults([]);
 			setSelectedAgents(new Set());
@@ -128,6 +132,7 @@ export function useOnboarding(): UseOnboardingReturn {
 			console.error("Failed to skip onboarding:", e);
 		}
 		setShowWizard(false);
+		setHasScanned(false);
 		setCurrentStep(0);
 		setAllResults([]);
 		setSelectedAgents(new Set());
@@ -139,6 +144,7 @@ export function useOnboarding(): UseOnboardingReturn {
 		} catch (e) {
 			console.error("Failed to reset onboarding status:", e);
 		}
+		setHasScanned(false);
 		setCurrentStep(0);
 		setAllResults([]);
 		setSelectedAgents(new Set());
@@ -150,6 +156,7 @@ export function useOnboarding(): UseOnboardingReturn {
 		currentStep,
 		isScanning,
 		isCompleting,
+		hasScanned,
 		agents,
 		tools,
 		allResults,

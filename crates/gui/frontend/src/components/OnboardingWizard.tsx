@@ -24,6 +24,7 @@ export default function OnboardingWizard({ onboarding }: { onboarding: UseOnboar
 		selectedAgents,
 		isScanning,
 		isCompleting,
+		hasScanned,
 	} = state;
 
 	const selectedAgentCount = useMemo(
@@ -116,7 +117,7 @@ export default function OnboardingWizard({ onboarding }: { onboarding: UseOnboar
 					gap: "0",
 					paddingTop: "4px",
 				}}>
-					{currentStep === 0 && renderStep0(agents, tools, selectedAgents, isScanning, selectedAgentCount, allSelected, handleSelectToggle, handleToggleAll, onboarding.startScan, t)}
+					{currentStep === 0 && renderStep0(agents, tools, selectedAgents, isScanning, hasScanned, selectedAgentCount, allSelected, handleSelectToggle, handleToggleAll, onboarding.startScan, t)}
 					{currentStep === 1 && renderStep1(selectedAgentResults, agents.length, t)}
 				</div>
 
@@ -173,6 +174,7 @@ function renderStep0(
 	tools: ScanResult[],
 	selectedAgents: Set<string>,
 	isScanning: boolean,
+	hasScanned: boolean,
 	selectedAgentCount: number,
 	allSelected: boolean,
 	onSelectToggle: (agent: ScanResult) => void,
@@ -235,6 +237,11 @@ function renderStep0(
 								>
 									{t("onboard.btn.scanNow")}
 								</button>
+								{hasScanned && (
+									<span style={{ fontSize: "var(--fs-12)", color: "var(--text-tertiary)", marginTop: "4px" }}>
+										{t("onboard.step.noAgentsHint")}
+									</span>
+								)}
 							</>
 						)}
 					</div>
