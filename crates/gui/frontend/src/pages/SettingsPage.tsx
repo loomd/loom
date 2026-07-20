@@ -69,13 +69,15 @@ export default function SettingsPage({
 		fontSize: "0.9rem",
 		fontWeight: 500,
 		borderBottom: active ? "2px solid var(--accent-purple)" : "2px solid transparent",
-		cursor: "default",
-	});
+		cursor: "grab",
+		WebkitAppRegion: "drag" as const,
+	}) as React.CSSProperties;
 	const tabLabelStyle = (active: boolean) => ({
 		cursor: "pointer",
 		color: active ? "var(--text-primary)" : "var(--text-secondary)",
-		userSelect: "none" as const,
-	});
+		userSelect: "none",
+		WebkitAppRegion: "no-drag" as const,
+	}) as React.CSSProperties;
 
 	return (
 		<div
