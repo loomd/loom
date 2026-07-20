@@ -151,6 +151,7 @@ describe("CliToolConfigModal", () => {
     version: "1.0.0",
     custom_env: {},
     custom_args: [],
+    is_agent: false,
   };
 
   it("renders modal with tool info", async () => {
