@@ -51,6 +51,8 @@ export function useTabs(projectRoot: string) {
         const filtered = prev.filter(t => t.id !== id);
         if (idx > 0 && prev[idx - 1].id !== 'agents-skills') {
           setActiveTabId(prev[idx - 1].id);
+        } else if (idx < prev.length - 1) {
+          setActiveTabId(prev[idx + 1].id);
         } else {
           setActiveTabId(filtered[0]?.id ?? 'overview');
         }
@@ -88,6 +90,8 @@ export function useTabs(projectRoot: string) {
 				const idx = prev.findIndex(t => t.id === id);
 				if (idx > 0 && prev[idx - 1].id !== 'agents-skills') {
 					setActiveTabId(prev[idx - 1].id);
+				} else if (idx < prev.length - 1) {
+					setActiveTabId(prev[idx + 1].id);
 				} else {
 					setActiveTabId(filtered[0]?.id ?? 'overview');
 				}
