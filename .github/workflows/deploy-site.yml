@@ -2,11 +2,11 @@ name: Deploy Site to loomd.github.io
 
 on:
   push:
-    branches: [ "master" ]
+    branches: [ "main", "master" ]
     paths:
       - "site/**"
   pull_request:
-    branches: [ "master" ]
+    branches: [ "main", "master" ]
     paths:
       - "site/**"
 
