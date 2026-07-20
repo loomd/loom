@@ -6,7 +6,7 @@ const mockInvoke = vi.fn((cmd: string) => {
   if (cmd === 'get_autostart') return Promise.resolve(false);
   if (cmd === 'get_version') return Promise.resolve('0.3.8');
   if (cmd === 'set_language') return Promise.resolve();
-  if (cmd === 'get_update_check_interval') return Promise.resolve('');
+  if (cmd === 'get_update_check_interval') return Promise.resolve('30min');
   if (cmd === 'set_update_check_interval') return Promise.resolve();
   return Promise.resolve([]);
 });

@@ -99,6 +99,10 @@ gh run view <RUN_ID> --log-failed
 
 4. **工作区必须干净**之后，才能建立版本 Tag 并推送至 GitHub（此操作会触发 `.github/workflows/release.yml` 自动编译构建 NSIS Windows 安装包并发布到 GitHub Release）：
    ```bash
+   # 先确认默认分支（很多仓库已从 master 迁移到 main）
+   gh repo view --json defaultBranchRef | jq -r .defaultBranchRef.name
+
+   # 推送代码和 tag 到正确的默认分支
    git tag v0.3.5
-   git push origin master v0.3.5
+   git push origin <默认分支> v0.3.5
    ```

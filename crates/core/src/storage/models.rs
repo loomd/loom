@@ -75,7 +75,7 @@ pub fn default_project_column_align() -> String {
 }
 
 pub fn default_update_check_interval() -> String {
-    String::new()
+    "30min".to_string()
 }
 
 pub fn default_has_onboarded() -> bool {
