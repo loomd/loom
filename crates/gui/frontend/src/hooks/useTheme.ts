@@ -25,7 +25,7 @@ function applyFontToDocument(family: string, size: string) {
 }
 
 export function useTheme(toast: { error: (msg: string) => void }) {
-	const [theme, setThemeState] = useState<"dark" | "day" | "gray">("dark");
+	const [theme, setThemeState] = useState<"dark" | "day" | "gray">("gray");
 	const [fontFamily, setFontFamilyState] = useState("Plus Jakarta Sans");
 	const [fontSize, setFontSizeState] = useState("14px");
 	const [projectColumnAlign, setProjectColumnAlignState] = useState("top");

@@ -203,9 +203,9 @@ fn test_get_set_theme() {
     run_test_with_temp_config(|_config_path| {
         use super::manager::{get_theme, set_theme};
 
-        // Default theme should be "dark"
+        // Default theme should be "gray"
         let default_theme = get_theme().expect("Failed to get default theme");
-        assert_eq!(default_theme, "dark");
+        assert_eq!(default_theme, "gray");
 
         // Set and get theme
         set_theme("day".to_string()).expect("Failed to set theme");

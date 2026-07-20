@@ -59,7 +59,7 @@ pub fn default_language() -> String {
 }
 
 pub fn default_theme() -> String {
-    "dark".to_string()
+    "gray".to_string()
 }
 
 pub fn default_font_family() -> String {
