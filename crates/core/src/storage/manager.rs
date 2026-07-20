@@ -101,6 +101,7 @@ pub fn scan_and_classify_agents() -> std::result::Result<Vec<ScanResult>, String
     let config = load_config()
         .map_err(|e| format!("Failed to load config: {}", e))?;
     let mut results = Vec::new();
+    let mut found_agents = std::collections::HashSet::new();
 
     for tool in tools {
         let stem = tool.name.to_lowercase();
@@ -115,6 +116,10 @@ pub fn scan_and_classify_agents() -> std::result::Result<Vec<ScanResult>, String
             None
         };
 
+        if is_agent {
+            found_agents.insert(stem);
+        }
+
         let has_template = is_agent && config.templates.iter().any(|t| t.cli_id == tool.id);
         let path = tool.path.clone();
         results.push(ScanResult {
@@ -126,6 +131,20 @@ pub fn scan_and_classify_agents() -> std::result::Result<Vec<ScanResult>, String
             is_registered: has_template,
             tool_id: Some(tool.id),
         });
+    }
+
+    for &agent in KNOWN_AGENTS {
+        if !found_agents.contains(agent) {
+            results.push(ScanResult {
+                name: agent.to_string(),
+                path: std::path::PathBuf::new(),
+                is_agent: true,
+                provider: Some(agent.to_string()),
+                is_installed: false,
+                is_registered: false,
+                tool_id: None,
+            });
+        }
     }
 
     results.sort_by(|a, b| {

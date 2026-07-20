@@ -11,6 +11,7 @@ import {
 	deleteTemplate,
 	reorderCliTools,
 	toggleCliToolAgent,
+	scanPathEnv,
 } from "../../api";
 import type { CliTool, Category, Template } from "../../types";
 import CliToolConfigModal from "../../components/CliToolConfigModal";
@@ -142,9 +143,10 @@ export default function CliToolsTab() {
 	const handleRefresh = async () => {
 		setScanningTools(true);
 		try {
+			const discovered = await scanPathEnv();
 			await loadToolsAndTemplates();
 			window.dispatchEvent(new Event('loom-refresh-data'));
-			toast.success(t("db.toast.scanSuccess", { count: 0 }));
+			toast.success(t("db.toast.scanSuccess", { count: discovered.length }));
 		} catch (e) {
 			toast.error(String(e) || t("db.toast.scanFailed"));
 		} finally {
