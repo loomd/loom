@@ -230,9 +230,9 @@ function App() {
 			{onboarding.state.showWizard && (
 				<OnboardingWizard onboarding={onboarding} />
 			)}
-			{onboarding.state.showTour && (
+			{/* {onboarding.state.showTour && (
 				<OnboardingTour onboarding={onboarding} projectCount={p.projects.length} />
-			)}
+			)} */}
 			{showSpawnPanel && (
 				<SpawnAgentPanel
 					onSpawn={handleSpawnAgent}

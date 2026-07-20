@@ -118,7 +118,7 @@ export function useOnboarding(): UseOnboardingReturn {
 			await setOnboardedStatus(true);
 			window.dispatchEvent(new CustomEvent("loom-refresh-data"));
 			setShowWizard(false);
-			setShowTour(true);
+			setShowTour(false);
 		} catch (e) {
 			console.error("Failed to save onboarding data:", e);
 		} finally {
