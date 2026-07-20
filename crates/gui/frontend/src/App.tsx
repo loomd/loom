@@ -11,10 +11,12 @@ import Sidebar from "./components/Sidebar";
 import UpdateToast from "./components/UpdateToast";
 import NewProjectModal from "./components/NewProjectModal";
 import OnboardingWizard from "./components/OnboardingWizard";
+import SpawnAgentPanel from "./components/SpawnAgentPanel";
 import { useProjects } from "./hooks/useProjects";
 import { useTheme } from "./hooks/useTheme";
 import { useUpdateChecker } from "./hooks/useUpdateChecker";
 import { useOnboarding } from "./hooks/useOnboarding";
+import type { Template } from "./types";
 
 type Page = "workspace" | "settings";
 
@@ -66,6 +68,8 @@ function App() {
 		const oldSaved = localStorage.getItem("loom_right_sidebar_enabled");
 		return oldSaved !== "false";
 	});
+	const [showSpawnPanel, setShowSpawnPanel] = useState(false);
+
 	const [floatingSidebarPosition, setFloatingSidebarPosition] = useState<"left" | "right">(() => {
 		const saved = localStorage.getItem("loom_floating_sidebar_position");
 		if (saved === "left" || saved === "right") return saved;
@@ -98,6 +102,11 @@ function App() {
 	}, [sidebarWidth]);
 
 	const handleDoubleClick = useCallback(() => { setSidebarWidth(170); setIsCollapsed(false); }, []);
+
+	const handleSpawnAgent = useCallback((tpl: Template) => {
+		setShowSpawnPanel(false);
+		window.dispatchEvent(new CustomEvent("loom-run-template", { detail: tpl }));
+	}, []);
 
 	useEffect(() => {
 		const handleGlobalKeyDown = (e: KeyboardEvent) => {
@@ -132,6 +141,13 @@ function App() {
 				e.preventDefault();
 				e.stopPropagation();
 				window.dispatchEvent(new CustomEvent("loom-shortcut", { detail: "ctrl-w" }));
+				return;
+			}
+
+			if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "n" && page === "workspace") {
+				e.preventDefault();
+				e.stopPropagation();
+				setShowSpawnPanel((prev) => !prev);
 				return;
 			}
 		};
@@ -189,6 +205,12 @@ function App() {
 			)}
 			{onboarding.state.showWizard && (
 				<OnboardingWizard onboarding={onboarding} />
+			)}
+			{showSpawnPanel && (
+				<SpawnAgentPanel
+					onSpawn={handleSpawnAgent}
+					onClose={() => setShowSpawnPanel(false)}
+				/>
 			)}
 		</div>
 	);

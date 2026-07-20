@@ -65,24 +65,23 @@ pub fn save_active_instances_list(list: &[ActiveInstance]) {
 // ─── AI Agent Classification ────────────────────────────────────────────────
 
 const KNOWN_AGENTS: &[&str] = &[
-    "opencode",
+    "omp",
+    "pi",
     "claude",
+    "opencode",
     "codex",
     "gemini",
+    "agy",
+    "grok",
     "copilot",
     "cursor",
     "aider",
     "windsurf",
-    "swe-agent",
-    "langchain",
-    "vibe",
 ];
 
 fn is_likely_agent(name: &str) -> bool {
     let stem = name.to_lowercase();
-    KNOWN_AGENTS
-        .iter()
-        .any(|&agent| stem == agent || stem.starts_with(agent))
+    KNOWN_AGENTS.iter().any(|&agent| stem == agent)
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -110,7 +109,7 @@ pub fn scan_and_classify_agents() -> std::result::Result<Vec<ScanResult>, String
         let provider = if is_agent {
             KNOWN_AGENTS
                 .iter()
-                .find(|&&agent| stem.contains(agent))
+                .find(|&&agent| stem == agent)
                 .map(|&agent| agent.to_string())
         } else {
             None
@@ -861,14 +860,19 @@ pub fn scan_path_env() -> Result<Vec<CliTool>> {
                     if seen_names.insert(name_str.clone()) {
                         let exists = config.cli_tools.iter().any(|t| t.path == path);
                         let tool = if exists {
-                            config
+                            let idx = config
                                 .cli_tools
                                 .iter()
-                                .find(|t| t.path == path)
+                                .position(|t| t.path == path)
                                 .ok_or_else(|| {
                                     StorageError::CliToolNotFound(path.display().to_string())
-                                })?
-                                .clone()
+                                })?;
+                            let mut existing = config.cli_tools[idx].clone();
+                            if is_likely_agent(&name_str) && !existing.is_agent {
+                                existing.is_agent = true;
+                                config.cli_tools[idx].is_agent = true;
+                            }
+                            existing
                         } else {
                             let is_agent = is_likely_agent(&name_str);
                             let new_tool = CliTool {
@@ -1273,6 +1277,19 @@ pub fn delete_cli_tool(cli_id: String) -> Result<()> {
         return Err(StorageError::CliToolNotFound(cli_id));
     }
     // Cascade delete templates
+    config.templates.retain(|t| t.cli_id != cli_id);
+    save_config(&config)?;
+    Ok(())
+}
+
+pub fn delete_ai_agent(cli_id: String) -> Result<()> {
+    let mut config = load_config()?;
+    let tool = config
+        .cli_tools
+        .iter_mut()
+        .find(|t| t.id == cli_id)
+        .ok_or_else(|| StorageError::CliToolNotFound(cli_id.clone()))?;
+    tool.is_agent = false;
     config.templates.retain(|t| t.cli_id != cli_id);
     save_config(&config)?;
     Ok(())

@@ -4,13 +4,12 @@ import { useToast } from "../../ToastContext";
 import {
 	getCliTools,
 	deleteCliTool,
-	scanPathEnv,
+	deleteAiAgent,
 	importCliTool,
 	assignCliCategory,
 	getTemplates,
 	deleteTemplate,
 	reorderCliTools,
-	scanAndClassifyAgents,
 	toggleCliToolAgent,
 } from "../../api";
 import type { CliTool, Category, Template } from "../../types";
@@ -37,8 +36,6 @@ export default function CliToolsTab() {
 		null,
 	);
 	const [scanningTools, setScanningTools] = useState(false);
-	const [agentToolNames, setAgentToolNames] = useState<Set<string>>(new Set());
-	const [reDetecting, setReDetecting] = useState(false);
 	const [otherToolsOpen, setOtherToolsOpen] = useState(false);
 	const [otherToolsPage, setOtherToolsPage] = useState(1);
 	const [togglingAgent, setTogglingAgent] = useState<string | null>(null);
@@ -125,58 +122,33 @@ export default function CliToolsTab() {
 		const timer = setTimeout(() => {
 			loadCategories();
 			loadToolsAndTemplates();
-			scanAndClassifyAgents()
-				.then((results) => {
-					setAgentToolNames(
-						new Set(results.filter((r) => r.is_agent).map((r) => r.name)),
-					);
-				})
-				.catch(() => {
-					setAgentToolNames(new Set());
-				});
 		}, 0);
 		return () => clearTimeout(timer);
 	}, [loadCategories, loadToolsAndTemplates]);
 
 	useEffect(() => {
-		if (cliTools.length === 0) {
-			setSelectedTool(null);
-		} else if (selectedTool && !cliTools.find((t) => t.id === selectedTool.id)) {
-			setSelectedTool(null);
-		} else if (!selectedTool && cliTools.length > 0) {
-			setSelectedTool(cliTools[0]);
-		}
-	}, [cliTools]);
+		const timer = setTimeout(() => {
+			if (cliTools.length === 0) {
+				setSelectedTool(null);
+			} else if (selectedTool && !cliTools.find((t) => t.id === selectedTool.id)) {
+				setSelectedTool(null);
+			} else if (!selectedTool && cliTools.length > 0) {
+				setSelectedTool(cliTools[0]);
+			}
+		}, 0);
+		return () => clearTimeout(timer);
+	}, [cliTools, selectedTool]);
 
-	const handleScanPath = async () => {
+	const handleRefresh = async () => {
 		setScanningTools(true);
 		try {
-			const found = await scanPathEnv();
 			await loadToolsAndTemplates();
 			window.dispatchEvent(new Event('loom-refresh-data'));
-			toast.success(t("db.toast.scanSuccess", { count: found.length }));
+			toast.success(t("db.toast.scanSuccess", { count: 0 }));
 		} catch (e) {
 			toast.error(String(e) || t("db.toast.scanFailed"));
 		} finally {
 			setScanningTools(false);
-		}
-	};
-
-	const handleReDetect = async () => {
-		setReDetecting(true);
-		try {
-			const results = await scanAndClassifyAgents();
-			const names = new Set(
-				results.filter((r) => r.is_agent).map((r) => r.name),
-			);
-			setAgentToolNames(names);
-			await loadToolsAndTemplates();
-			window.dispatchEvent(new Event('loom-refresh-data'));
-			toast.success(t("db.toast.scanSuccess", { count: results.length }));
-		} catch (e) {
-			toast.error(String(e) || t("db.toast.scanFailed"));
-		} finally {
-			setReDetecting(false);
 		}
 	};
 
@@ -245,6 +217,19 @@ export default function CliToolsTab() {
 		}
 	};
 
+	const handleDeleteAgent = async (e: React.MouseEvent, toolId: string, toolName: string) => {
+		e.stopPropagation();
+		if (!confirm(t("db.confirm.deleteAgent", { name: toolName }))) return;
+		try {
+			await deleteAiAgent(toolId);
+			await loadToolsAndTemplates();
+			window.dispatchEvent(new Event('loom-refresh-data'));
+			toast.success(t("db.toast.agentRemoved"));
+		} catch (e) {
+			toast.error(String(e) || "Failed to delete AI agent");
+		}
+	};
+
 	const filteredTools = cliTools.filter((t) => {
 		const q = toolsSearch.toLowerCase();
 		const matchSearch =
@@ -255,12 +240,8 @@ export default function CliToolsTab() {
 		return matchSearch && matchCat;
 	});
 
-	const filteredAgentTools = filteredTools.filter((t) =>
-		agentToolNames.has(t.name),
-	);
-	const filteredOtherTools = filteredTools.filter((t) =>
-		!agentToolNames.has(t.name),
-	);
+	const filteredAgentTools = filteredTools.filter((t) => t.is_agent);
+	const filteredOtherTools = filteredTools.filter((t) => !t.is_agent);
 
 	const getToolTemplates = (toolId: string) => {
 		return templates.filter((t) => t.cli_id === toolId);
@@ -461,19 +442,40 @@ export default function CliToolsTab() {
 					</div>
 				</div>
 
-				<button
-					onClick={(e) => handleDeleteTool(e, tool.id)}
-					style={{
-						background: "none",
-						border: "none",
-						color: "var(--accent-red)",
-						cursor: "pointer",
-						padding: "4px",
-					}}
-					title="Remove CLI Tool"
-				>
-					✕
-				</button>
+				<div style={{ display: "flex", gap: "4px", alignItems: "center" }}>
+					{isAgent && (
+						<button
+							onClick={(e) => handleDeleteAgent(e, tool.id, tool.name)}
+							style={{
+								background: "none",
+								border: "1px solid rgba(239,68,68,0.3)",
+								color: "var(--accent-red)",
+								cursor: "pointer",
+								padding: "2px 6px",
+								borderRadius: "4px",
+								fontSize: "0.65rem",
+								whiteSpace: "nowrap",
+							}}
+							title="Delete AI Agent (keep CLI tool)"
+						>
+							{t("db.btn.deleteAgent")}
+						</button>
+					)}
+					<button
+						onClick={(e) => handleDeleteTool(e, tool.id)}
+						style={{
+							background: "none",
+							border: "none",
+							color: "var(--accent-red)",
+							cursor: "pointer",
+							padding: "4px",
+							opacity: 0.6,
+						}}
+						title="Remove CLI Tool"
+					>
+						✕
+					</button>
+				</div>
 			</div>
 		);
 	};
@@ -503,13 +505,13 @@ export default function CliToolsTab() {
 				<div style={{ display: "flex", gap: "8px" }}>
 					<button
 						className="btn btn-ghost"
-						onClick={handleScanPath}
+						onClick={handleRefresh}
 						disabled={scanningTools}
 						style={{ flex: 1, fontSize: "0.8rem", padding: "6px 8px" }}
 					>
 						{scanningTools
-							? t("db.btn.scanning")
-							: t("db.btn.scan")}
+							? t("db.btn.refreshing")
+							: t("db.btn.refresh")}
 					</button>
 					<button
 						className="btn btn-ghost"
@@ -517,16 +519,6 @@ export default function CliToolsTab() {
 						style={{ flex: 1, fontSize: "0.8rem", padding: "6px 8px" }}
 					>
 						{t("db.btn.import")}
-					</button>
-					<button
-						className="btn btn-ghost"
-						onClick={handleReDetect}
-						disabled={reDetecting}
-						style={{ flex: 1, fontSize: "0.8rem", padding: "6px 8px" }}
-					>
-						{reDetecting
-							? t("db.btn.scanning")
-							: t("db.btn.reDetect")}
 					</button>
 				</div>
 

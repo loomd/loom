@@ -8,6 +8,7 @@ export interface CliTool {
   category_id?: string;
   custom_env: Record<string, string>;
   custom_args?: string[];
+  is_agent: boolean;
 }
 
 export interface Category {

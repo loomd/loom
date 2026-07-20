@@ -6,7 +6,7 @@ pub use error::{Result, StorageError};
 pub use manager::{
     expand_env_vars, assign_cli_category, create_category, create_global_doc, create_global_env_var,
     create_global_skill, create_project, create_project_agent_doc, create_template,
-    delete_category, delete_cli_tool, delete_global_doc, delete_global_env_var,
+    delete_ai_agent, delete_category, delete_cli_tool, delete_global_doc, delete_global_env_var,
     delete_global_skill, delete_project, delete_template, get_active_instances,
     get_active_instances_list, get_agent_skill_map, get_autostart_enabled, get_categories,
     get_cli_tools, get_config_path, get_font_family, get_font_size, get_global_docs,

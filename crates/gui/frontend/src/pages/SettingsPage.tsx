@@ -60,6 +60,22 @@ export default function SettingsPage({
 	}: Props) {
 	const { t } = useI18n();
 	const [activeSubTab, setActiveSubTab] = useState<Tab>("general");
+	const tabStyle = (active: boolean) => ({
+		flex: 1,
+		display: "flex",
+		alignItems: "center",
+		justifyContent: "center",
+		padding: "9px 16px",
+		fontSize: "0.9rem",
+		fontWeight: 500,
+		borderBottom: active ? "2px solid var(--accent-purple)" : "2px solid transparent",
+		cursor: "default",
+	});
+	const tabLabelStyle = (active: boolean) => ({
+		cursor: "pointer",
+		color: active ? "var(--text-primary)" : "var(--text-secondary)",
+		userSelect: "none" as const,
+	});
 
 	return (
 		<div
@@ -75,103 +91,30 @@ export default function SettingsPage({
 				data-tauri-drag-region
 				style={{
 					display: "flex",
-					alignItems: "center",
+					alignItems: "stretch",
 					borderBottom: "1px solid var(--border-subtle)",
-					paddingBottom: "1px",
 				}}
 			>
-				<button
-					onClick={() => setActiveSubTab("general")}
-					style={{
-						flex: 1,
-						padding: "8px 16px",
-						fontSize: "0.9rem",
-						fontWeight: 500,
-						background: "none",
-						border: "none",
-						borderBottom:
-							activeSubTab === "general"
-								? "2px solid var(--accent-purple)"
-								: "2px solid transparent",
-						color:
-							activeSubTab === "general"
-								? "var(--text-primary)"
-								: "var(--text-secondary)",
-						cursor: "pointer",
-						textAlign: "center",
-					}}
-				>
-					{t("settings.tab.appearance")}
-				</button>
-				<button
-					onClick={() => setActiveSubTab("tools")}
-					style={{
-						flex: 1,
-						padding: "8px 16px",
-						fontSize: "0.9rem",
-						fontWeight: 500,
-						background: "none",
-						border: "none",
-						borderBottom:
-							activeSubTab === "tools"
-								? "2px solid var(--accent-purple)"
-								: "2px solid transparent",
-						color:
-							activeSubTab === "tools"
-								? "var(--text-primary)"
-								: "var(--text-secondary)",
-						cursor: "pointer",
-						textAlign: "center",
-					}}
-				>
-					{t("settings.tab.tools")}
-				</button>
-				<button
-					onClick={() => setActiveSubTab("env")}
-					style={{
-						flex: 1,
-						padding: "8px 16px",
-						fontSize: "0.9rem",
-						fontWeight: 500,
-						background: "none",
-						border: "none",
-						borderBottom:
-							activeSubTab === "env"
-								? "2px solid var(--accent-purple)"
-								: "2px solid transparent",
-						color:
-							activeSubTab === "env"
-								? "var(--text-primary)"
-								: "var(--text-secondary)",
-						cursor: "pointer",
-						textAlign: "center",
-					}}
-				>
-					{t("settings.tab.env")}
-				</button>
-				<button
-					onClick={() => setActiveSubTab("libs")}
-					style={{
-						flex: 1,
-						padding: "8px 16px",
-						fontSize: "0.9rem",
-						fontWeight: 500,
-						background: "none",
-						border: "none",
-						borderBottom:
-							activeSubTab === "libs"
-								? "2px solid var(--accent-purple)"
-								: "2px solid transparent",
-						color:
-							activeSubTab === "libs"
-								? "var(--text-primary)"
-								: "var(--text-secondary)",
-						cursor: "pointer",
-						textAlign: "center",
-					}}
-				>
-					{t("settings.tab.libs")}
-				</button>
+				<div style={tabStyle(activeSubTab === "general")}>
+					<span onClick={() => setActiveSubTab("general")} style={tabLabelStyle(activeSubTab === "general")}>
+						{t("settings.tab.appearance")}
+					</span>
+				</div>
+				<div style={tabStyle(activeSubTab === "tools")}>
+					<span onClick={() => setActiveSubTab("tools")} style={tabLabelStyle(activeSubTab === "tools")}>
+						{t("settings.tab.tools")}
+					</span>
+				</div>
+				<div style={tabStyle(activeSubTab === "env")}>
+					<span onClick={() => setActiveSubTab("env")} style={tabLabelStyle(activeSubTab === "env")}>
+						{t("settings.tab.env")}
+					</span>
+				</div>
+				<div style={tabStyle(activeSubTab === "libs")}>
+					<span onClick={() => setActiveSubTab("libs")} style={tabLabelStyle(activeSubTab === "libs")}>
+						{t("settings.tab.libs")}
+					</span>
+				</div>
 				<div style={{ display: "flex", gap: "2px", alignItems: "stretch", alignSelf: "stretch" }}>
 					<WindowControlButtons />
 				</div>

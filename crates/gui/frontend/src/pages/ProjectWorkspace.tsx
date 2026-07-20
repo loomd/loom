@@ -62,8 +62,13 @@ const [agentStateMap, setAgentStateMap] = useState<Record<string, AgentStateInfo
 	}, [activeTabId, data.loadSkillsAndDocs]);
 
 	useEffect(() => {
+		if (!isVisible) return;
 		const handler = (e: Event) => {
 			const detail = (e as CustomEvent).detail;
+			if (detail && typeof detail === 'object' && !Array.isArray(detail) && detail.id) {
+				data.handleRunTemplate(detail);
+				return;
+			}
 			if (detail === "ctrl-tab") {
 				const idx = tabs.findIndex(t => t.id === activeTabId);
 				const next = (idx + 1) % tabs.length;
@@ -76,8 +81,12 @@ const [agentStateMap, setAgentStateMap] = useState<Record<string, AgentStateInfo
 			}
 		};
 		window.addEventListener("loom-shortcut", handler);
-		return () => window.removeEventListener("loom-shortcut", handler);
-	}, [tabs, activeTabId, setActiveTabId, setLayoutMode, removeTabById]);
+		window.addEventListener("loom-run-template", handler);
+		return () => {
+			window.removeEventListener("loom-shortcut", handler);
+			window.removeEventListener("loom-run-template", handler);
+		};
+	}, [tabs, activeTabId, setActiveTabId, setLayoutMode, removeTabById, data, isVisible]);
 
 	return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>

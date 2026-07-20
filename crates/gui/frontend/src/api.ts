@@ -32,6 +32,9 @@ export const deleteCliTool = (cliId: string): Promise<void> =>
 export const toggleCliToolAgent = (cliId: string): Promise<CliTool> =>
 	invoke("toggle_cli_tool_agent", { cliId });
 
+export const deleteAiAgent = (cliId: string): Promise<void> =>
+	invoke("delete_ai_agent", { cliId });
+
 export const reorderCliTools = (ids: string[]): Promise<void> =>
 	invoke("reorder_cli_tools", { ids });
 

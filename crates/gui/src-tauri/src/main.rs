@@ -165,6 +165,11 @@ fn delete_cli_tool(cli_id: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn delete_ai_agent(cli_id: String) -> Result<(), String> {
+    cstore::delete_ai_agent(cli_id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 fn toggle_cli_tool_agent(cli_id: String) -> Result<CliTool, String> {
     cstore::toggle_cli_tool_agent(cli_id).map_err(|e| e.to_string())
 }
@@ -1005,6 +1010,13 @@ fn execute_test_command(cmd: &str, args_json: &str) -> Result<String, String> {
             let res = toggle_cli_tool_agent(cli_id.to_string())?;
             serde_json::to_string(&res).map_err(|e| e.to_string())
         }
+        "delete_ai_agent" => {
+            let cli_id = args["cli_id"]
+                .as_str()
+                .ok_or_else(|| "Missing argument 'cli_id'".to_string())?;
+            delete_ai_agent(cli_id.to_string())?;
+            Ok("null".to_string())
+        }
         "delete_category" => {
             let cat_id = args["cat_id"]
                 .as_str()
@@ -1486,11 +1498,15 @@ std::thread::spawn(|| {
                 }
             }
 
-            let quit_item = MenuItemBuilder::with_id("quit", "Quit / 退出").build(app)?;
+            let maximize_item =
+                MenuItemBuilder::with_id("maximize", "Maximize / 最大化").build(app)?;
+            let minimize_item =
+                MenuItemBuilder::with_id("minimize", "Minimize / 最小化").build(app)?;
             let show_item =
                 MenuItemBuilder::with_id("show", "Show Loom / 显示主窗口").build(app)?;
+            let quit_item = MenuItemBuilder::with_id("quit", "Quit / 退出").build(app)?;
             let menu = MenuBuilder::new(app)
-                .items(&[&show_item, &quit_item])
+                .items(&[&show_item, &maximize_item, &minimize_item, &quit_item])
                 .build()?;
 
             let _tray = TrayIconBuilder::new()
@@ -1508,6 +1524,20 @@ std::thread::spawn(|| {
                         if let Some(window) = app.get_webview_window("main") {
                             let _ = window.show();
                             let _ = window.set_focus();
+                        }
+                    }
+                    "maximize" => {
+                        if let Some(window) = app.get_webview_window("main") {
+                            if window.is_maximized().unwrap_or(false) {
+                                let _ = window.unmaximize();
+                            } else {
+                                let _ = window.maximize();
+                            }
+                        }
+                    }
+                    "minimize" => {
+                        if let Some(window) = app.get_webview_window("main") {
+                            let _ = window.minimize();
                         }
                     }
                     _ => {}
@@ -1558,6 +1588,7 @@ std::thread::spawn(|| {
             update_template,
             delete_cli_tool,
             toggle_cli_tool_agent,
+            delete_ai_agent,
             delete_category,
             run_cli_template,
             kill_cli_instance,
