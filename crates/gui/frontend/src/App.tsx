@@ -11,13 +11,11 @@ import Sidebar from "./components/Sidebar";
 import UpdateToast from "./components/UpdateToast";
 import NewProjectModal from "./components/NewProjectModal";
 import OnboardingWizard from "./components/OnboardingWizard";
-import OnboardingTour from "./pages/OnboardingTour";
 import SpawnAgentPanel from "./components/SpawnAgentPanel";
 import { useProjects } from "./hooks/useProjects";
 import { useTheme } from "./hooks/useTheme";
 import { useUpdateChecker } from "./hooks/useUpdateChecker";
 import { useOnboarding } from "./hooks/useOnboarding";
-import { getFloatingSidebarEnabled, setFloatingSidebarEnabled, getFloatingSidebarPosition, setFloatingSidebarPosition } from "./api";
 import type { Template } from "./types";
 
 type Page = "workspace" | "settings";

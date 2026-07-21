@@ -1122,6 +1122,7 @@ body.theme-day select.input option {
   border-radius: 50%;
   inline-size: 8px;
   block-size: 8px;
+  display: inline-block;
 }
 .agent-status-dot.idle {
   background-color: #a855f7;

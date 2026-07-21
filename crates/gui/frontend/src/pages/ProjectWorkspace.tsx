@@ -92,7 +92,7 @@ const [agentStateMap, setAgentStateMap] = useState<Record<string, AgentStateInfo
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
       <div data-tauri-drag-region style={{
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        borderBottom: '1px solid var(--border-subtle, #27272a)', padding: '2px 8px 4px 0px', gap: '0px', minHeight: '30px'
+        borderBottom: '1px solid var(--border-subtle, #27272a)', padding: '2px 8px 4px 0px', gap: '0px', height: '30px', minHeight: '30px'
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0px', alignSelf: 'stretch' }}>
           {onToggleSidebar && (
