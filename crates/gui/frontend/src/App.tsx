@@ -16,6 +16,7 @@ import { useProjects } from "./hooks/useProjects";
 import { useTheme } from "./hooks/useTheme";
 import { useUpdateChecker } from "./hooks/useUpdateChecker";
 import { useOnboarding } from "./hooks/useOnboarding";
+import { getFloatingSidebarEnabled, setFloatingSidebarEnabled as apiSetFloatingSidebarEnabled, getFloatingSidebarPosition, setFloatingSidebarPosition as apiSetFloatingSidebarPosition } from "./api";
 import type { Template } from "./types";
 
 type Page = "workspace" | "settings";
@@ -29,6 +30,22 @@ function EmptyState({ onAdd, t }: { onAdd: () => void; t: (key: string) => strin
 			<button className="btn-primary" data-tour-target="new-project-btn" onClick={onAdd}>{t("proj.btn.new")}</button>
 		</div>
 	);
+}
+
+function safeGetItem(key: string): string | null {
+	try {
+		return localStorage.getItem(key);
+	} catch {
+		return null;
+	}
+}
+
+function safeSetItem(key: string, value: string): void {
+	try {
+		localStorage.setItem(key, value);
+	} catch {
+		// localStorage may be unavailable in some WebView contexts
+	}
 }
 
 function App() {
@@ -50,37 +67,49 @@ function App() {
 	}, [onboarding]);
 
 	const [sidebarWidth, setSidebarWidth] = useState<number>(() => {
-		const saved = localStorage.getItem("loom_sidebar_width");
+		const saved = safeGetItem("loom_sidebar_width");
 		return saved ? parseInt(saved, 10) : 170;
 	});
 	const [isCollapsed, setIsCollapsed] = useState<boolean>(() => {
-		const saved = localStorage.getItem("loom_sidebar_collapsed");
+		const saved = safeGetItem("loom_sidebar_collapsed");
 		return saved === "true";
 	});
 	const [isResizing, setIsResizing] = useState<boolean>(false);
 	const [sidebarCollapseEnabled, setSidebarCollapseEnabled] = useState<boolean>(() => {
-		const saved = localStorage.getItem("loom_sidebar_collapse_enabled");
+		const saved = safeGetItem("loom_sidebar_collapse_enabled");
 		return saved !== "false";
 	});
 	const [floatingSidebarEnabled, setFloatingSidebarEnabled] = useState<boolean>(() => {
-		const saved = localStorage.getItem("loom_floating_sidebar_enabled");
+		const saved = safeGetItem("loom_floating_sidebar_enabled");
 		if (saved !== null) return saved === "true";
-		const oldSaved = localStorage.getItem("loom_right_sidebar_enabled");
+		const oldSaved = safeGetItem("loom_right_sidebar_enabled");
 		return oldSaved !== "false";
 	});
 	const [showSpawnPanel, setShowSpawnPanel] = useState(false);
 
 	const [floatingSidebarPosition, setFloatingSidebarPosition] = useState<"left" | "right">(() => {
-		const saved = localStorage.getItem("loom_floating_sidebar_position");
+		const saved = safeGetItem("loom_floating_sidebar_position");
 		if (saved === "left" || saved === "right") return saved;
 		return "right";
 	});
 
-	useEffect(() => { localStorage.setItem("loom_sidebar_width", sidebarWidth.toString()); }, [sidebarWidth]);
-	useEffect(() => { localStorage.setItem("loom_sidebar_collapsed", isCollapsed.toString()); }, [isCollapsed]);
-	useEffect(() => { localStorage.setItem("loom_sidebar_collapse_enabled", sidebarCollapseEnabled.toString()); }, [sidebarCollapseEnabled]);
-	useEffect(() => { localStorage.setItem("loom_floating_sidebar_enabled", floatingSidebarEnabled.toString()); }, [floatingSidebarEnabled]);
-	useEffect(() => { localStorage.setItem("loom_floating_sidebar_position", floatingSidebarPosition); }, [floatingSidebarPosition]);
+	useEffect(() => { safeSetItem("loom_sidebar_width", sidebarWidth.toString()); }, [sidebarWidth]);
+	useEffect(() => { safeSetItem("loom_sidebar_collapsed", isCollapsed.toString()); }, [isCollapsed]);
+	useEffect(() => { safeSetItem("loom_sidebar_collapse_enabled", sidebarCollapseEnabled.toString()); }, [sidebarCollapseEnabled]);
+	useEffect(() => { safeSetItem("loom_floating_sidebar_enabled", floatingSidebarEnabled.toString()); }, [floatingSidebarEnabled]);
+	useEffect(() => { safeSetItem("loom_floating_sidebar_position", floatingSidebarPosition); }, [floatingSidebarPosition]);
+
+	// Load floating sidebar settings from Rust file-backed config on mount
+	useEffect(() => {
+		getFloatingSidebarEnabled()
+			.then((enabled) => setFloatingSidebarEnabled(enabled))
+			.catch(() => {});
+		getFloatingSidebarPosition()
+			.then((pos) => {
+				if (pos === "left" || pos === "right") setFloatingSidebarPosition(pos);
+			})
+			.catch(() => {});
+	}, []);
 
 	// Auto-navigate to the correct page when tour highlights a target
 	useEffect(() => {
@@ -124,6 +153,32 @@ function App() {
 	}, [sidebarWidth]);
 
 	const handleDoubleClick = useCallback(() => { setSidebarWidth(170); setIsCollapsed(false); }, []);
+
+	const handleFloatingSidebarEnabledChange = useCallback((enabled: boolean) => {
+		if (!enabled && !sidebarCollapseEnabled) {
+			toast.error("请至少保留一个面板开启，以便访问设置");
+			return;
+		}
+		setFloatingSidebarEnabled(enabled);
+		apiSetFloatingSidebarEnabled(enabled).catch((err) =>
+			console.error("Failed to persist floating sidebar enabled:", err)
+		);
+	}, [sidebarCollapseEnabled, toast]);
+
+	const handleSidebarCollapseEnabledChange = useCallback((enabled: boolean) => {
+		if (!enabled && !floatingSidebarEnabled) {
+			toast.error("请至少保留一个面板开启，以便访问设置");
+			return;
+		}
+		setSidebarCollapseEnabled(enabled);
+	}, [floatingSidebarEnabled, toast]);
+
+	const handleFloatingSidebarPositionChange = useCallback((position: "left" | "right") => {
+		setFloatingSidebarPosition(position);
+		apiSetFloatingSidebarPosition(position).catch((err) =>
+			console.error("Failed to persist floating sidebar position:", err)
+		);
+	}, []);
 
 	const handleSpawnAgent = useCallback((tpl: Template) => {
 		setShowSpawnPanel(false);
@@ -209,7 +264,7 @@ function App() {
 							)}
 						</div>
 						<div style={{ display: page === "settings" ? "flex" : "none", flexDirection: "column", flex: 1, minHeight: 0, overflow: "hidden" }}>
-							<SettingsPage theme={theme.theme} onThemeChange={theme.handleThemeChange} projectColumnAlign={theme.projectColumnAlign} onProjectColumnAlignChange={theme.handleProjectColumnAlignChange} fontFamily={theme.fontFamily} fontSize={theme.fontSize} onFontFamilyChange={theme.handleFontFamilyChange} onFontSizeChange={theme.handleFontSizeChange} updateInfo={updater.updateInfo} onCheckUpdate={updater.performUpdateCheck} onInstallUpdate={updater.handleInstallUpdate} onSkipVersion={updater.handleSkipVersion} floatingSidebarEnabled={floatingSidebarEnabled} onFloatingSidebarEnabledChange={setFloatingSidebarEnabled} floatingSidebarPosition={floatingSidebarPosition} onFloatingSidebarPositionChange={setFloatingSidebarPosition} sidebarCollapseEnabled={sidebarCollapseEnabled} onSidebarCollapseEnabledChange={setSidebarCollapseEnabled} onboarding={onboarding} />
+							<SettingsPage theme={theme.theme} onThemeChange={theme.handleThemeChange} projectColumnAlign={theme.projectColumnAlign} onProjectColumnAlignChange={theme.handleProjectColumnAlignChange} fontFamily={theme.fontFamily} fontSize={theme.fontSize} onFontFamilyChange={theme.handleFontFamilyChange} onFontSizeChange={theme.handleFontSizeChange} updateInfo={updater.updateInfo} onCheckUpdate={updater.performUpdateCheck} onInstallUpdate={updater.handleInstallUpdate} onSkipVersion={updater.handleSkipVersion} floatingSidebarEnabled={floatingSidebarEnabled} onFloatingSidebarEnabledChange={handleFloatingSidebarEnabledChange} floatingSidebarPosition={floatingSidebarPosition} onFloatingSidebarPositionChange={handleFloatingSidebarPositionChange} sidebarCollapseEnabled={sidebarCollapseEnabled} onSidebarCollapseEnabledChange={handleSidebarCollapseEnabledChange} onboarding={onboarding} />
 						</div>
 					</>
 				}
