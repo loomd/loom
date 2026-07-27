@@ -22,7 +22,7 @@ const getTerminalTheme = (theme?: 'dark' | 'day' | 'gray') => {
   switch (theme) {
     case 'day':
       return {
-        background: '#121214',
+        background: '#1a1a1f',
         foreground: '#e4e4e7',
         cursor: '#a1a1aa',
         black: '#18181b',
@@ -66,7 +66,7 @@ const getTerminalTheme = (theme?: 'dark' | 'day' | 'gray') => {
       };
     default: // dark
       return {
-        background: '#121214',
+        background: '#1a1a1f',
         foreground: '#e4e4e7',
         cursor: '#a1a1aa',
         black: '#18181b',
@@ -544,7 +544,7 @@ export function TerminalTab({ sessionId, cwd, command, args, env, isVisible, the
   const getOuterBg = (theme?: 'dark' | 'day' | 'gray') => {
     switch (theme) {
       case 'gray': return '#1a1a1f';
-      default: return '#121214';
+      default: return '#1a1a1f';
     }
   };
 
