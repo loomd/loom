@@ -504,6 +504,12 @@ export default function GeneralSettingsTab({
 							{ label: t("settings.font.medium"), value: "14px" },
 							{ label: t("settings.font.large"), value: "16px" },
 							{ label: t("settings.font.xlarge"), value: "18px" },
+							{ label: t("settings.font.xxlarge"), value: "20px" },
+							{ label: t("settings.font.xxlarge2"), value: "22px" },
+							{ label: t("settings.font.xxlarge3"), value: "24px" },
+							{ label: t("settings.font.xxlarge4"), value: "28px" },
+							{ label: t("settings.font.xxlarge5"), value: "32px" },
+							{ label: t("settings.font.xxlarge6"), value: "36px" },
 						].map((sz) => {
 							const isActive = fontSize === sz.value;
 							return (
