@@ -296,6 +296,10 @@ body.theme-day {
   backdrop-filter: blur(20px);
   gap: 4px;
   overflow-y: auto;
+  scrollbar-width: none;
+}
+.sidebar::-webkit-scrollbar {
+  display: none;
 }
 
 .sidebar-logo {
