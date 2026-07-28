@@ -230,10 +230,7 @@ impl AgentMonitor {
         {
             let guard = LAST_ACTIVE_PTY.get_or_init(|| Mutex::new(None))
                 .lock().unwrap();
-            let can_claim = match &*guard {
-                Some((id, ts)) if id == pty_session_id && now - *ts <= ACTIVE_WINDOW_MS => true,
-                _ => false,
-            };
+            let can_claim = matches!(&*guard, Some((id, ts)) if id == pty_session_id && now - *ts <= ACTIVE_WINDOW_MS);
             if !can_claim {
                 let cache_guard = cache.lock().unwrap();
                 if let Some((cached, _)) = cache_guard.get(pty_session_id) {

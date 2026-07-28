@@ -354,6 +354,7 @@ body.theme-day {
   font-size: var(--fs-13);
   font-weight: 500;
   color: var(--text-secondary);
+  background: none;
   transition: all 300ms var(--ease-spring);
   position: relative;
   border: 1px solid transparent;
@@ -361,16 +362,15 @@ body.theme-day {
   user-select: none;
 }
 .nav-item:hover {
-  background: var(--bg-hover);
-  color: var(--text-primary);
+  background: var(--bg-elevated);
   border-color: var(--border-subtle);
 }
 .nav-item.active {
-  background: var(--accent-purple-dim);
-  color: var(--accent-purple);
-  border-color: rgba(139,92,246,0.2);
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  border-color: var(--border-subtle);
 }
-.nav-item.active .nav-icon { color: var(--accent-purple); }
+
 
 .sidebar-add-btn {
   display: flex;
@@ -1173,6 +1173,45 @@ body.theme-day select.input option {
 .agent-status-text.agent_call { color: var(--accent-pink); }
 .agent-status-text.question { color: var(--accent-amber); }
 
+/* ─── Project Composite Status (Sidebar text states) ─────── */
+@keyframes status-breathe {
+  0%, 100% { opacity: 1; text-shadow: 0 0 4px currentColor; }
+  50% { opacity: 0.5; text-shadow: 0 0 12px currentColor; }
+}
+@keyframes status-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+@keyframes status-error {
+  0%, 100% { opacity: 1; text-shadow: 0 0 4px currentColor; }
+  50% { opacity: 0.5; text-shadow: 0 0 16px currentColor; }
+}
+
+.project-status-text {
+  transition: color 300ms ease;
+}
+.project-status-text.running {
+  color: var(--accent-emerald);
+  animation: status-breathe 1s ease-in-out infinite;
+}
+.project-status-text.agent_call {
+  color: var(--accent-pink);
+  animation: status-breathe 1s ease-in-out infinite;
+}
+.project-status-text.question {
+  color: var(--accent-amber);
+  animation: status-pulse 0.8s ease-in-out infinite;
+}
+.project-status-text.error {
+  color: var(--accent-red);
+  animation: status-error 1.5s ease-in-out infinite;
+}
+.project-status-text.waiting {
+  color: var(--accent-sky);
+}
+.project-status-text.idle {
+  color: #a855f7;
+}
 /* ─── Misc Utilities ─────────────────────────────────────── */
 .flex { display: flex; }
 .flex-col { flex-direction: column; }

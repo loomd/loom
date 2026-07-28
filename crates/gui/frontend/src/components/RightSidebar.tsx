@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { useI18n } from "../I18nContext";
 import type { Project } from "../types";
+import type { CompositeState } from "../hooks/useProjectCompositeStates";
 
 interface RightSidebarProps {
   projects: Project[];
@@ -11,6 +12,7 @@ interface RightSidebarProps {
   page: "workspace" | "settings";
   onNavigate: (page: "workspace" | "settings") => void;
   onRegisterProject?: () => void;
+  compositeStates: Record<string, CompositeState>;
 }
 
 export default function RightSidebar({
@@ -22,6 +24,7 @@ export default function RightSidebar({
   page,
   onNavigate,
   onRegisterProject,
+  compositeStates,
 }: RightSidebarProps) {
   const { t } = useI18n();
   const [isVisible, setIsVisible] = useState(false);
@@ -155,7 +158,7 @@ export default function RightSidebar({
               }}
             >
               <div
-                className="right-sidebar-project-name"
+                className={`right-sidebar-project-name${compositeStates[project.id] ? ` project-status-text ${compositeStates[project.id]}` : ""}`}
                 style={{
                   overflow: "hidden",
                   textOverflow: "ellipsis",

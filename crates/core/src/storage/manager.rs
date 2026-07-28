@@ -228,7 +228,7 @@ pub fn set_agent_skill_map(
 #[cfg(target_os = "windows")]
 pub fn kill_process_tree(pid: u32) -> std::io::Result<()> {
     let mut cmd = Command::new("taskkill");
-    cmd.args(&["/F", "/T", "/PID", &pid.to_string()]);
+    cmd.args(["/F", "/T", "/PID", &pid.to_string()]);
     cmd.stdout(Stdio::null());
     cmd.stderr(Stdio::null());
     let mut child = cmd.spawn()?;
@@ -1084,7 +1084,7 @@ pub fn update_cli_env(cli_id: String, env: HashMap<String, String>) -> Result<()
         .position(|t| t.id == cli_id)
         .ok_or_else(|| StorageError::CliToolNotFound(cli_id.clone()))?;
 
-    for (k, _v) in &env {
+    for k in env.keys() {
         if k.is_empty() {
             return Err(StorageError::Validation(
                 "Environment variable key cannot be empty".to_string(),
@@ -1320,7 +1320,7 @@ pub fn toggle_cli_tool_agent(cli_id: String) -> Result<CliTool> {
         .cli_tools
         .iter_mut()
         .find(|t| t.id == cli_id)
-        .ok_or_else(|| StorageError::CliToolNotFound(cli_id))?;
+        .ok_or(StorageError::CliToolNotFound(cli_id))?;
     tool.is_agent = !tool.is_agent;
     let result = tool.clone();
     save_config(&config)?;
@@ -1616,8 +1616,7 @@ pub fn run_cli_template(
         }
         if let Some(stdout) = stdout_opt {
             let reader = BufReader::new(stdout);
-            for line in reader.lines() {
-                if let Ok(l) = line {
+            for l in reader.lines().map_while(|line| line.ok()) {
                     let log_payload = serde_json::json!({
                         "instance_id": instance_id_clone,
                         "stream": "stdout",
@@ -1632,7 +1631,6 @@ pub fn run_cli_template(
                     );
                     append_to_instance_log(&instance_id_clone, &format!("[STDOUT] {}", l));
                 }
-            }
         }
     });
 
@@ -1647,8 +1645,7 @@ pub fn run_cli_template(
         }
         if let Some(stderr) = stderr_opt {
             let reader = BufReader::new(stderr);
-            for line in reader.lines() {
-                if let Ok(l) = line {
+            for l in reader.lines().map_while(|line| line.ok()) {
                     let log_payload = serde_json::json!({
                         "instance_id": instance_id_clone_err,
                         "stream": "stderr",
@@ -1663,7 +1660,6 @@ pub fn run_cli_template(
                     );
                     append_to_instance_log(&instance_id_clone_err, &format!("[STDERR] {}", l));
                 }
-            }
         }
     });
 
@@ -2010,11 +2006,11 @@ pub fn smart_classify() -> Result<(usize, usize)> {
                 tool.category_id = Some(sys_cat_id.clone());
                 sys_count += 1;
             }
-        } else if dev_cmds.contains(&tool_stem.as_str()) {
-            if tool.category_id.as_ref() != Some(&dev_cat_id) {
-                tool.category_id = Some(dev_cat_id.clone());
-                dev_count += 1;
-            }
+        } else if dev_cmds.contains(&tool_stem.as_str())
+            && tool.category_id.as_ref() != Some(&dev_cat_id)
+        {
+            tool.category_id = Some(dev_cat_id.clone());
+            dev_count += 1;
         }
     }
 
@@ -2127,7 +2123,7 @@ pub fn update_global_env_var(
         .env_vars
         .iter()
         .position(|ev| ev.id == id)
-        .ok_or_else(|| StorageError::Validation(format!("Environment variable not found")))?;
+        .ok_or_else(|| StorageError::Validation("Environment variable not found".to_string()))?;
 
     if config
         .env_vars
@@ -2154,9 +2150,7 @@ pub fn delete_global_env_var(id: String) -> Result<()> {
     let initial_len = config.env_vars.len();
     config.env_vars.retain(|ev| ev.id != id);
     if config.env_vars.len() == initial_len {
-        return Err(StorageError::Validation(format!(
-            "Environment variable not found"
-        )));
+        return Err(StorageError::Validation("Environment variable not found".to_string()));
     }
 
     // Also remove from any template referencing it
@@ -2206,7 +2200,7 @@ pub fn delete_project(id: String) -> Result<()> {
     let initial_len = config.projects.len();
     config.projects.retain(|p| p.id != id);
     if config.projects.len() == initial_len {
-        return Err(StorageError::Validation(format!("Project not found")));
+        return Err(StorageError::Validation("Project not found".to_string()));
     }
     config.agent_instances.retain(|ai| ai.project_id != id);
     save_config(&config)?;
@@ -2417,8 +2411,7 @@ pub fn spawn_project_agent(
         }
         if let Some(stdout) = stdout_opt {
             let reader = BufReader::new(stdout);
-            for line in reader.lines() {
-                if let Ok(l) = line {
+            for l in reader.lines().map_while(|line| line.ok()) {
                     let log_payload = serde_json::json!({
                         "instance_id": instance_id_clone,
                         "stream": "stdout",
@@ -2430,7 +2423,6 @@ pub fn spawn_project_agent(
                     println!("[Agent Stdout] [{}]: {}", instance_id_clone, l);
                     append_to_instance_log(&instance_id_clone, &format!("[STDOUT] {}", l));
                 }
-            }
         }
     });
 
@@ -2445,8 +2437,7 @@ pub fn spawn_project_agent(
         }
         if let Some(stderr) = stderr_opt {
             let reader = BufReader::new(stderr);
-            for line in reader.lines() {
-                if let Ok(l) = line {
+            for l in reader.lines().map_while(|line| line.ok()) {
                     let log_payload = serde_json::json!({
                         "instance_id": instance_id_clone_err,
                         "stream": "stderr",
@@ -2458,7 +2449,6 @@ pub fn spawn_project_agent(
                     eprintln!("[Agent Stderr] [{}]: {}", instance_id_clone_err, l);
                     append_to_instance_log(&instance_id_clone_err, &format!("[STDERR] {}", l));
                 }
-            }
         }
     });
 
@@ -2558,7 +2548,7 @@ pub fn sync_running_processes() -> Result<()> {
                 #[cfg(target_os = "windows")]
                 {
                     let mut cmd = Command::new("tasklist");
-                    cmd.args(&["/FI", &format!("PID eq {}", pid)]);
+                    cmd.args(["/FI", &format!("PID eq {}", pid)]);
                     cmd.stdout(Stdio::piped());
                     cmd.stderr(Stdio::null());
                     if let Ok(child) = cmd.spawn() {
@@ -2691,7 +2681,7 @@ pub fn get_project_skills(project_id: String) -> Result<Vec<ProjectSkill>> {
     }
 
     let mut result: Vec<ProjectSkill> = skills_map.into_values().collect();
-    result.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    result.sort_by_key(|a| a.name.to_lowercase());
     Ok(result)
 }
 

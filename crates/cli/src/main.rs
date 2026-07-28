@@ -36,7 +36,7 @@ fn try_run_override(subcmd: &str, extra_args: &[String]) -> Result<i32, String> 
         let tool = tools.iter().find(|t| t.id == tpl.cli_id)
             .ok_or_else(|| format!("CLI tool for template '{}' not found", tpl.name))?;
 
-        let tool_path: PathBuf = tool.path.clone().into();
+        let tool_path: PathBuf = tool.path.clone();
         let mut cmd = process::Command::new(&tool_path);
 
         // Add template args, then extra args passed on command line
@@ -45,7 +45,7 @@ fn try_run_override(subcmd: &str, extra_args: &[String]) -> Result<i32, String> 
 
         // Working directory
         if let Some(ref pwd) = tpl.pwd {
-            let p: PathBuf = pwd.clone().into();
+            let p: PathBuf = pwd.clone();
             if !p.as_os_str().is_empty() {
                 cmd.current_dir(&p);
             }
@@ -75,7 +75,7 @@ fn try_run_override(subcmd: &str, extra_args: &[String]) -> Result<i32, String> 
 
     // Second: look for a CLI tool whose name matches
     if let Some(tool) = tools.iter().find(|t| t.name == subcmd) {
-        let tool_path: PathBuf = tool.path.clone().into();
+        let tool_path: PathBuf = tool.path.clone();
         let mut cmd = process::Command::new(&tool_path);
 
         // Pass all extra args

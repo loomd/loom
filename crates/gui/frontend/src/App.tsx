@@ -16,6 +16,7 @@ import { useProjects } from "./hooks/useProjects";
 import { useTheme } from "./hooks/useTheme";
 import { useUpdateChecker } from "./hooks/useUpdateChecker";
 import { useOnboarding } from "./hooks/useOnboarding";
+import { useProjectCompositeStates } from "./hooks/useProjectCompositeStates";
 import { getFloatingSidebarEnabled, setFloatingSidebarEnabled as apiSetFloatingSidebarEnabled, getFloatingSidebarPosition, setFloatingSidebarPosition as apiSetFloatingSidebarPosition } from "./api";
 import type { Template } from "./types";
 
@@ -57,6 +58,7 @@ function App() {
 	const theme = useTheme(toast);
 	const updater = useUpdateChecker(t, toast);
 	const onboarding = useOnboarding();
+	const compositeStates = useProjectCompositeStates(p.projects);
 
 	// Check onboarding status on first load with 500ms delay
 	useEffect(() => {
@@ -245,6 +247,7 @@ function App() {
 						projects={p.projects} selectedProjectId={p.selectedProjectId} page={page}
 						projectColumnAlign={sidebarCollapseEnabled ? theme.projectColumnAlign : ""}
 						draggedIndex={p.draggedIndex} dragOverIndex={p.dragOverIndex}
+						compositeStates={compositeStates}
 						onProjectSelect={navigateToPage}
 						onSettingsClick={() => setPage("settings")}
 						onAddClick={() => p.setShowModal(true)}
@@ -269,7 +272,7 @@ function App() {
 					</>
 				}
 				rightSidebar={
-					<RightSidebar projects={p.projects} selectedProjectId={p.selectedProjectId} onProjectSelect={(id) => navigateToPage(id, "workspace")} enabled={floatingSidebarEnabled} position={floatingSidebarPosition} page={page} onNavigate={setPage} onRegisterProject={() => p.setShowModal(true)} />
+					<RightSidebar projects={p.projects} selectedProjectId={p.selectedProjectId} onProjectSelect={(id) => navigateToPage(id, "workspace")} enabled={floatingSidebarEnabled} position={floatingSidebarPosition} page={page} onNavigate={setPage} onRegisterProject={() => p.setShowModal(true)} compositeStates={compositeStates} />
 				}
 				isCollapsed={actualCollapsed} sidebarWidth={sidebarWidth}
 				onResizerMouseDown={handleMouseDown} onResizerDoubleClick={handleDoubleClick}

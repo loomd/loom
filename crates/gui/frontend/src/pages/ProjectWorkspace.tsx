@@ -1,4 +1,4 @@
-import React, { Suspense, useEffect, useMemo, useState } from 'react';
+import React, { Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import WindowControlButtons from '../components/WindowControlButtons';
 import { useTabs } from '../hooks/useTabs';
 import { useWorkspaceData } from '../hooks/useWorkspaceData';
@@ -8,6 +8,7 @@ import { useToast } from '../ToastContext';
 import { useI18n } from '../I18nContext';
 import { EditorPlaceholder } from '../components/EditorPlaceholder';
 import { pollAgentState } from '../api';
+import { reportShellStatus, removeShellStatus } from '../hooks/useProjectCompositeStates';
 import type { Project, AgentStateInfo } from '../types';
 const FileEditor = React.lazy(() => import('../components/FileEditor').then(m => ({ default: m.FileEditor })));
 
@@ -29,24 +30,48 @@ export default function ProjectWorkspace({ project, isVisible, onUnregisterProje
 		terminals, showGrid, handleAddRawTerminal, handleCloseTerminal,
 		handleOpenFile, updateTabDirty, removeTabById,
 	} = tabsState;
-const activeTerminals = useMemo(() => terminals.filter(t => t.isOpencode).length, [terminals]);
+const opencodeTerms = useMemo(() => terminals.filter(t => t.isOpencode), [terminals]);
 const [agentStateMap, setAgentStateMap] = useState<Record<string, AgentStateInfo>>({});
+const opencodeTermIdsRef = useRef<string[]>([]);
 
+  // Poll opencode AI state per terminal
   useEffect(() => {
-    if (activeTerminals === 0) return;
+    if (opencodeTerms.length === 0) return;
+
     const interval = setInterval(async () => {
-      const opencodeTerms = terminals.filter(t => t.isOpencode);
-      const results: Record<string, AgentStateInfo> = {};
       for (const term of opencodeTerms) {
         try {
           const info = await pollAgentState(project.root_path, term.id);
-          if (info) results[term.id] = info;
+          if (info) {
+            setAgentStateMap(prev => ({ ...prev, [term.id]: info }));
+          }
         } catch { /* DB not available */ }
       }
-      setAgentStateMap(results);
     }, 2000);
+
     return () => clearInterval(interval);
-  }, [project.root_path, activeTerminals, terminals]);
+  }, [project.root_path, opencodeTerms]);
+
+  // Report agent state changes as composite status (push model)
+  useEffect(() => {
+    for (const [termId, info] of Object.entries(agentStateMap)) {
+      reportShellStatus(project.id, termId, info.state);
+    }
+  }, [agentStateMap, project.id]);
+
+  // Keep ref in sync with latest terminal IDs (for unmount cleanup)
+  useEffect(() => {
+    opencodeTermIdsRef.current = opencodeTerms.map(t => t.id);
+  }, [opencodeTerms]);
+
+  // Clean up composite statuses on unmount
+  useEffect(() => {
+    return () => {
+      for (const id of opencodeTermIdsRef.current) {
+        removeShellStatus(project.id, id);
+      }
+    };
+  }, [project.id]);
 
 	const data = useWorkspaceData(project, toast, t, {
 		addTab: tabsState.addTab,
@@ -160,7 +185,7 @@ const [agentStateMap, setAgentStateMap] = useState<Record<string, AgentStateInfo
                 <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'inline-block', lineHeight: 1.3, transform: 'translateY(-0.06em)', minWidth: tab.type === 'terminal' ? '24px' : 0, maxWidth: tab.type === 'terminal' ? 'none' : '60px' }}>
                   {tab.title}
                 </span>
-                <span onClick={(e) => { if (!isActive) return; handleCloseTerminal(tab.id, e); }}
+                <span onClick={(e) => { if (!isActive) return; removeShellStatus(project.id, tab.id); setAgentStateMap(prev => { const n = { ...prev }; delete n[tab.id]; return n; }); handleCloseTerminal(tab.id, e); }}
                   style={{ marginLeft: '2px', cursor: 'pointer', display: 'inline-block', width: '12px', height: '12px', textAlign: 'center', lineHeight: '12px', fontSize: tab.isDirty ? '0.6rem' : '0.7rem', visibility: isActive ? 'visible' : 'hidden', pointerEvents: isActive ? 'auto' : 'none' }}
                   className={`tab-close-icon ${tab.isDirty ? 'dirty' : ''}`}
                   title={tab.isDirty ? '有未保存的更改' : undefined}
@@ -218,7 +243,7 @@ const [agentStateMap, setAgentStateMap] = useState<Record<string, AgentStateInfo
                         opacity: data.draggedIndex === i ? 0.4 : 1,
                         transition: 'opacity 0.2s, transform 0.2s, background-color 0.2s',
                       }}>
-                      {data.templateLaunching === tpl.id ? '⏳' : '🟢'}
+                      {data.templateLaunching === tpl.id ? '⏳' : null}
                       <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flexGrow: 1 }}>{tpl.name}</span>
                     </button>
                   ))}

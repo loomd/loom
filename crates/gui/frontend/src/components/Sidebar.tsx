@@ -1,35 +1,9 @@
 import React from "react";
 import { useI18n } from "../I18nContext";
 import type { Project } from "../types";
+import type { CompositeState } from "../hooks/useProjectCompositeStates";
 
 type Page = "workspace" | "settings";
-
-interface NavItemProps {
-	icon: string;
-	label: string;
-	page: Page;
-	current: Page;
-	onClick: () => void;
-}
-
-function NavItem({ icon, label, current, page, onClick }: NavItemProps) {
-	return (
-		<button
-			className={`nav-item${current === page ? " active" : ""}`}
-			onClick={onClick}
-			style={{
-				width: "100%",
-				textAlign: "left",
-				background: "none",
-				cursor: "pointer",
-			}}
-			data-page={page}
-		>
-			<span className="nav-icon">{icon}</span>
-			<span>{label}</span>
-		</button>
-	);
-}
 
 interface SidebarProps {
 	projects: Project[];
@@ -38,6 +12,7 @@ interface SidebarProps {
 	projectColumnAlign: string;
 	draggedIndex: number | null;
 	dragOverIndex: number | null;
+	compositeStates: Record<string, CompositeState>;
 	onProjectSelect: (id: string, page: Page) => void;
 	onSettingsClick: () => void;
 	onAddClick: () => void;
@@ -55,6 +30,7 @@ export default function Sidebar({
 	projectColumnAlign,
 	draggedIndex,
 	dragOverIndex,
+	compositeStates,
 	onProjectSelect,
 	onSettingsClick,
 	onAddClick,
@@ -114,10 +90,10 @@ export default function Sidebar({
 								onDragLeave={onDragLeave}
 								onDrop={(e) => onDrop(e, index)}
 								onDragEnd={onDragEnd}
-								style={{
+									style={{
 									width: "100%",
 									textAlign: "left",
-									background: isDragging ? "var(--bg-elevated)" : "none",
+									background: isDragging ? "var(--bg-elevated)" : undefined,
 									border: isDragging
 										? "1px dashed var(--accent-purple)"
 										: "1px solid transparent",
@@ -138,34 +114,23 @@ export default function Sidebar({
 										"opacity 0.2s ease, transform 0.2s ease, border-color 0.2s ease, background-color 0.2s ease, box-shadow 0.1s ease",
 								}}
 							>
-								<span
-									className="nav-icon"
-									style={{
-										pointerEvents: draggedIndex !== null ? "none" : "auto",
-										display: "inline-flex",
-										alignItems: "center",
-										justifyContent: "flex-start",
-										width: "18px",
-										transform: "none",
-									}}
-								>
-									📁
-								</span>
-								<span
-									style={{
-										overflow: "hidden",
-										textOverflow: "ellipsis",
-										whiteSpace: "nowrap",
-										flexGrow: 1,
-										fontWeight: isActive ? 600 : 400,
-										pointerEvents: draggedIndex !== null ? "none" : "auto",
-										display: "inline-flex",
-										alignItems: "center",
-										lineHeight: "1.2",
-									}}
-								>
-									{p.name}
-								</span>
+							<span
+								className={compositeStates[p.id] ? `project-status-text ${compositeStates[p.id]}` : ""}
+								style={{
+									overflow: "hidden",
+									textOverflow: "ellipsis",
+									whiteSpace: "nowrap",
+									flexGrow: 1,
+									fontWeight: isActive ? 600 : 400,
+									pointerEvents: draggedIndex !== null ? "none" : "auto",
+									display: "inline-flex",
+									alignItems: "center",
+									lineHeight: "1.2",
+									gap: "6px",
+								}}
+							>
+								{p.name}
+							</span>
 							</button>
 						);
 					})
@@ -174,31 +139,64 @@ export default function Sidebar({
 
 			<div
 				style={{
-					marginTop: "auto",
-					paddingTop: "12px",
+					padding: "2px 0",
 					display: "flex",
+					flexDirection: "column",
 					alignItems: "center",
-					gap: "2px",
 				}}
 			>
-				<div style={{ flexGrow: 1 }}>
-					<NavItem
-						icon="⚙️"
-						label={t("nav.settings.short")}
-						page="settings"
-						current={page}
-						onClick={onSettingsClick}
-					/>
-				</div>
-				<button
+				<div
 					data-tour-target="new-project-btn"
 					onClick={onAddClick}
-					className="sidebar-add-btn"
-					style={{ marginRight: "-6px" }}
-					title={t("proj.sidebar.add")}
+					style={{
+						padding: "6px 8px",
+						cursor: "pointer",
+						fontSize: "13px",
+						borderRadius: "4px",
+						margin: "0 4px",
+						color: "var(--text-primary)",
+						transition: "background-color 0.2s ease",
+						display: "flex",
+						alignItems: "center",
+						gap: "6px",
+						width: "100%",
+						boxSizing: "border-box",
+					}}
+					onMouseEnter={(e) => { e.currentTarget.style.background = "var(--bg-elevated)"; }}
+					onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
 				>
-					＋
-				</button>
+					<span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+						{t("proj.sidebar.add")}
+					</span>
+				</div>
+				<div
+					onClick={onSettingsClick}
+					style={{
+						padding: "6px 8px",
+						cursor: "pointer",
+						fontSize: "13px",
+						borderRadius: "4px",
+						margin: "0 4px",
+						background: page === "settings" ? "var(--accent-purple)" : "transparent",
+						color: page === "settings" ? "white" : "var(--text-primary)",
+						transition: "background-color 0.2s ease",
+						display: "flex",
+						alignItems: "center",
+						gap: "6px",
+						width: "100%",
+						boxSizing: "border-box",
+					}}
+					onMouseEnter={(e) => {
+						if (page !== "settings") e.currentTarget.style.background = "var(--bg-elevated)";
+					}}
+					onMouseLeave={(e) => {
+						if (page !== "settings") e.currentTarget.style.background = "transparent";
+					}}
+				>
+					<span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+						{t("nav.settings")}
+					</span>
+				</div>
 			</div>
 		</aside>
 	);

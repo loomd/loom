@@ -27,6 +27,7 @@ async function renderSidebar(props: Record<string, unknown> = {}) {
         page="workspace"
         onNavigate={vi.fn()}
         onRegisterProject={vi.fn()}
+        compositeStates={{}}
         {...props}
       />
     </TestWrapper>
@@ -46,6 +47,7 @@ describe("RightSidebar", () => {
           position="right"
           page="workspace"
           onNavigate={vi.fn()}
+          compositeStates={{}}
         />
       </TestWrapper>
     );

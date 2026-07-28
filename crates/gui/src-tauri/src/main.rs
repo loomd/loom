@@ -555,8 +555,7 @@ fn list_project_files(dir_path: String) -> Result<Vec<FileEntry>, String> {
         std::fs::read_dir(path).map_err(|e| format!("Failed to read directory: {}", e))?;
 
     let mut file_entries = Vec::new();
-    for entry in entries {
-        if let Ok(entry) = entry {
+    for entry in entries.flatten() {
             let file_path = entry.path();
             let name = file_path
                 .file_name()
@@ -581,7 +580,6 @@ fn list_project_files(dir_path: String) -> Result<Vec<FileEntry>, String> {
                 size,
             });
         }
-    }
 
     file_entries.sort_by(|a, b| {
         if a.is_dir != b.is_dir {
@@ -603,7 +601,7 @@ fn open_file_with_system(file_path: String) -> Result<(), String> {
 
     #[cfg(target_os = "windows")]
     let res = std::process::Command::new("cmd")
-        .args(&["/C", "start", "", &file_path])
+        .args(["/C", "start", "", &file_path])
         .status();
 
     #[cfg(target_os = "macos")]
@@ -1613,20 +1611,19 @@ std::thread::spawn(|| {
             tauri::WindowEvent::Resized(size) => {
                 if !window.is_maximized().unwrap_or(false)
                     && !window.is_fullscreen().unwrap_or(false)
+                    && (size.width < MIN_WINDOW_WIDTH || size.height < MIN_WINDOW_HEIGHT)
                 {
-                    if size.width < MIN_WINDOW_WIDTH || size.height < MIN_WINDOW_HEIGHT {
-                        let new_w = std::cmp::max(size.width, MIN_WINDOW_WIDTH);
-                        let new_h = std::cmp::max(size.height, MIN_WINDOW_HEIGHT);
-                        let _ = window.set_size(tauri::PhysicalSize::new(new_w, new_h));
-                    }
+                    let new_w = std::cmp::max(size.width, MIN_WINDOW_WIDTH);
+                    let new_h = std::cmp::max(size.height, MIN_WINDOW_HEIGHT);
+                    let _ = window.set_size(tauri::PhysicalSize::new(new_w, new_h));
                 }
-                save_window_state(&window);
+                save_window_state(window);
             }
             tauri::WindowEvent::Moved(_) => {
-                save_window_state(&window);
+                save_window_state(window);
             }
             tauri::WindowEvent::CloseRequested { api, .. } => {
-                save_window_state(&window);
+                save_window_state(window);
                 api.prevent_close();
                 let _ = window.hide();
             }
