@@ -90,6 +90,10 @@ pub fn default_floating_sidebar_position() -> String {
     "right".to_string()
 }
 
+pub fn default_sidebar_width() -> u32 {
+    170
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Project {
     pub id: String,
@@ -176,6 +180,8 @@ pub struct LoomStorage {
     pub floating_sidebar_enabled: bool,
     #[serde(default = "default_floating_sidebar_position")]
     pub floating_sidebar_position: String,
+    #[serde(default = "default_sidebar_width")]
+    pub sidebar_width: u32,
     #[serde(default)]
     pub agent_skill_map: HashMap<String, String>,
 }
@@ -202,6 +208,7 @@ impl Default for LoomStorage {
             has_onboarded: default_has_onboarded(),
             floating_sidebar_enabled: default_floating_sidebar_enabled(),
             floating_sidebar_position: default_floating_sidebar_position(),
+            sidebar_width: default_sidebar_width(),
             agent_skill_map: HashMap::new(),
         }
     }

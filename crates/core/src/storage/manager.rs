@@ -2068,6 +2068,18 @@ pub fn set_floating_sidebar_position(position: String) -> Result<()> {
     Ok(())
 }
 
+pub fn get_sidebar_width() -> Result<u32> {
+    let config = load_config()?;
+    Ok(config.sidebar_width)
+}
+
+pub fn set_sidebar_width(width: u32) -> Result<()> {
+    let mut config = load_config()?;
+    config.sidebar_width = width;
+    save_config(&config)?;
+    Ok(())
+}
+
 pub fn get_global_env_vars() -> Result<Vec<GlobalEnvVar>> {
     let config = load_config()?;
     Ok(config.env_vars.clone())

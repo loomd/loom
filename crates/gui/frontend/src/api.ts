@@ -187,6 +187,13 @@ export const getFontSize = (): Promise<string> => invoke("get_font_size");
 export const setFontSize = (size: string): Promise<void> =>
   invoke("set_font_size", { size });
 
+// ─── Sidebar Width ─────────────────────────────────────────
+export const getSidebarWidth = (): Promise<number> =>
+  invoke("get_sidebar_width");
+
+export const setSidebarWidth = (width: number): Promise<void> =>
+  invoke("set_sidebar_width", { width });
+
 // ─── Floating Sidebar Configurations ────────────────────────
 export const getFloatingSidebarEnabled = (): Promise<boolean> =>
   invoke("get_floating_sidebar_enabled");

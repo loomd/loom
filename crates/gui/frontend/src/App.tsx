@@ -17,7 +17,7 @@ import { useTheme } from "./hooks/useTheme";
 import { useUpdateChecker } from "./hooks/useUpdateChecker";
 import { useOnboarding } from "./hooks/useOnboarding";
 import { useProjectCompositeStates } from "./hooks/useProjectCompositeStates";
-import { getFloatingSidebarEnabled, setFloatingSidebarEnabled as apiSetFloatingSidebarEnabled, getFloatingSidebarPosition, setFloatingSidebarPosition as apiSetFloatingSidebarPosition } from "./api";
+import { getFloatingSidebarEnabled, setFloatingSidebarEnabled as apiSetFloatingSidebarEnabled, getFloatingSidebarPosition, setFloatingSidebarPosition as apiSetFloatingSidebarPosition, getSidebarWidth, setSidebarWidth as setSidebarWidthBackend } from "./api";
 import type { Template } from "./types";
 
 type Page = "workspace" | "settings";
@@ -95,11 +95,21 @@ function App() {
 		return "right";
 	});
 
-	useEffect(() => { safeSetItem("loom_sidebar_width", sidebarWidth.toString()); }, [sidebarWidth]);
+	useEffect(() => {
+		safeSetItem("loom_sidebar_width", sidebarWidth.toString());
+		setSidebarWidthBackend(sidebarWidth).catch(() => {});
+	}, [sidebarWidth]);
 	useEffect(() => { safeSetItem("loom_sidebar_collapsed", isCollapsed.toString()); }, [isCollapsed]);
 	useEffect(() => { safeSetItem("loom_sidebar_collapse_enabled", sidebarCollapseEnabled.toString()); }, [sidebarCollapseEnabled]);
 	useEffect(() => { safeSetItem("loom_floating_sidebar_enabled", floatingSidebarEnabled.toString()); }, [floatingSidebarEnabled]);
 	useEffect(() => { safeSetItem("loom_floating_sidebar_position", floatingSidebarPosition); }, [floatingSidebarPosition]);
+
+	// Load sidebar width from Rust file-backed config on mount
+	useEffect(() => {
+		getSidebarWidth()
+			.then((w) => { if (w > 0) setSidebarWidth(w); })
+			.catch(() => {});
+	}, []);
 
 	// Load floating sidebar settings from Rust file-backed config on mount
 	useEffect(() => {

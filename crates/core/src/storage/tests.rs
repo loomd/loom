@@ -87,6 +87,7 @@ let original = AppConfig {
 		agent_skill_map: HashMap::new(),
 		floating_sidebar_enabled: true,
 		floating_sidebar_position: "right".to_string(),
+		sidebar_width: 170,
 	};
 
     // Serialize
