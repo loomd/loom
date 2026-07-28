@@ -81,6 +81,8 @@ export default function Sidebar({
 					marginTop: "8px",
 					paddingBottom: "4px",
 					justifyContent: projectColumnAlign === "center" ? "center" : "flex-start",
+					scrollbarWidth: "none",
+					msOverflowStyle: "none",
 				}}
 			>
 				{projects.length === 0 ? (

@@ -298,7 +298,8 @@ body.theme-day {
   overflow-y: auto;
   scrollbar-width: none;
 }
-.sidebar::-webkit-scrollbar {
+.sidebar::-webkit-scrollbar,
+.sidebar *::-webkit-scrollbar {
   display: none;
 }
 
