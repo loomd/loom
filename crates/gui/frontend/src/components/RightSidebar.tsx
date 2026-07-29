@@ -141,8 +141,8 @@ export default function RightSidebar({
                 fontSize: "13px",
                 borderRadius: "4px",
                 margin: "2px 4px",
-                background: isActive ? "var(--accent-purple)" : "transparent",
-                color: isActive ? "white" : "var(--text-primary)",
+                background: isActive ? "var(--bg-elevated)" : "transparent",
+                color: "var(--text-primary)",
                 transition: "background-color 0.2s ease",
                 whiteSpace: "nowrap",
               }}

@@ -1510,8 +1510,7 @@ body.theme-day select.input option {
 }
 
 .right-sidebar-project-item.active {
-  background: var(--accent-purple);
-  color: white;
+  background: var(--bg-elevated);
 }
 
 .right-sidebar-project-name {
