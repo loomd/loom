@@ -864,16 +864,12 @@ body.theme-day select.input option {
   overflow-y: auto;
   padding: 4px 12px 12px;
   scroll-behavior: smooth;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
 }
-.spawn-agent-list::-webkit-scrollbar {
-  width: 6px;
-}
-.spawn-agent-list::-webkit-scrollbar-track {
-  background: transparent;
-}
-.spawn-agent-list::-webkit-scrollbar-thumb {
-  background: var(--border-mid);
-  border-radius: 3px;
+.spawn-agent-list::-webkit-scrollbar,
+[data-tour-target="templates-section"]::-webkit-scrollbar {
+  display: none;
 }
 .spawn-agent-empty {
   text-align: center;

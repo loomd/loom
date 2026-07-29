@@ -214,7 +214,7 @@ const opencodeTermIdsRef = useRef<string[]>([]);
       <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', height: '100%' }}>
         {activeTabId === 'overview' && !showGrid && (
           <div style={{ flexGrow: 1, minHeight: 0, display: 'flex', flexDirection: 'row', gap: '24px', padding: '24px', position: 'relative', overflow: 'hidden' }}>
-<div data-tour-target="templates-section" style={{ flex: 1, minWidth: '180px', display: 'flex', flexDirection: 'column', gap: '16px', paddingTop: '2px', overflowY: 'auto' }}>
+<div data-tour-target="templates-section" style={{ flex: 1, minWidth: '180px', display: 'flex', flexDirection: 'column', gap: '16px', paddingTop: '2px', overflowY: 'auto', scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
 				<h3 style={{ margin: 0, fontSize: '1.0rem', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
 					{t('proj.launcher.title') || 'Quick Spawn'}
               </h3>

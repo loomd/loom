@@ -317,16 +317,6 @@ fn set_floating_sidebar_position(position: String) -> Result<(), String> {
 }
 
 #[tauri::command]
-fn get_sidebar_width() -> Result<u32, String> {
-    cstore::get_sidebar_width().map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-fn set_sidebar_width(width: u32) -> Result<(), String> {
-    cstore::set_sidebar_width(width).map_err(|e| e.to_string())
-}
-
-#[tauri::command]
 fn get_projects() -> Result<Vec<Project>, String> {
     cstore::get_projects().map_err(|e| e.to_string())
 }
