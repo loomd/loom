@@ -121,7 +121,7 @@ export default function Sidebar({
 									textOverflow: "ellipsis",
 									whiteSpace: "nowrap",
 									flexGrow: 1,
-									fontWeight: isActive ? 600 : 400,
+									fontWeight: 400,
 									pointerEvents: draggedIndex !== null ? "none" : "auto",
 									display: "inline-flex",
 									alignItems: "center",
