@@ -555,11 +555,11 @@ export function TerminalTab({ sessionId, cwd, command, args, env, isVisible, the
         width: '100%',
         height: '100%',
         backgroundColor: getOuterBg(theme),
-        padding: `4px 4px ${isTopInVerticalLayout ? '4px' : '28px'} 4px`,
+        padding: `0px`,
         margin: '0px',
         overflow: 'hidden',
         position: 'relative',
-        borderRadius: '6px',
+        borderRadius: '4px',
         border: '1px solid var(--border-subtle, #27272a)',
         boxSizing: 'border-box'
       }}
