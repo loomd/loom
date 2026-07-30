@@ -207,6 +207,13 @@ export const getFloatingSidebarPosition = (): Promise<string> =>
 export const setFloatingSidebarPosition = (position: string): Promise<void> =>
   invoke("set_floating_sidebar_position", { position });
 
+// ─── Bottom Panel Configurations ────────────────────────────
+export const getBottomPanelMode = (): Promise<string> =>
+  invoke("get_bottom_panel_mode");
+
+export const setBottomPanelMode = (mode: string): Promise<void> =>
+  invoke("set_bottom_panel_mode", { mode });
+
 // ─── Projects ─────────────────────────────────────────────
 export const getProjects = (): Promise<Project[]> => invoke("get_projects");
 

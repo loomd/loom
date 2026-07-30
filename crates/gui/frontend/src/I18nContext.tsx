@@ -393,6 +393,12 @@ const zhDict: Dictionary = {
 	"proj.rightSidebar.title": "项目切换",
 	"proj.floatingSidebar.left": "左侧",
 	"proj.floatingSidebar.right": "右侧",
+	"proj.floatingSidebar.bottom": "底部",
+	"proj.bottomPanel.title": "底部项目面板",
+	"proj.bottomPanel.enable": "启用底部项目面板",
+	"proj.bottomPanel.embedded": "嵌入",
+	"proj.bottomPanel.floating": "悬浮",
+	"proj.bottomPanel.mode": "面板模式",
 	"proj.sidebar.collapse.enable": "启用左侧侧边栏折叠",
 
 	// File Editor
@@ -874,6 +880,12 @@ const enDict: Dictionary = {
 	"proj.rightSidebar.title": "Project Switch",
 	"proj.floatingSidebar.left": "Left",
 	"proj.floatingSidebar.right": "Right",
+	"proj.floatingSidebar.bottom": "Bottom",
+	"proj.bottomPanel.title": "Bottom Project Panel",
+	"proj.bottomPanel.enable": "Enable Bottom Project Panel",
+	"proj.bottomPanel.embedded": "Embedded",
+	"proj.bottomPanel.floating": "Floating",
+	"proj.bottomPanel.mode": "Panel Mode",
 	"proj.sidebar.collapse.enable": "Enable Left Sidebar Collapse",
 
 	// File Editor

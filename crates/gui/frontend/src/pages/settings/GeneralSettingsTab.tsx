@@ -26,10 +26,12 @@ interface Props {
 	onSkipVersion?: (version: string) => void;
 	floatingSidebarEnabled: boolean;
 	onFloatingSidebarEnabledChange: (enabled: boolean) => void;
-	floatingSidebarPosition: "left" | "right";
-	onFloatingSidebarPositionChange: (position: "left" | "right") => void;
+	floatingSidebarPosition: "left" | "right" | "bottom";
+	onFloatingSidebarPositionChange: (position: "left" | "right" | "bottom") => void;
 	sidebarCollapseEnabled: boolean;
 	onSidebarCollapseEnabledChange: (enabled: boolean) => void;
+	bottomPanelMode: "embedded" | "floating";
+	onBottomPanelModeChange: (mode: "embedded" | "floating") => void;
 	onboarding: UseOnboardingReturn;
 }
 
@@ -62,6 +64,8 @@ export default function GeneralSettingsTab({
 	onFloatingSidebarPositionChange,
 	sidebarCollapseEnabled,
 	onSidebarCollapseEnabledChange,
+	bottomPanelMode,
+	onBottomPanelModeChange,
 	onboarding,
 }: Props) {
 	const { t, language, setLanguage } = useI18n();
@@ -816,7 +820,7 @@ export default function GeneralSettingsTab({
 									marginTop: "4px",
 								}}
 							>
-								选择悬浮侧边栏出现在窗口左侧或右侧
+								选择悬浮侧边栏出现在窗口左侧、右侧或底部
 							</div>
 						</div>
 						<div style={{ display: "flex", gap: "8px" }}>
@@ -868,8 +872,33 @@ export default function GeneralSettingsTab({
 									transition: "all 200ms ease",
 								}}
 							>
-								{t("proj.floatingSidebar.right")}
-							</button>
+							{t("proj.floatingSidebar.right")}
+						</button>
+						<button
+							onClick={() => onFloatingSidebarPositionChange("bottom")}
+							style={{
+								background:
+									floatingSidebarPosition === "bottom"
+										? "var(--accent-purple)"
+										: "var(--bg-elevated)",
+								border:
+									floatingSidebarPosition === "bottom"
+										? "1px solid var(--accent-purple)"
+										: "1px solid var(--border-mid)",
+								borderRadius: "6px",
+								padding: "6px 14px",
+								cursor: "pointer",
+								color:
+									floatingSidebarPosition === "bottom"
+										? "#ffffff"
+										: "var(--text-secondary)",
+								fontSize: "13px",
+								fontWeight: 500,
+								transition: "all 200ms ease",
+							}}
+						>
+							{t("proj.floatingSidebar.bottom")}
+						</button>
 						</div>
 					</div>
 
@@ -937,6 +966,92 @@ export default function GeneralSettingsTab({
 							/>
 						</button>
 					</div>
+
+					{floatingSidebarPosition === "bottom" && (
+						<div
+							style={{
+								display: "flex",
+								alignItems: "center",
+								justifyContent: "space-between",
+								marginTop: "16px",
+								paddingTop: "16px",
+								borderTop: "1px solid var(--border-subtle)",
+							}}
+						>
+							<div>
+								<div
+									style={{
+										fontSize: "14px",
+										fontWeight: 500,
+										color: "var(--text-primary)",
+									}}
+								>
+									{t("proj.bottomPanel.mode")}
+								</div>
+								<div
+									style={{
+										fontSize: "12px",
+										color: "var(--text-secondary)",
+										marginTop: "4px",
+									}}
+								>
+									嵌入模式固定显示；悬浮模式鼠标靠近底部时滑出
+								</div>
+							</div>
+							<div style={{ display: "flex", gap: "8px" }}>
+								<button
+									onClick={() => onBottomPanelModeChange("embedded")}
+									style={{
+										background:
+											bottomPanelMode === "embedded"
+												? "var(--accent-purple)"
+												: "var(--bg-elevated)",
+										border:
+											bottomPanelMode === "embedded"
+												? "1px solid var(--accent-purple)"
+												: "1px solid var(--border-mid)",
+										borderRadius: "6px",
+										padding: "6px 14px",
+										cursor: "pointer",
+										color:
+											bottomPanelMode === "embedded"
+												? "#ffffff"
+												: "var(--text-secondary)",
+										fontSize: "13px",
+										fontWeight: 500,
+										transition: "all 200ms ease",
+									}}
+								>
+									{t("proj.bottomPanel.embedded")}
+								</button>
+								<button
+									onClick={() => onBottomPanelModeChange("floating")}
+									style={{
+										background:
+											bottomPanelMode === "floating"
+												? "var(--accent-purple)"
+												: "var(--bg-elevated)",
+										border:
+											bottomPanelMode === "floating"
+												? "1px solid var(--accent-purple)"
+												: "1px solid var(--border-mid)",
+										borderRadius: "6px",
+										padding: "6px 14px",
+										cursor: "pointer",
+										color:
+											bottomPanelMode === "floating"
+												? "#ffffff"
+												: "var(--text-secondary)",
+										fontSize: "13px",
+										fontWeight: 500,
+										transition: "all 200ms ease",
+									}}
+								>
+									{t("proj.bottomPanel.floating")}
+								</button>
+							</div>
+						</div>
+					)}
 
 					{/* Autostart */}
 					<div

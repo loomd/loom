@@ -16,6 +16,7 @@ pub use manager::{
     set_update_check_interval, get_floating_sidebar_enabled, set_floating_sidebar_enabled,
     get_floating_sidebar_position, set_floating_sidebar_position,
     get_sidebar_width, set_sidebar_width,
+    get_bottom_panel_mode, set_bottom_panel_mode,
     import_cli_tool, import_global_doc_to_project,
     import_global_skill_to_project, kill_cli_instance, parse_local_skill_dir, read_agent_logs,
     reorder_cli_tools, reorder_projects, reorder_templates, run_cli_template, scan_and_classify_agents, create_agent_templates, scan_directory, toggle_cli_tool_agent,

@@ -2080,6 +2080,18 @@ pub fn set_sidebar_width(width: u32) -> Result<()> {
     Ok(())
 }
 
+pub fn get_bottom_panel_mode() -> Result<String> {
+    let config = load_config()?;
+    Ok(config.bottom_panel_mode.clone())
+}
+
+pub fn set_bottom_panel_mode(mode: String) -> Result<()> {
+    let mut config = load_config()?;
+    config.bottom_panel_mode = mode;
+    save_config(&config)?;
+    Ok(())
+}
+
 pub fn get_global_env_vars() -> Result<Vec<GlobalEnvVar>> {
     let config = load_config()?;
     Ok(config.env_vars.clone())

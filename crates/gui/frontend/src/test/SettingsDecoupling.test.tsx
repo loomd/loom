@@ -55,6 +55,8 @@ describe("GeneralSettingsTab", () => {
     onFloatingSidebarPositionChange: vi.fn(),
     sidebarCollapseEnabled: false,
     onSidebarCollapseEnabledChange: vi.fn(),
+    bottomPanelMode: "embedded" as const,
+    onBottomPanelModeChange: vi.fn(),
     onboarding: {
       state: {
         showWizard: false,
@@ -244,6 +246,8 @@ describe("SettingsPage", () => {
     onFloatingSidebarPositionChange: vi.fn(),
     sidebarCollapseEnabled: false,
     onSidebarCollapseEnabledChange: vi.fn(),
+    bottomPanelMode: "embedded" as const,
+    onBottomPanelModeChange: vi.fn(),
     onboarding: {
       state: {
         showWizard: false,

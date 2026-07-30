@@ -28,10 +28,12 @@ interface Props {
 	onSkipVersion?: (version: string) => void;
 	floatingSidebarEnabled: boolean;
 	onFloatingSidebarEnabledChange: (enabled: boolean) => void;
-	floatingSidebarPosition: "left" | "right";
-	onFloatingSidebarPositionChange: (position: "left" | "right") => void;
+	floatingSidebarPosition: "left" | "right" | "bottom";
+	onFloatingSidebarPositionChange: (position: "left" | "right" | "bottom") => void;
 	sidebarCollapseEnabled: boolean;
 	onSidebarCollapseEnabledChange: (enabled: boolean) => void;
+	bottomPanelMode: "embedded" | "floating";
+	onBottomPanelModeChange: (mode: "embedded" | "floating") => void;
 	onboarding: UseOnboardingReturn;
 }
 
@@ -56,6 +58,8 @@ export default function SettingsPage({
 		onFloatingSidebarPositionChange,
 		sidebarCollapseEnabled,
 		onSidebarCollapseEnabledChange,
+		bottomPanelMode,
+		onBottomPanelModeChange,
 		onboarding,
 	}: Props) {
 	const { t } = useI18n();
@@ -159,6 +163,8 @@ export default function SettingsPage({
 						onFloatingSidebarPositionChange={onFloatingSidebarPositionChange}
 						sidebarCollapseEnabled={sidebarCollapseEnabled}
 						onSidebarCollapseEnabledChange={onSidebarCollapseEnabledChange}
+						bottomPanelMode={bottomPanelMode}
+						onBottomPanelModeChange={onBottomPanelModeChange}
 						onboarding={onboarding}
 					/>
 				)}

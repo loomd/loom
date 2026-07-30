@@ -317,6 +317,16 @@ fn set_floating_sidebar_position(position: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn get_bottom_panel_mode() -> Result<String, String> {
+    cstore::get_bottom_panel_mode().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn set_bottom_panel_mode(mode: String) -> Result<(), String> {
+    cstore::set_bottom_panel_mode(mode).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 fn get_projects() -> Result<Vec<Project>, String> {
     cstore::get_projects().map_err(|e| e.to_string())
 }
@@ -1163,6 +1173,17 @@ fn execute_test_command(cmd: &str, args_json: &str) -> Result<String, String> {
             set_floating_sidebar_position(position.to_string())?;
             Ok("null".to_string())
         }
+        "get_bottom_panel_mode" => {
+            let res = get_bottom_panel_mode()?;
+            serde_json::to_string(&res).map_err(|e| e.to_string())
+        }
+        "set_bottom_panel_mode" => {
+            let mode = args["mode"]
+                .as_str()
+                .ok_or_else(|| "Missing argument 'mode'".to_string())?;
+            set_bottom_panel_mode(mode.to_string())?;
+            Ok("null".to_string())
+        }
         "get_global_env_vars" => {
             let res = get_global_env_vars()?;
             serde_json::to_string(&res).map_err(|e| e.to_string())
@@ -1671,6 +1692,8 @@ std::thread::spawn(|| {
             set_floating_sidebar_enabled,
             get_floating_sidebar_position,
             set_floating_sidebar_position,
+            get_bottom_panel_mode,
+            set_bottom_panel_mode,
             log_frontend,
             get_projects,
             create_project,

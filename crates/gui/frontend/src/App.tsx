@@ -12,12 +12,13 @@ import UpdateToast from "./components/UpdateToast";
 import NewProjectModal from "./components/NewProjectModal";
 import OnboardingWizard from "./components/OnboardingWizard";
 import SpawnAgentPanel from "./components/SpawnAgentPanel";
+import BottomPanel from "./components/BottomPanel";
 import { useProjects } from "./hooks/useProjects";
 import { useTheme } from "./hooks/useTheme";
 import { useUpdateChecker } from "./hooks/useUpdateChecker";
 import { useOnboarding } from "./hooks/useOnboarding";
 import { useProjectCompositeStates } from "./hooks/useProjectCompositeStates";
-import { getFloatingSidebarEnabled, setFloatingSidebarEnabled as apiSetFloatingSidebarEnabled, getFloatingSidebarPosition, setFloatingSidebarPosition as apiSetFloatingSidebarPosition, getSidebarWidth, setSidebarWidth as setSidebarWidthBackend } from "./api";
+import { getFloatingSidebarEnabled, setFloatingSidebarEnabled as apiSetFloatingSidebarEnabled, getFloatingSidebarPosition, setFloatingSidebarPosition as apiSetFloatingSidebarPosition, getSidebarWidth, setSidebarWidth as setSidebarWidthBackend, getBottomPanelMode, setBottomPanelMode as apiSetBottomPanelMode } from "./api";
 import type { Template } from "./types";
 
 type Page = "workspace" | "settings";
@@ -89,11 +90,17 @@ function App() {
 	});
 	const [showSpawnPanel, setShowSpawnPanel] = useState(false);
 
-	const [floatingSidebarPosition, setFloatingSidebarPosition] = useState<"left" | "right">(() => {
+	const [floatingSidebarPosition, setFloatingSidebarPosition] = useState<"left" | "right" | "bottom">(() => {
 		const saved = safeGetItem("loom_floating_sidebar_position");
-		if (saved === "left" || saved === "right") return saved;
+		if (saved === "left" || saved === "right" || saved === "bottom") return saved;
 		return "right";
 	});
+	const [bottomPanelMode, setBottomPanelMode] = useState<"embedded" | "floating">(() => {
+		const saved = safeGetItem("loom_bottom_panel_mode");
+		if (saved === "embedded" || saved === "floating") return saved;
+		return "embedded";
+	});
+	const [bottomPanelHeight, setBottomPanelHeight] = useState<number>(50);
 
 	useEffect(() => {
 		safeSetItem("loom_sidebar_width", sidebarWidth.toString());
@@ -103,6 +110,7 @@ function App() {
 	useEffect(() => { safeSetItem("loom_sidebar_collapse_enabled", sidebarCollapseEnabled.toString()); }, [sidebarCollapseEnabled]);
 	useEffect(() => { safeSetItem("loom_floating_sidebar_enabled", floatingSidebarEnabled.toString()); }, [floatingSidebarEnabled]);
 	useEffect(() => { safeSetItem("loom_floating_sidebar_position", floatingSidebarPosition); }, [floatingSidebarPosition]);
+	useEffect(() => { safeSetItem("loom_bottom_panel_mode", bottomPanelMode); }, [bottomPanelMode]);
 
 	// Load sidebar width from Rust file-backed config on mount
 	useEffect(() => {
@@ -118,7 +126,12 @@ function App() {
 			.catch(() => {});
 		getFloatingSidebarPosition()
 			.then((pos) => {
-				if (pos === "left" || pos === "right") setFloatingSidebarPosition(pos);
+				if (pos === "left" || pos === "right" || pos === "bottom") setFloatingSidebarPosition(pos);
+			})
+			.catch(() => {});
+		getBottomPanelMode()
+			.then((mode) => {
+				if (mode === "embedded" || mode === "floating") setBottomPanelMode(mode);
 			})
 			.catch(() => {});
 	}, []);
@@ -185,10 +198,17 @@ function App() {
 		setSidebarCollapseEnabled(enabled);
 	}, [floatingSidebarEnabled, toast]);
 
-	const handleFloatingSidebarPositionChange = useCallback((position: "left" | "right") => {
+	const handleFloatingSidebarPositionChange = useCallback((position: "left" | "right" | "bottom") => {
 		setFloatingSidebarPosition(position);
 		apiSetFloatingSidebarPosition(position).catch((err) =>
 			console.error("Failed to persist floating sidebar position:", err)
+		);
+	}, []);
+
+	const handleBottomPanelModeChange = useCallback((mode: "embedded" | "floating") => {
+		setBottomPanelMode(mode);
+		apiSetBottomPanelMode(mode).catch((err) =>
+			console.error("Failed to persist bottom panel mode:", err)
 		);
 	}, []);
 
@@ -271,18 +291,20 @@ function App() {
 							{p.projects.length === 0 ? <EmptyState onAdd={() => p.setShowModal(true)} t={t} /> : (
 								p.projects.map((proj) => (
 									<div key={proj.id} style={{ display: proj.id === p.selectedProjectId ? "flex" : "none", flexDirection: "column", flex: 1, minHeight: 0, overflow: "hidden" }}>
-										<ProjectWorkspace isSidebarCollapsed={actualCollapsed} onToggleSidebar={sidebarCollapseEnabled ? () => setIsCollapsed(!isCollapsed) : undefined} project={proj} isVisible={page === "workspace" && proj.id === p.selectedProjectId} onUnregisterProject={p.handleUnregisterProject} theme={theme.theme} />
+										<ProjectWorkspace isSidebarCollapsed={actualCollapsed} onToggleSidebar={sidebarCollapseEnabled ? () => setIsCollapsed(!isCollapsed) : undefined} project={proj} isVisible={page === "workspace" && proj.id === p.selectedProjectId} onUnregisterProject={p.handleUnregisterProject} theme={theme.theme} bottomPanelEmbedded={floatingSidebarEnabled && floatingSidebarPosition === "bottom" && bottomPanelMode === "embedded"} bottomPanelHeight={floatingSidebarEnabled && floatingSidebarPosition === "bottom" && bottomPanelMode === "embedded" ? bottomPanelHeight : 0} />
 									</div>
 								))
 							)}
 						</div>
 						<div style={{ display: page === "settings" ? "flex" : "none", flexDirection: "column", flex: 1, minHeight: 0, overflow: "hidden" }}>
-							<SettingsPage theme={theme.theme} onThemeChange={theme.handleThemeChange} projectColumnAlign={theme.projectColumnAlign} onProjectColumnAlignChange={theme.handleProjectColumnAlignChange} fontFamily={theme.fontFamily} fontSize={theme.fontSize} onFontFamilyChange={theme.handleFontFamilyChange} onFontSizeChange={theme.handleFontSizeChange} updateInfo={updater.updateInfo} onCheckUpdate={updater.performUpdateCheck} onInstallUpdate={updater.handleInstallUpdate} onSkipVersion={updater.handleSkipVersion} floatingSidebarEnabled={floatingSidebarEnabled} onFloatingSidebarEnabledChange={handleFloatingSidebarEnabledChange} floatingSidebarPosition={floatingSidebarPosition} onFloatingSidebarPositionChange={handleFloatingSidebarPositionChange} sidebarCollapseEnabled={sidebarCollapseEnabled} onSidebarCollapseEnabledChange={handleSidebarCollapseEnabledChange} onboarding={onboarding} />
+							<SettingsPage theme={theme.theme} onThemeChange={theme.handleThemeChange} projectColumnAlign={theme.projectColumnAlign} onProjectColumnAlignChange={theme.handleProjectColumnAlignChange} fontFamily={theme.fontFamily} fontSize={theme.fontSize} onFontFamilyChange={theme.handleFontFamilyChange} onFontSizeChange={theme.handleFontSizeChange} updateInfo={updater.updateInfo} onCheckUpdate={updater.performUpdateCheck} onInstallUpdate={updater.handleInstallUpdate} onSkipVersion={updater.handleSkipVersion} floatingSidebarEnabled={floatingSidebarEnabled} onFloatingSidebarEnabledChange={handleFloatingSidebarEnabledChange} floatingSidebarPosition={floatingSidebarPosition} onFloatingSidebarPositionChange={handleFloatingSidebarPositionChange} sidebarCollapseEnabled={sidebarCollapseEnabled} onSidebarCollapseEnabledChange={handleSidebarCollapseEnabledChange} bottomPanelMode={bottomPanelMode} onBottomPanelModeChange={handleBottomPanelModeChange} onboarding={onboarding} />
 						</div>
 					</>
 				}
 				rightSidebar={
-					<RightSidebar projects={p.projects} selectedProjectId={p.selectedProjectId} onProjectSelect={(id) => navigateToPage(id, "workspace")} enabled={floatingSidebarEnabled} position={floatingSidebarPosition} page={page} onNavigate={setPage} onRegisterProject={() => p.setShowModal(true)} compositeStates={compositeStates} />
+					floatingSidebarPosition !== "bottom" ? (
+						<RightSidebar projects={p.projects} selectedProjectId={p.selectedProjectId} onProjectSelect={(id) => navigateToPage(id, "workspace")} enabled={floatingSidebarEnabled} position={floatingSidebarPosition} page={page} onNavigate={setPage} onRegisterProject={() => p.setShowModal(true)} compositeStates={compositeStates} />
+					) : undefined
 				}
 				isCollapsed={actualCollapsed} sidebarWidth={sidebarWidth}
 				onResizerMouseDown={handleMouseDown} onResizerDoubleClick={handleDoubleClick}
@@ -305,6 +327,19 @@ function App() {
 					onClose={() => setShowSpawnPanel(false)}
 				/>
 			)}
+			<BottomPanel
+				enabled={floatingSidebarEnabled && floatingSidebarPosition === "bottom"}
+				mode={bottomPanelMode}
+				sidebarWidth={actualCollapsed ? 0 : sidebarWidth}
+				projects={p.projects}
+				selectedProjectId={p.selectedProjectId}
+				onProjectSelect={(id) => navigateToPage(id, "workspace")}
+				compositeStates={compositeStates}
+				onNavigate={setPage}
+				onRegisterProject={() => p.setShowModal(true)}
+				onHeightChange={(h: number) => setBottomPanelHeight(h)}
+				page={page}
+			/>
 		</div>
 	);
 }

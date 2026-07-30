@@ -19,9 +19,11 @@ interface Props {
   theme?: 'dark' | 'day' | 'gray';
   isSidebarCollapsed?: boolean;
   onToggleSidebar?: () => void;
+  bottomPanelEmbedded?: boolean;
+  bottomPanelHeight?: number;
 }
 
-export default function ProjectWorkspace({ project, isVisible, onUnregisterProject, theme, isSidebarCollapsed, onToggleSidebar }: Props) {
+export default function ProjectWorkspace({ project, isVisible, onUnregisterProject, theme, isSidebarCollapsed, onToggleSidebar, bottomPanelEmbedded, bottomPanelHeight }: Props) {
   const { t } = useI18n();
   const toast = useToast();
   const tabsState = useTabs(project.root_path);
@@ -211,7 +213,7 @@ const opencodeTermIdsRef = useRef<string[]>([]);
         </div>
       </div>
 
-      <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', height: '100%' }}>
+      <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', height: '100%', paddingBottom: bottomPanelEmbedded ? `${bottomPanelHeight}px` : 0, overflow: 'hidden' }}>
         {activeTabId === 'overview' && !showGrid && (
           <div style={{ flexGrow: 1, minHeight: 0, display: 'flex', flexDirection: 'row', gap: '24px', padding: '24px', position: 'relative', overflow: 'hidden' }}>
 <div data-tour-target="templates-section" style={{ flex: 1, minWidth: '180px', display: 'flex', flexDirection: 'column', gap: '16px', paddingTop: '2px', overflowY: 'auto', scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
