@@ -32,15 +32,41 @@ export default function BottomPanel({
 }: BottomPanelProps) {
   const { t } = useI18n();
   const [isVisible, setIsVisible] = useState(false);
+  const [rowCount, setRowCount] = useState(1);
   const panelRef = useRef<HTMLDivElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
   const hideTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Measure actual panel height via DOM
+  const calcRows = useCallback(() => {
+    const el = listRef.current;
+    if (!el) return;
+    const items = el.children;
+    if (items.length === 0) { setRowCount(1); return; }
+    let rows = 1;
+    let prevTop = (items[0] as HTMLElement).offsetTop;
+    for (let i = 1; i < items.length; i++) {
+      const top = (items[i] as HTMLElement).offsetTop;
+      if (top > prevTop) { rows++; prevTop = top; }
+    }
+    setRowCount(rows);
+  }, []);
+
+  useEffect(() => { calcRows(); }, [projects, calcRows]);
+
   useEffect(() => {
-    if (!panelRef.current || !onHeightChange || !enabled) return;
-    const h = panelRef.current.clientHeight;
-    onHeightChange(h);
-  }, [projects, mode, onHeightChange, enabled]);
+    const el = listRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(calcRows);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [calcRows]);
+
+  const panelHeight = rowCount <= 1 ? 45 : 78;
+
+  useEffect(() => {
+    if (!onHeightChange || !enabled) return;
+    onHeightChange(panelHeight);
+  }, [panelHeight, onHeightChange, enabled]);
 
   const isEmbedded = mode === "embedded";
   const showPanel = isEmbedded || isVisible;
@@ -96,9 +122,9 @@ export default function BottomPanel({
           bottom: 0,
           left: `${sidebarWidth}px`,
           right: 0,
-          height: "auto",
-          minHeight: "50px",
-          maxHeight: "92px",
+          height: `${panelHeight}px`,
+          minHeight: `${panelHeight}px`,
+          maxHeight: `${panelHeight}px`,
           background: "var(--bg-card)",
           backdropFilter: "blur(20px)",
           zIndex: 10000,
@@ -112,82 +138,83 @@ export default function BottomPanel({
           boxSizing: "border-box",
         }}
     >
-      {/* Plus (top) & Gear (bottom) */}
-      <div
-        style={{
-          width: "30px",
-          display: "flex",
-          flexDirection: "column",
-          justifyContent: "center",
-          alignItems: "center",
-          gap: "6px",
-          padding: "0 2px",
-        }}
-      >
-        {onRegisterProject && (
-          <button
-            onClick={onRegisterProject}
-            style={{
-              padding: "2px",
-              cursor: "pointer",
-              borderRadius: "4px",
-              background: "transparent",
-              color: "var(--text-secondary)",
-              border: "none",
-              transition: "background-color 0.2s ease",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-            }}
-            title="注册"
-          >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-              <line x1="12" y1="4" x2="12" y2="20"/>
-              <line x1="4" y1="12" x2="20" y2="12"/>
-            </svg>
-          </button>
-        )}
-        {onNavigate && (
-          <button
-            onClick={() => onNavigate("settings")}
-            style={{
-              padding: "2px",
-              cursor: "pointer",
-              borderRadius: "4px",
-              background: page === "settings" ? "var(--accent-purple)" : "transparent",
-              color: page === "settings" ? "white" : "var(--text-secondary)",
-              border: "none",
-              transition: "background-color 0.2s ease",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-            }}
-            title="设置"
-          >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z"/>
-              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
-            </svg>
-          </button>
-        )}
-      </div>
-
       {/* Projects list */}
       <div
+        ref={listRef}
         style={{
           flex: 1,
           display: "flex",
           flexWrap: "wrap",
           alignItems: "center",
-          alignContent: "center",
-          gap: "2px 4px",
-          padding: "4px 12px",
-          overflowY: "auto",
+          alignContent: rowCount >= 3 ? "flex-start" : "center",
+          gap: "4px 4px",
+             padding: "7px 8px 10px 8px",
+           overflowY: rowCount >= 3 ? "auto" : "hidden",
           scrollbarWidth: "none",
           msOverflowStyle: "none",
           boxSizing: "border-box",
         }}
       >
+        <div style={{ display: "inline-flex", gap: 0, marginRight: "-4px" }}>
+          {onRegisterProject && (
+            <div
+              onClick={onRegisterProject}
+              style={{
+                flexShrink: 0,
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+                padding: "4px 6px",
+                height: "28px",
+                cursor: "pointer",
+                borderRadius: "6px",
+                background: "transparent",
+                color: "var(--text-secondary)",
+                transition: "background-color 0.2s ease",
+                border: "1px solid transparent",
+              }}
+              title={t("proj.register")}
+              onMouseEnter={(e) => { e.currentTarget.style.background = "var(--bg-elevated)"; }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+                <line x1="12" y1="4" x2="12" y2="20"/>
+                <line x1="4" y1="12" x2="20" y2="12"/>
+              </svg>
+            </div>
+          )}
+          {onNavigate && (
+            <div
+              onClick={() => onNavigate("settings")}
+              style={{
+                flexShrink: 0,
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+                padding: "4px 6px",
+                height: "28px",
+                cursor: "pointer",
+                borderRadius: "6px",
+                background: page === "settings" ? "var(--accent-purple)" : "transparent",
+                color: page === "settings" ? "white" : "var(--text-secondary)",
+                transition: "background-color 0.2s ease",
+                border: "1px solid transparent",
+              }}
+              title={t("settings")}
+              onMouseEnter={(e) => {
+                if (page !== "settings") e.currentTarget.style.background = "var(--bg-elevated)";
+              }}
+              onMouseLeave={(e) => {
+                if (page !== "settings") e.currentTarget.style.background = "transparent";
+              }}
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z"/>
+                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+              </svg>
+            </div>
+          )}
+        </div>
         {projects.length === 0 && (
           <span
             style={{
@@ -210,7 +237,8 @@ export default function BottomPanel({
                 display: "inline-flex",
                 alignItems: "center",
                 gap: "8px",
-                padding: "8px 14px",
+                padding: "4px 10px",
+                height: "28px",
                 cursor: "pointer",
                 overflow: "hidden",
                 fontSize: "13px",
@@ -233,13 +261,13 @@ export default function BottomPanel({
                 }
               }}
             >
-              <span
-                className={`project-status-text${compositeStates[project.id] ? ` ${compositeStates[project.id]}` : ""}`}
-                style={{
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                  whiteSpace: "nowrap",
-                }}
+               <span
+                 className={`project-status-text${compositeStates[project.id] ? ` ${compositeStates[project.id]}` : ""}`}
+                 style={{
+                   overflow: "hidden",
+                   textOverflow: "ellipsis",
+                   whiteSpace: "nowrap",
+                 }}
                 title={project.name}
               >
                 {project.name}
