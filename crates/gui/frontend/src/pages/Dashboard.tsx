@@ -3,6 +3,7 @@ import { getCliTools, scanPathEnv, deleteCliTool, assignCliCategory, importCliTo
 import type { CliTool, Category } from '../types';
 import { useToast } from '../ToastContext';
 import { useI18n } from '../I18nContext';
+import { useDialog } from '../DialogContext';
 
 interface Props {
   categories: Category[];
@@ -19,6 +20,7 @@ export default function Dashboard({ categories, onToolsChange, onSelectTool, sel
   const [search, setSearch] = useState('');
   const [filterCat, setFilterCat] = useState('');
   const toast = useToast();
+  const dialog = useDialog();
 
   const load = useCallback(async () => {
     try {
@@ -49,7 +51,10 @@ export default function Dashboard({ categories, onToolsChange, onSelectTool, sel
   };
 
   const handleImport = async () => {
-    const path = prompt(t('db.prompt.import'));
+    const path = await dialog.prompt({
+      title: t('db.prompt.import'),
+      placeholder: "D:\\path\\to\\tool.exe",
+    });
     if (!path) return;
     try {
       await importCliTool(path.trim());
@@ -63,7 +68,8 @@ export default function Dashboard({ categories, onToolsChange, onSelectTool, sel
 
   const handleDelete = async (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
-    if (!confirm(t('db.confirm.remove'))) return;
+    const ok = await dialog.confirm({ message: t('db.confirm.remove'), danger: true });
+    if (!ok) return;
     try {
       await deleteCliTool(id);
       await load();

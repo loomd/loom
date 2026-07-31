@@ -668,6 +668,103 @@ body.theme-day select.input option {
 }
 .form-row { display: flex; gap: 12px; align-items: flex-end; }
 
+/* ─── Dialog (custom confirm/prompt) ────────────────────── */
+.dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  animation: dialog-backdrop-in 200ms var(--ease-spring);
+}
+
+.dialog-shell {
+  padding: 3px;
+  border-radius: calc(var(--radius-xl) + 4px);
+  background: linear-gradient(160deg, rgba(255, 255, 255, 0.09), rgba(255, 255, 255, 0.02) 45%, rgba(255, 255, 255, 0.05));
+  box-shadow: 0 32px 80px -24px rgba(0, 0, 0, 0.65), 0 0 0 1px rgba(255, 255, 255, 0.04);
+  animation: dialog-pop-in 260ms var(--ease-spring);
+}
+
+.dialog-card {
+  background: var(--bg-modal);
+  border-radius: var(--radius-xl);
+  padding: 26px 26px 22px;
+  width: min(400px, calc(100vw - 48px));
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+.dialog-icon {
+  width: 46px;
+  height: 46px;
+  border-radius: 15px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--accent-purple);
+  background: var(--accent-purple-dim);
+  border: 1px solid rgba(139, 92, 246, 0.25);
+  flex-shrink: 0;
+}
+
+.dialog-icon.danger {
+  color: var(--accent-red);
+  background: rgba(239, 68, 68, 0.12);
+  border-color: rgba(239, 68, 68, 0.25);
+}
+
+.dialog-title {
+  font-size: var(--fs-16);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--text-primary);
+  line-height: 1.3;
+}
+
+.dialog-message {
+  font-size: var(--fs-13);
+  line-height: 1.65;
+  color: var(--text-secondary);
+  white-space: pre-line;
+}
+
+.dialog-input {
+  width: 100%;
+  margin-top: 2px;
+}
+
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.dialog-actions .btn {
+  min-width: 84px;
+  padding: 8px 18px;
+  border-radius: var(--radius-pill);
+  justify-content: center;
+}
+
+@keyframes dialog-backdrop-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes dialog-pop-in {
+  from { opacity: 0; transform: translateY(12px) scale(0.96); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+
 /* ─── Status Badges ──────────────────────────────────────── */
 .badge {
   display: inline-flex;

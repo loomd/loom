@@ -3,6 +3,7 @@ import { killCliInstance } from '../api';
 import type { RunningInstance } from '../types';
 import { useToast } from '../ToastContext';
 import { useI18n } from '../I18nContext';
+import { useDialog } from '../DialogContext';
 
 interface Props {
   instances: RunningInstance[];
@@ -15,6 +16,7 @@ export default function InstancesPage({ instances, onInstancesChange }: Props) {
   const [now, setNow] = useState(() => Date.now());
   const logEndRef = useRef<HTMLDivElement>(null);
   const toast = useToast();
+  const dialog = useDialog();
 
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 1000);
@@ -27,7 +29,8 @@ export default function InstancesPage({ instances, onInstancesChange }: Props) {
   }, [instances.find(i => i.instance_id === selectedId)?.logs.length]);
 
   const handleKill = async (instanceId: string) => {
-    if (!confirm(t('inst.confirm.terminate'))) return;
+    const ok = await dialog.confirm({ message: t('inst.confirm.terminate'), danger: true });
+    if (!ok) return;
     try {
       await killCliInstance(instanceId);
       toast.success(t('inst.toast.terminated'));

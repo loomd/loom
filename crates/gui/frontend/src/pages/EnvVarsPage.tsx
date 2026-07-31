@@ -8,6 +8,7 @@ import {
 import type { GlobalEnvVar } from '../types';
 import { useToast } from '../ToastContext';
 import { useI18n } from '../I18nContext';
+import { useDialog } from '../DialogContext';
 
 // Group flat list by key
 function groupByKey(vars: GlobalEnvVar[]): Map<string, GlobalEnvVar[]> {
@@ -34,6 +35,7 @@ export default function EnvVarsPage() {
   const [modalDesc, setModalDesc] = useState('');
   const [saving, setSaving] = useState(false);
   const toast = useToast();
+  const dialog = useDialog();
 
   const load = async () => {
     try {
@@ -87,7 +89,8 @@ export default function EnvVarsPage() {
   };
 
   const handleDelete = async (id: string, key: string) => {
-    if (!confirm(t('temp.confirm.delete', { name: key }))) return;
+    const ok = await dialog.confirm({ message: t('temp.confirm.delete', { name: key }), danger: true });
+    if (!ok) return;
     try {
       await deleteGlobalEnvVar(id);
       load();

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { useI18n } from "../../I18nContext";
 import { useToast } from "../../ToastContext";
+import { useDialog } from "../../DialogContext";
 import {
 	getCliTools,
 	deleteCliTool,
@@ -23,6 +24,7 @@ const OTHER_TOOLS_PAGE_SIZE = 50;
 export default function CliToolsTab() {
 	const { t } = useI18n();
 	const toast = useToast();
+	const dialog = useDialog();
 	const [cliTools, setCliTools] = useState<CliTool[]>([]);
 	const [categories, setCategories] = useState<Category[]>([]);
 	const [templates, setTemplates] = useState<Template[]>([]);
@@ -155,7 +157,10 @@ export default function CliToolsTab() {
 	};
 
 	const handleImportTool = async () => {
-		const path = prompt(t("db.prompt.import"));
+		const path = await dialog.prompt({
+			title: t("db.prompt.import"),
+			placeholder: "D:\\path\\to\\tool.exe",
+		});
 		if (!path) return;
 		try {
 			await importCliTool(path.trim());
@@ -169,7 +174,8 @@ export default function CliToolsTab() {
 
 	const handleDeleteTool = async (e: React.MouseEvent, id: string) => {
 		e.stopPropagation();
-		if (!confirm(t("db.confirm.remove"))) return;
+		const ok = await dialog.confirm({ message: t("db.confirm.remove"), danger: true });
+		if (!ok) return;
 		try {
 			await deleteCliTool(id);
 			if (selectedTool?.id === id) {
@@ -208,7 +214,8 @@ export default function CliToolsTab() {
 	};
 
 	const handleDeleteTemplate = async (id: string, name: string) => {
-		if (!confirm(t("temp.confirm.delete", { name }))) return;
+		const ok = await dialog.confirm({ message: t("temp.confirm.delete", { name }), danger: true });
+		if (!ok) return;
 		try {
 			await deleteTemplate(id);
 			await loadToolsAndTemplates();
@@ -221,7 +228,8 @@ export default function CliToolsTab() {
 
 	const handleDeleteAgent = async (e: React.MouseEvent, toolId: string, toolName: string) => {
 		e.stopPropagation();
-		if (!confirm(t("db.confirm.deleteAgent", { name: toolName }))) return;
+		const ok = await dialog.confirm({ message: t("db.confirm.deleteAgent", { name: toolName }), danger: true });
+		if (!ok) return;
 		try {
 			await deleteAiAgent(toolId);
 			await loadToolsAndTemplates();

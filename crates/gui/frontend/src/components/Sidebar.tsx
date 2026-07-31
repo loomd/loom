@@ -61,7 +61,7 @@ export default function Sidebar({
 					msOverflowStyle: "none",
 				}}
 			>
-				{projects.length === 0 ? (
+				{projects.length === 0 && (
 					<div
 						style={{
 							padding: "12px 8px",
@@ -72,8 +72,8 @@ export default function Sidebar({
 					>
 						No projects linked
 					</div>
-				) : (
-					projects.map((p, index) => {
+				)}
+				{projects.map((p, index) => {
 						const isActive = page === "workspace" && selectedProjectId === p.id;
 						const isDragging = index === draggedIndex;
 						const isDragOver = index === dragOverIndex;
@@ -133,70 +133,74 @@ export default function Sidebar({
 							</span>
 							</button>
 						);
-					})
-				)}
-			</div>
+					})}
 
-			<div
-				style={{
-					padding: "2px 0",
-					display: "flex",
-					flexDirection: "column",
-					alignItems: "center",
-				}}
-			>
-				<div
-					data-tour-target="new-project-btn"
+				<button
+					className="nav-item"
 					onClick={onAddClick}
 					style={{
-						padding: "6px 8px",
+						width: "100%",
+						textAlign: "left",
+						border: "1px solid transparent",
 						cursor: "pointer",
-						fontSize: "13px",
-						borderRadius: "4px",
-						margin: "0 4px",
-						color: "var(--text-primary)",
-						transition: "background-color 0.2s ease",
 						display: "flex",
 						alignItems: "center",
-						gap: "6px",
-						width: "100%",
-						boxSizing: "border-box",
+						gap: "8px",
+						padding: "8px 8px",
+						borderRadius: "var(--radius-sm)",
+						transition:
+							"opacity 0.2s ease, transform 0.2s ease, border-color 0.2s ease, background-color 0.2s ease",
 					}}
-					onMouseEnter={(e) => { e.currentTarget.style.background = "var(--bg-elevated)"; }}
-					onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
 				>
-					<span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+					<span
+						style={{
+							overflow: "hidden",
+							textOverflow: "ellipsis",
+							whiteSpace: "nowrap",
+							flexGrow: 1,
+							fontWeight: 400,
+							display: "inline-flex",
+							alignItems: "center",
+							lineHeight: "1.2",
+							gap: "6px",
+						}}
+					>
 						{t("proj.sidebar.add")}
 					</span>
-				</div>
-				<div
+				</button>
+				<button
+					className={`nav-item${page === "settings" ? " active" : ""}`}
 					onClick={onSettingsClick}
 					style={{
-						padding: "6px 8px",
+						width: "100%",
+						textAlign: "left",
+						border: "1px solid transparent",
 						cursor: "pointer",
-						fontSize: "13px",
-						borderRadius: "4px",
-						margin: "0 4px",
-						background: page === "settings" ? "var(--accent-purple)" : "transparent",
-						color: page === "settings" ? "white" : "var(--text-primary)",
-						transition: "background-color 0.2s ease",
 						display: "flex",
 						alignItems: "center",
-						gap: "6px",
-						width: "100%",
-						boxSizing: "border-box",
-					}}
-					onMouseEnter={(e) => {
-						if (page !== "settings") e.currentTarget.style.background = "var(--bg-elevated)";
-					}}
-					onMouseLeave={(e) => {
-						if (page !== "settings") e.currentTarget.style.background = "transparent";
+						gap: "8px",
+						padding: "8px 8px",
+						borderRadius: "var(--radius-sm)",
+						transition:
+							"opacity 0.2s ease, transform 0.2s ease, border-color 0.2s ease, background-color 0.2s ease",
 					}}
 				>
-					<span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+					<span
+						style={{
+							overflow: "hidden",
+							textOverflow: "ellipsis",
+							whiteSpace: "nowrap",
+							flexGrow: 1,
+							fontWeight: 400,
+							display: "inline-flex",
+							alignItems: "center",
+							lineHeight: "1.2",
+							gap: "6px",
+						}}
+					>
 						{t("nav.settings")}
 					</span>
-				</div>
+				</button>
 			</div>
 		</aside>
 	);

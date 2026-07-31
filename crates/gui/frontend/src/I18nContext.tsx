@@ -338,7 +338,9 @@ const zhDict: Dictionary = {
 	"proj.modal.path": "项目根目录",
 	"proj.modal.pathPlaceholder": "例如：D:\\Develop\\my-app",
 	"proj.modal.btn.cancel": "取消",
+	"proj.modal.btn.delete": "删除",
 	"proj.modal.btn.create": "注册",
+	"dialog.btn.confirm": "确定",
 	"proj.empty.noProjects": "暂无项目",
 	"proj.empty.desc":
 		"关联您的本地开发项目，即可开始集中监管项目下的 CLI Agent。",
@@ -824,7 +826,9 @@ const enDict: Dictionary = {
 	"proj.modal.path": "Project Root Path",
 	"proj.modal.pathPlaceholder": "e.g. D:\\Develop\\my-app",
 	"proj.modal.btn.cancel": "Cancel",
+	"proj.modal.btn.delete": "Delete",
 	"proj.modal.btn.create": "Register",
+	"dialog.btn.confirm": "Confirm",
 	"proj.empty.noProjects": "No Projects Registered",
 	"proj.empty.desc":
 		"Associate local development directories to manage and supervise CLI agents under them.",

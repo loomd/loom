@@ -20,6 +20,7 @@ import {
 import type { FileEntry } from '../api';
 import type { Project, CliTool, Template, ProjectSkill, AgentDoc, GlobalSkillTemplate, GlobalDocTemplate, GlobalEnvVar } from '../types';
 import { mergeCliArgs } from '../utils';
+import { useDialog } from '../DialogContext';
 import type { ConsoleTab } from './useTabs';
 
 function getMergedArgs(tool: CliTool, tpl: Template): string[] {
@@ -39,6 +40,7 @@ export function useWorkspaceData(
   t: (key: string, params?: Record<string, string>) => string,
   tabActions: TabActions,
 ) {
+  const dialog = useDialog();
   const [cliTools, setCliTools] = useState<CliTool[]>([]);
   const [templates, setTemplates] = useState<Template[]>([]);
   const [templateLaunching, setTemplateLaunching] = useState<string | null>(null);
@@ -358,7 +360,8 @@ export function useWorkspaceData(
     const confirmMsg = file.is_dir
       ? `确定要删除文件夹 "${file.name}" 及其所有内容吗？此操作不可撤销。`
       : `确定要删除文件 "${file.name}" 吗？此操作不可撤销。`;
-    if (!confirm(confirmMsg)) {
+    const ok = await dialog.confirm({ message: confirmMsg, danger: true, confirmText: "删除" });
+    if (!ok) {
       setContextMenu(null);
       return;
     }

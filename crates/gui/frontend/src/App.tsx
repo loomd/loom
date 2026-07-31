@@ -3,6 +3,7 @@ import "./index.css";
 import GlobalErrorHandler from "./components/GlobalErrorHandler";
 import { ToastProvider, useToast } from "./ToastContext";
 import { I18nProvider, useI18n } from "./I18nContext";
+import { DialogProvider } from "./DialogContext";
 import SettingsPage from "./pages/SettingsPage";
 import ProjectWorkspace from "./pages/ProjectWorkspace";
 import RightSidebar from "./components/RightSidebar";
@@ -348,7 +349,9 @@ export default function Root() {
 	return (
 		<I18nProvider>
 			<ToastProvider>
-				<App />
+				<DialogProvider>
+					<App />
+				</DialogProvider>
 			</ToastProvider>
 		</I18nProvider>
 	);

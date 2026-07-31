@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { useI18n } from "../../I18nContext";
 import { useToast } from "../../ToastContext";
+import { useDialog } from "../../DialogContext";
 import {
 	getGlobalSkills,
 	deleteGlobalSkill,
@@ -16,6 +17,7 @@ import GlobalDocModal from "../../components/GlobalDocModal";
 export default function LibsTab() {
 	const { t } = useI18n();
 	const toast = useToast();
+	const dialog = useDialog();
 
 	const [globalSkills, setGlobalSkills] = useState<GlobalSkillTemplate[]>([]);
 	const [globalDocs, setGlobalDocs] = useState<GlobalDocTemplate[]>([]);
@@ -213,25 +215,24 @@ export default function LibsTab() {
 										<button
 											className="btn btn-ghost"
 											onClick={async () => {
-												if (
-													confirm(
-														t("libs.confirm.deleteSkill", {
-															name: skill.name,
-														}),
-													)
-												) {
-													try {
-														await deleteGlobalSkill(skill.id);
-														toast.success(
-															t("libs.toast.deleteSkillSuccess"),
-														);
-														loadGlobalSkillsAndDocs();
-													} catch (err) {
-														toast.error(
-															t("libs.toast.deleteSkillFailed") +
-																String(err),
-														);
-													}
+												const ok = await dialog.confirm({
+													message: t("libs.confirm.deleteSkill", {
+														name: skill.name,
+													}),
+													danger: true,
+												});
+												if (!ok) return;
+												try {
+													await deleteGlobalSkill(skill.id);
+													toast.success(
+														t("libs.toast.deleteSkillSuccess"),
+													);
+													loadGlobalSkillsAndDocs();
+												} catch (err) {
+													toast.error(
+														t("libs.toast.deleteSkillFailed") +
+															String(err),
+													);
 												}
 											}}
 											style={{
@@ -393,25 +394,24 @@ export default function LibsTab() {
 										<button
 											className="btn btn-ghost"
 											onClick={async () => {
-												if (
-													confirm(
-														t("libs.confirm.deleteDoc", {
-															name: doc.alias,
-														}),
-													)
-												) {
-													try {
-														await deleteGlobalDoc(doc.id);
-														toast.success(
-															t("libs.toast.deleteDocSuccess"),
-														);
-														loadGlobalSkillsAndDocs();
-													} catch (err) {
-														toast.error(
-															t("libs.toast.deleteDocFailed") +
-																String(err),
-														);
-													}
+												const ok = await dialog.confirm({
+													message: t("libs.confirm.deleteDoc", {
+														name: doc.alias,
+													}),
+													danger: true,
+												});
+												if (!ok) return;
+												try {
+													await deleteGlobalDoc(doc.id);
+													toast.success(
+														t("libs.toast.deleteDocSuccess"),
+													);
+													loadGlobalSkillsAndDocs();
+												} catch (err) {
+													toast.error(
+														t("libs.toast.deleteDocFailed") +
+															String(err),
+													);
 												}
 											}}
 											style={{

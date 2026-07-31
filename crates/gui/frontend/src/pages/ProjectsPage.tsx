@@ -16,10 +16,12 @@ import {
 import type { Project, AgentInstance, CliTool } from '../types';
 import { useToast } from '../ToastContext';
 import { useI18n } from '../I18nContext';
+import { useDialog } from '../DialogContext';
 
 export default function ProjectsPage() {
   const { t } = useI18n();
   const toast = useToast();
+  const dialog = useDialog();
 
   const [projects, setProjects] = useState<Project[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState<string>('');
@@ -176,7 +178,8 @@ export default function ProjectsPage() {
   };
 
   const handleUnregisterProject = async (proj: Project) => {
-    if (!confirm(t('proj.confirm.delete', { name: proj.name }))) return;
+    const ok = await dialog.confirm({ message: t('proj.confirm.delete', { name: proj.name }), danger: true });
+    if (!ok) return;
     try {
       await deleteProject(proj.id);
       toast.success(t('proj.toast.deleted'));

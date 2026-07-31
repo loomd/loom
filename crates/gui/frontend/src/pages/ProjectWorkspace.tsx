@@ -256,7 +256,7 @@ const opencodeTermIdsRef = useRef<string[]>([]);
               <h3 style={{ margin: 0, fontSize: '1.0rem', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                 <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>📁 {t('proj.explorer.title') || 'File Explorer'}</span>
                 <button onClick={() => onUnregisterProject(project)} className="btn-delete-project" style={{ fontSize: '0.75rem', padding: '3px 8px' }}>
-                  🗑 {t('proj.modal.btn.cancel')}
+                  🗑 {t('proj.modal.btn.delete')}
                 </button>
               </h3>
               <FileExplorerPanel

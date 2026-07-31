@@ -10,6 +10,7 @@ import {
 import type { CliTool, Template, GlobalEnvVar } from '../types';
 import { useToast } from '../ToastContext';
 import { useI18n } from '../I18nContext';
+import { useDialog } from '../DialogContext';
 import { mergeCliArgs } from '../utils';
 
 interface Props {
@@ -350,6 +351,7 @@ export default function TemplatesPage({ tools, onInstanceLaunched }: Props) {
   const [editingTemplate, setEditingTemplate] = useState<Template | undefined>();
   const [launching, setLaunching] = useState<string | null>(null);
   const toast = useToast();
+  const dialog = useDialog();
 
   const load = async () => {
     try { setTemplates(await getTemplates()); } catch { toast.error(t('temp.toast.launchFailed')); }
@@ -361,7 +363,8 @@ export default function TemplatesPage({ tools, onInstanceLaunched }: Props) {
   }, []);
 
   const handleDelete = async (id: string, name: string) => {
-    if (!confirm(t('temp.confirm.delete', { name }))) return;
+    const ok = await dialog.confirm({ message: t('temp.confirm.delete', { name }), danger: true });
+    if (!ok) return;
     try { await deleteTemplate(id); load(); toast.success(t('temp.toast.deleted')); } catch { toast.error(t('cat.toast.deleteFailed')); }
   };
 

@@ -1,5 +1,6 @@
 import { useState, useCallback } from 'react';
 import type { FileEntry } from '../api';
+import { useDialog } from '../DialogContext';
 
 export interface ConsoleTab {
   id: string;
@@ -15,6 +16,7 @@ export interface ConsoleTab {
 }
 
 export function useTabs(projectRoot: string) {
+  const dialog = useDialog();
   const [tabs, setTabs] = useState<ConsoleTab[]>([
     { id: 'overview', title: '概览', type: 'overview', cwd: projectRoot },
     { id: 'agents-skills', title: '技能管理', type: 'agents-skills', cwd: projectRoot }
@@ -38,14 +40,14 @@ export function useTabs(projectRoot: string) {
     setActiveTabId(sessionId);
   }, [projectRoot, terminals.length]);
 
-  const handleCloseTerminal = useCallback((id: string, e: React.MouseEvent) => {
+  const handleCloseTerminal = useCallback(async (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
+    const tabToClose = tabs.find(t => t.id === id);
+    if (tabToClose?.type === 'editor' && tabToClose.isDirty) {
+      const confirmed = await dialog.confirm({ message: '文件有未保存的更改，确定要关闭吗？', danger: true });
+      if (!confirmed) return;
+    }
     setTabs(prev => {
-      const tabToClose = prev.find(t => t.id === id);
-      if (tabToClose?.type === 'editor' && tabToClose.isDirty) {
-        const confirmClose = confirm('文件有未保存的更改，确定要关闭吗？');
-        if (!confirmClose) return prev;
-      }
       if (id === activeTabId) {
         const idx = prev.findIndex(t => t.id === id);
         const filtered = prev.filter(t => t.id !== id);
@@ -59,7 +61,7 @@ export function useTabs(projectRoot: string) {
       }
       return prev.filter(t => t.id !== id);
     });
-  }, [activeTabId]);
+  }, [activeTabId, dialog, tabs]);
 
   const handleOpenFile = useCallback((file: FileEntry, cwd: string) => {
     const fileId = file.path;

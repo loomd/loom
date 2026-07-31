@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { useI18n } from "../I18nContext";
 import { useToast } from "../ToastContext";
+import { useDialog } from "../DialogContext";
 import { createGlobalSkill, updateGlobalSkill } from "../api";
 import type { GlobalSkillTemplate } from "../types";
 
@@ -19,6 +20,7 @@ export default function GlobalSkillModal({
 }: Props) {
 	const { t } = useI18n();
 	const toast = useToast();
+	const dialog = useDialog();
 	const [name, setName] = useState(skill?.name ?? "");
 	const [description, setDescription] = useState(skill?.description ?? "");
 	const [content, setContent] = useState(skill?.content ?? "");
@@ -54,9 +56,13 @@ export default function GlobalSkillModal({
 		setActiveFileIdx(subFiles.length);
 	};
 
-	const handleRemoveSubFile = (idx: number, e: React.MouseEvent) => {
+	const handleRemoveSubFile = async (idx: number, e: React.MouseEvent) => {
 		e.stopPropagation();
-		if (!confirm(t("libs.confirm.deleteSubFile"))) return;
+		const ok = await dialog.confirm({
+			message: t("libs.confirm.deleteSubFile"),
+			danger: true,
+		});
+		if (!ok) return;
 		setSubFiles((prev) => prev.filter((_, i) => i !== idx));
 		if (activeFileIdx === idx) {
 			setActiveFileIdx(-1);

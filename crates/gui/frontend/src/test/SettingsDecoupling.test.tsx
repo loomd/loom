@@ -3,6 +3,7 @@ import { render, screen, fireEvent, act } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { I18nProvider } from "../I18nContext";
 import { ToastProvider } from "../ToastContext";
+import { DialogProvider } from "../DialogContext";
 import WindowControlButtons from "../components/WindowControlButtons";
 import GeneralSettingsTab from "../pages/settings/GeneralSettingsTab";
 import CliToolsTab from "../pages/settings/CliToolsTab";
@@ -17,7 +18,9 @@ import type { CliTool, GlobalSkillTemplate, GlobalDocTemplate } from "../types";
 function TestWrapper({ children }: { children: React.ReactNode }) {
   return (
     <I18nProvider>
-      <ToastProvider>{children}</ToastProvider>
+      <ToastProvider>
+        <DialogProvider>{children}</DialogProvider>
+      </ToastProvider>
     </I18nProvider>
   );
 }

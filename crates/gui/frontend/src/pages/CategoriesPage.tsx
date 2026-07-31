@@ -3,6 +3,7 @@ import { createCategory, deleteCategory, updateCategory, smartClassify } from '.
 import type { Category, CliTool } from '../types';
 import { useToast } from '../ToastContext';
 import { useI18n } from '../I18nContext';
+import { useDialog } from '../DialogContext';
 
 interface Props {
   categories: Category[];
@@ -12,6 +13,7 @@ interface Props {
 
 export default function CategoriesPage({ categories, tools, onCategoriesChange }: Props) {
   const { t, language } = useI18n();
+  const dialog = useDialog();
   const [showModal, setShowModal] = useState(false);
   const [newName, setNewName] = useState('');
   const [newDesc, setNewDesc] = useState('');
@@ -82,7 +84,8 @@ export default function CategoriesPage({ categories, tools, onCategoriesChange }
     const msg = count > 0
       ? t('cat.confirm.deleteWithTools', { name: cat.name, count })
       : t('cat.confirm.delete', { name: cat.name });
-    if (!confirm(msg)) return;
+    const ok = await dialog.confirm({ message: msg, danger: true });
+    if (!ok) return;
     try {
       await deleteCategory(cat.id);
       onCategoriesChange();

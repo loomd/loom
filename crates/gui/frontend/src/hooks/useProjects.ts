@@ -7,11 +7,13 @@ import {
 	reorderProjects,
 } from "../api";
 import type { Project } from "../types";
+import { useDialog } from "../DialogContext";
 
 export function useProjects(
 	toast: { error: (msg: string) => void; success: (msg: string) => void },
 	t: (key: string, params?: Record<string, string>) => string,
 ) {
+	const dialog = useDialog();
 	const [projects, setProjects] = useState<Project[]>([]);
 	const [selectedProjectId, setSelectedProjectId] = useState<string>("");
 	const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
@@ -143,7 +145,12 @@ export function useProjects(
 	};
 
 	const handleUnregisterProject = async (proj: Project) => {
-		if (!confirm(t("proj.confirm.delete", { name: proj.name }))) return;
+		const ok = await dialog.confirm({
+			message: t("proj.confirm.delete", { name: proj.name }),
+			danger: true,
+			confirmText: t("proj.modal.btn.delete"),
+		});
+		if (!ok) return;
 		try {
 			await deleteProject(proj.id);
 			toast.success(t("proj.toast.deleted"));
