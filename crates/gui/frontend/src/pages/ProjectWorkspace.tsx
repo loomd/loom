@@ -26,15 +26,19 @@ interface Props {
 export default function ProjectWorkspace({ project, isVisible, onUnregisterProject, theme, isSidebarCollapsed, onToggleSidebar, bottomPanelEmbedded, bottomPanelHeight }: Props) {
   const { t } = useI18n();
   const toast = useToast();
-  const tabsState = useTabs(project.root_path);
-	const {
+
+  const tabsState = useTabs(project.root_path);	const {
 		tabs, activeTabId, setActiveTabId, layoutMode, setLayoutMode,
 		terminals, showGrid, handleAddRawTerminal, handleCloseTerminal,
-		handleOpenFile, updateTabDirty, removeTabById,
+		handleOpenFile, updateTabDirty, removeTabById, moveTab,
 	} = tabsState;
 const opencodeTerms = useMemo(() => terminals.filter(t => t.isOpencode), [terminals]);
 const [agentStateMap, setAgentStateMap] = useState<Record<string, AgentStateInfo>>({});
+const [pendingGridMode, setPendingGridMode] = useState<'horizontal' | 'vertical' | null>(null);
+const [dragTabId, setDragTabId] = useState<string | null>(null);
 const opencodeTermIdsRef = useRef<string[]>([]);
+
+const handleAddTerminal = () => { if (showGrid && layoutMode !== 'single') setPendingGridMode(layoutMode); handleAddRawTerminal(); };
 
   // Poll opencode AI state per terminal
   useEffect(() => {
@@ -99,6 +103,7 @@ const opencodeTermIdsRef = useRef<string[]>([]);
 			if (detail === "ctrl-tab") {
 				const idx = tabs.findIndex(t => t.id === activeTabId);
 				const next = (idx + 1) % tabs.length;
+				if (showGrid && layoutMode !== 'single') setPendingGridMode(layoutMode);
 				setLayoutMode("single");
 				setActiveTabId(tabs[next].id);
 			} else if (detail === "ctrl-w") {
@@ -113,7 +118,7 @@ const opencodeTermIdsRef = useRef<string[]>([]);
 			window.removeEventListener("loom-shortcut", handler);
 			window.removeEventListener("loom-run-template", handler);
 		};
-	}, [tabs, activeTabId, setActiveTabId, setLayoutMode, removeTabById, data, isVisible]);
+	}, [tabs, activeTabId, setActiveTabId, setLayoutMode, removeTabById, data, isVisible, showGrid, layoutMode]);
 
 	return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
@@ -131,7 +136,7 @@ const opencodeTermIdsRef = useRef<string[]>([]);
           )}
           {tabs.filter(tab => tab.id === 'overview' || tab.id === 'agents-skills').map(tab => (
             <div key={tab.id}
-              onClick={() => { setLayoutMode('single'); setActiveTabId(tab.id); }}
+              onClick={() => { if (showGrid && layoutMode !== 'single') setPendingGridMode(layoutMode); setLayoutMode('single'); setActiveTabId(tab.id); }}
               data-tauri-drag-region
               style={{
                 display: 'flex', alignItems: 'center', lineHeight: 1, gap: '6px', padding: '4px 4px',
@@ -148,6 +153,23 @@ const opencodeTermIdsRef = useRef<string[]>([]);
               </span>
             </div>
           ))}
+          <div
+            onClick={handleAddTerminal}
+            data-tauri-drag-region
+            style={{
+              display: 'flex', alignItems: 'center', lineHeight: 1, gap: '6px', padding: '4px 4px',
+              flexShrink: 0,
+              backgroundColor: 'transparent',
+              border: '1px solid',
+              borderColor: 'transparent',
+              borderRadius: 'var(--radius-md, 6px)', cursor: 'pointer',
+              color: 'var(--text-secondary, #a1a1aa)',
+              fontSize: '0.82rem', fontWeight: 400, whiteSpace: 'nowrap', userSelect: 'none',
+            }}>
+            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'inline-block' }}>
+              {t('proj.launcher.btn.spawn') === '启动 Agent' ? '新建' : 'New'}
+            </span>
+          </div>
           {tabs.filter(tab => tab.id !== 'overview' && tab.id !== 'agents-skills').length > 0 && (
             <div style={{ width: '1px', alignSelf: 'stretch', backgroundColor: 'var(--border-subtle, #27272a)', flexShrink: 0, margin: '6px 0' }} />
           )}
@@ -161,18 +183,39 @@ const opencodeTermIdsRef = useRef<string[]>([]);
               : tab.id === activeTabId;
             return (
               <div key={tab.id}
+                draggable={true}
+                onDragStart={(e) => { setDragTabId(tab.id); e.dataTransfer.effectAllowed = 'move'; }}
+                onDragEnd={() => { setDragTabId(null); }}
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  e.dataTransfer.dropEffect = 'move';
+                  if (!dragTabId || dragTabId === tab.id) return;
+                  const rect = e.currentTarget.getBoundingClientRect();
+                  moveTab(dragTabId, tab.id, e.clientX > rect.left + rect.width / 2);
+                }}
+                onDrop={(e) => { e.preventDefault(); setDragTabId(null); }}
                 onClick={() => {
                   if (showGrid && tab.type === 'terminal' && terminals.findIndex(t => t.id === tab.id) < 2) return;
-                  setLayoutMode('single');
+                  if (showGrid && layoutMode !== 'single') {
+                    setPendingGridMode(layoutMode);
+                    setLayoutMode('single');
+                    setActiveTabId(tab.id);
+                    return;
+                  }
+                  if (pendingGridMode && tab.type === 'terminal' && terminals.findIndex(t => t.id === tab.id) < 2) {
+                    setLayoutMode(pendingGridMode);
+                    setPendingGridMode(null);
+                  }
                   setActiveTabId(tab.id);
                 }}
                 style={{
                   display: 'flex', alignItems: 'center', lineHeight: 1, gap: '0px', padding: '4px 4px',
                   flexShrink: 0,
+                  opacity: dragTabId === tab.id ? 0.35 : 1,
                   backgroundColor: isActive ? 'var(--bg-elevated, #27272a)' : 'transparent',
                   border: '1px solid',
                   borderColor: isActive ? 'var(--border-subtle, #3e3e42)' : 'transparent',
-                  borderRadius: 'var(--radius-md, 6px)', cursor: 'pointer',
+                  borderRadius: 'var(--radius-md, 6px)', cursor: 'grab',
                   color: isActive ? 'var(--text-primary, #ffffff)' : 'var(--text-secondary, #a1a1aa)',
                   fontSize: '0.82rem', fontWeight: 400, whiteSpace: 'nowrap', userSelect: 'none',
                 }}>
@@ -199,12 +242,8 @@ const opencodeTermIdsRef = useRef<string[]>([]);
         <div data-tauri-drag-region onDoubleClick={() => { document.querySelector('.titlebar-tabs-scroll')?.scrollTo({ left: 0, behavior: 'smooth' }); }}
           style={{ width: '24px', flexShrink: 0, alignSelf: 'stretch', cursor: 'grab' }} title="拖拽窗口 / 双击回到起始位置" />
         <div style={{ display: 'flex', gap: '2px', alignItems: 'stretch', alignSelf: 'stretch' }}>
-          <button onClick={handleAddRawTerminal}
-            style={{ display: 'inline-flex', alignItems: 'center', lineHeight: 1, padding: '4px 4px', fontSize: '0.82rem', borderRadius: 'var(--radius-sm, 4px)', cursor: 'pointer', backgroundColor: 'var(--bg-elevated, #18181b)', border: '1px solid var(--border-subtle, #27272a)', color: 'var(--text-primary, #fff)', fontWeight: 500, userSelect: 'none' }}>
-            {t('proj.launcher.btn.spawn') === '启动 Agent' ? '终端' : 'Terminal'}
-          </button>
           {terminals.length > 1 && (
-            <button onClick={() => setLayoutMode(prev => prev === 'single' ? 'horizontal' : prev === 'horizontal' ? 'vertical' : 'single')}
+            <button onClick={() => { setPendingGridMode(null); setLayoutMode(prev => prev === 'single' ? 'horizontal' : prev === 'horizontal' ? 'vertical' : 'single'); }}
               style={{ display: 'inline-flex', alignItems: 'center', lineHeight: 1, padding: '4px 4px', fontSize: '0.82rem', borderRadius: 'var(--radius-sm, 4px)', cursor: 'pointer', backgroundColor: layoutMode !== 'single' ? 'var(--accent-emerald, #10b981)' : 'var(--bg-elevated, #18181b)', border: '1px solid var(--border-subtle, #27272a)', color: layoutMode !== 'single' ? '#fff' : 'var(--text-primary, #fff)', fontWeight: 500, userSelect: 'none' }}>
               {layoutMode === 'single' ? (t('proj.launcher.btn.spawn') === '启动 Agent' ? '双开' : 'Dual') : layoutMode === 'horizontal' ? (t('proj.launcher.btn.spawn') === '启动 Agent' ? '竖开' : 'Vertical') : (t('proj.launcher.btn.spawn') === '启动 Agent' ? '单签' : 'Single')}
             </button>

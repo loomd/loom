@@ -106,6 +106,20 @@ export function useTabs(projectRoot: string) {
     setTabs(prev => prev.map(t => t.id === tabId ? { ...t, isDirty: dirty } : t));
   }, []);
 
+  const moveTab = useCallback((fromId: string, toId: string, after: boolean) => {
+    setTabs(prev => {
+      const fromIdx = prev.findIndex(t => t.id === fromId);
+      let toIdx = prev.findIndex(t => t.id === toId);
+      if (fromIdx < 0 || toIdx < 0 || fromIdx === toIdx) return prev;
+      const next = [...prev];
+      const [moved] = next.splice(fromIdx, 1);
+      if (toIdx > fromIdx) toIdx -= 1;
+      if (after) toIdx += 1;
+      next.splice(toIdx, 0, moved);
+      return next;
+    });
+  }, []);
+
   return {
     tabs,
     setTabs,
@@ -121,5 +135,6 @@ export function useTabs(projectRoot: string) {
     addTab,
     removeTabById,
     updateTabDirty,
+    moveTab,
   };
 }

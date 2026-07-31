@@ -466,27 +466,27 @@ export function TerminalTab({ sessionId, cwd, command, args, env, isVisible, the
 
     // Size observer for resize sync
     const resizeObserver = new ResizeObserver(() => {
-      if (isVisible && termRef.current && fitAddonRef.current) {
-        const timer = setTimeout(() => {
-          if (!termRef.current || !fitAddonRef.current) return;
-          const container = containerRef.current;
-          if (container && container.clientWidth > 0 && container.clientHeight > 0) {
-            try {
-              fitAddonRef.current.fit();
-              if (spawnSuccessRef.current) {
-                invoke('pty_resize', {
-                  sessionId,
-                  cols: termRef.current.cols,
-                  rows: termRef.current.rows
-                }).catch(err => console.warn("Resize update failed:", err));
-              }
-            } catch (e) {
-              console.warn("Resize error:", e);
+      const container = containerRef.current;
+      if (!isVisibleRef.current || !termRef.current || !fitAddonRef.current) return;
+      if (!container || container.clientWidth < 1 || container.clientHeight < 1) return;
+      setTimeout(() => {
+        if (!termRef.current || !fitAddonRef.current) return;
+        const container = containerRef.current;
+        if (container && container.clientWidth > 0 && container.clientHeight > 0) {
+          try {
+            fitAddonRef.current.fit();
+            if (spawnSuccessRef.current) {
+              invoke('pty_resize', {
+                sessionId,
+                cols: termRef.current.cols,
+                rows: termRef.current.rows
+              }).catch(err => console.warn("Resize update failed:", err));
             }
+          } catch (e) {
+            console.warn("Resize error:", e);
           }
-        }, 20);
-        return () => clearTimeout(timer);
-      }
+        }
+      }, 20);
     });
     resizeObserver.observe(containerRef.current);
 
