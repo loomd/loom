@@ -256,7 +256,7 @@ const handleAddTerminal = () => { if (showGrid && layoutMode !== 'single') setPe
 
       <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', height: '100%', paddingBottom: bottomPanelEmbedded ? `${bottomPanelHeight}px` : 0, overflow: 'hidden' }}>
         {activeTabId === 'overview' && !showGrid && (
-          <div style={{ flexGrow: 1, minHeight: 0, display: 'flex', flexDirection: 'row', gap: '24px', padding: '24px', position: 'relative', overflow: 'hidden' }}>
+          <div style={{ flexGrow: 1, minHeight: 0, display: 'flex', flexDirection: 'row', gap: '24px', padding: '12px 24px', position: 'relative', overflow: 'hidden' }}>
 <div data-tour-target="templates-section" style={{ flex: 1, minWidth: '180px', display: 'flex', flexDirection: 'column', gap: '16px', paddingTop: '2px', overflowY: 'auto', scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
 				<h3 style={{ margin: 0, fontSize: '1.0rem', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
 					{t('proj.launcher.title') || 'Quick Spawn'}
@@ -322,7 +322,7 @@ const handleAddTerminal = () => { if (showGrid && layoutMode !== 'single') setPe
         )}
 
         {activeTabId === 'agents-skills' && (
-          <div style={{ flexGrow: 1, minHeight: 0, display: 'flex', flexDirection: 'row', gap: '24px', padding: '0px 24px 24px 24px', overflow: 'hidden' }}>
+          <div style={{ flexGrow: 1, minHeight: 0, display: 'flex', flexDirection: 'row', gap: '24px', padding: '12px 24px', overflow: 'hidden' }}>
             <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '16px', paddingTop: '2px', overflow: 'hidden' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <h3 style={{ margin: 0, fontSize: '1.0rem', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>🔌 指令管理</h3>
