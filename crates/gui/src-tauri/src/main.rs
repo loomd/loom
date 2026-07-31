@@ -5,6 +5,17 @@ const MIN_WINDOW_HEIGHT: u32 = 560;
 
 use loom_core::storage::{self as cstore, AgentDoc, AgentInstance, Category, CliTool, GlobalDocTemplate, GlobalEnvVar, GlobalSkillTemplate, Project, ProjectSkill, ScanResult, Template};
 use std::collections::HashMap;
+use std::sync::OnceLock;
+
+static PROCESS_START: OnceLock<std::time::Instant> = OnceLock::new();
+static FRONTEND_CONTACT_LOGGED: OnceLock<()> = OnceLock::new();
+
+fn startup_elapsed_ms() -> u128 {
+    PROCESS_START
+        .get()
+        .map(|t0| t0.elapsed().as_millis())
+        .unwrap_or(0)
+}
 use tauri::{
     image::Image,
     menu::{MenuBuilder, MenuItemBuilder},
@@ -1362,7 +1373,12 @@ fn execute_test_command(cmd: &str, args_json: &str) -> Result<String, String> {
 
 #[tauri::command]
 fn log_frontend(level: String, message: String) {
-    println!("[Frontend-{}] {}", level, message);
+    let elapsed = startup_elapsed_ms();
+    if FRONTEND_CONTACT_LOGGED.get().is_none() {
+        println!("[Startup] frontend JS first contact (webview page executing) t=+{}ms", elapsed);
+        let _ = FRONTEND_CONTACT_LOGGED.set(());
+    }
+    println!("[Frontend-{}] {} (t=+{}ms)", level, message, elapsed);
 }
 
 mod pty;
@@ -1448,8 +1464,12 @@ fn set_update_check_interval(interval: String) -> Result<(), String> {
 }
 
 fn main() {
+    PROCESS_START.get_or_init(std::time::Instant::now);
+    println!("[Startup] process created t=+0ms ({})", if cfg!(debug_assertions) { "debug build" } else { "release build" });
+
     #[cfg(target_os = "windows")]
     pty::init_process_session_job();
+    println!("[Startup] process session job ready t=+{}ms", startup_elapsed_ms());
 
     if let Ok(cmd) = std::env::var("TAURI_TEST_CMD") {
         let args_json = std::env::var("TAURI_TEST_ARGS").unwrap_or_else(|_| "{}".to_string());
@@ -1466,7 +1486,16 @@ fn main() {
         }
     }
 
-    let builder = tauri::Builder::default().manage(pty::PtyState::default());
+    let builder = tauri::Builder::default()
+        .on_page_load(|_webview, payload| {
+            println!(
+                "[Startup] webview page load {:?} t=+{}ms url={}",
+                payload.event(),
+                startup_elapsed_ms(),
+                payload.url()
+            );
+        })
+        .manage(pty::PtyState::default());
 
     #[cfg(not(debug_assertions))]
     let builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
@@ -1502,6 +1531,7 @@ fn main() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .setup(|app| {
+            println!("[Startup] setup begin (window state restore, tray, plugins) t=+{}ms", startup_elapsed_ms());
             if let Some(window) = app.get_webview_window("main") {
                 let state_path = get_window_state_path();
                 let has_state = state_path.exists()
@@ -1625,6 +1655,8 @@ std::thread::spawn(|| {
                     }
                 })
                 .build(app)?;
+
+            println!("[Startup] setup complete t=+{}ms", startup_elapsed_ms());
 
             Ok(())
         })

@@ -60,7 +60,7 @@ export default function WindowControlButtons() {
 			<button
 				className="window-ctrl-btn close"
 				onClick={() => appWindow.close()}
-				style={btnStyle}
+				style={{ ...btnStyle, padding: '0 8px 0 4px' }}
 				title="关闭"
 			>
 				<svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1">

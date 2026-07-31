@@ -126,7 +126,7 @@ const handleAddTerminal = () => { if (showGrid && layoutMode !== 'single') setPe
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
       <div data-tauri-drag-region style={{
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        padding: '2px 8px 0px 0px', gap: '0px', height: '30px', minHeight: '30px'
+        padding: '2px 0px 0px 0px', gap: '0px', height: '30px', minHeight: '30px'
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0px', alignSelf: 'stretch' }}>
           {onToggleSidebar && (
@@ -246,8 +246,8 @@ const handleAddTerminal = () => { if (showGrid && layoutMode !== 'single') setPe
         <div style={{ display: 'flex', gap: '2px', alignItems: 'stretch', alignSelf: 'stretch' }}>
           {terminals.length > 1 && (
             <button onClick={() => { setPendingGridMode(null); setLayoutMode(prev => prev === 'single' ? 'horizontal' : prev === 'horizontal' ? 'vertical' : 'single'); }}
-              style={{ display: 'inline-flex', alignItems: 'center', lineHeight: 1, padding: '4px 4px', fontSize: '0.82rem', borderRadius: 'var(--radius-sm, 4px)', cursor: 'pointer', backgroundColor: layoutMode !== 'single' ? 'var(--accent-emerald, #10b981)' : 'var(--bg-elevated, #18181b)', border: '1px solid var(--border-subtle, #27272a)', color: layoutMode !== 'single' ? '#fff' : 'var(--text-primary, #fff)', fontWeight: 500, userSelect: 'none' }}>
-              {layoutMode === 'single' ? (t('proj.launcher.btn.spawn') === '启动 Agent' ? '双开' : 'Dual') : layoutMode === 'horizontal' ? (t('proj.launcher.btn.spawn') === '启动 Agent' ? '竖开' : 'Vertical') : (t('proj.launcher.btn.spawn') === '启动 Agent' ? '单签' : 'Single')}
+              style={{ display: 'inline-flex', alignItems: 'center', alignSelf: 'center', lineHeight: 1, padding: '4px 4px', fontSize: '0.82rem', borderRadius: 'var(--radius-sm, 4px)', cursor: 'pointer', backgroundColor: layoutMode !== 'single' ? 'var(--accent-emerald, #10b981)' : 'var(--bg-elevated, #18181b)', border: '1px solid var(--border-subtle, #27272a)', color: layoutMode !== 'single' ? '#fff' : 'var(--text-primary, #fff)', fontWeight: 500, userSelect: 'none' }}>
+              {layoutMode === 'single' ? t('proj.layout.next.horizontal') : layoutMode === 'horizontal' ? t('proj.layout.next.vertical') : t('proj.layout.next.single')}
             </button>
           )}
           <WindowControlButtons />

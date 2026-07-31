@@ -19,6 +19,7 @@ import { useTheme } from "./hooks/useTheme";
 import { useUpdateChecker } from "./hooks/useUpdateChecker";
 import { useOnboarding } from "./hooks/useOnboarding";
 import { useProjectCompositeStates } from "./hooks/useProjectCompositeStates";
+import { markStartup } from "./startupTiming";
 import { getFloatingSidebarEnabled, setFloatingSidebarEnabled as apiSetFloatingSidebarEnabled, getFloatingSidebarPosition, setFloatingSidebarPosition as apiSetFloatingSidebarPosition, getSidebarWidth, setSidebarWidth as setSidebarWidthBackend, getBottomPanelMode, setBottomPanelMode as apiSetBottomPanelMode } from "./api";
 import type { Template } from "./types";
 
@@ -61,6 +62,14 @@ function App() {
 	const updater = useUpdateChecker(t, toast);
 	const onboarding = useOnboarding();
 	const compositeStates = useProjectCompositeStates(p.projects);
+
+	useEffect(() => {
+		markStartup("App mounted (first React commit)");
+		const raf = requestAnimationFrame(() => requestAnimationFrame(() => {
+			markStartup("first paint done (double rAF)");
+		}));
+		return () => cancelAnimationFrame(raf);
+	}, []);
 
 	// Check onboarding status on first load with 500ms delay
 	useEffect(() => {

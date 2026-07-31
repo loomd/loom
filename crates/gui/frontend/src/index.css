@@ -3,11 +3,9 @@
    Vibe: OLED black, purple/emerald orbs, glass morphism
    ============================================================ */
 
-@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&family=Inter:wght@300;400;500;600;700&family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Fira+Code:wght@400;500;600&display=swap');
-
 @font-face {
   font-family: 'HarmonyOS Sans SC';
-  src: url('./assets/fonts/HarmonyOS_Sans_SC_Regular.ttf') format('truetype');
+  src: url('./assets/fonts/HarmonyOS_Sans_SC_Regular.woff2') format('woff2');
   font-weight: 400;
   font-style: normal;
   font-display: swap;
@@ -15,7 +13,7 @@
 
 @font-face {
   font-family: 'HarmonyOS Sans SC';
-  src: url('./assets/fonts/HarmonyOS_Sans_SC_Medium.ttf') format('truetype');
+  src: url('./assets/fonts/HarmonyOS_Sans_SC_Medium.woff2') format('woff2');
   font-weight: 500;
   font-style: normal;
   font-display: swap;
@@ -23,8 +21,49 @@
 
 @font-face {
   font-family: 'HarmonyOS Sans SC';
-  src: url('./assets/fonts/HarmonyOS_Sans_SC_Bold.ttf') format('truetype');
+  src: url('./assets/fonts/HarmonyOS_Sans_SC_Bold.woff2') format('woff2');
   font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* Google Fonts — self-hosted variable fonts (SIL OFL 1.1, see google/OFL-LICENSE.txt) */
+@font-face {
+  font-family: 'Plus Jakarta Sans';
+  src: url('./assets/fonts/google/PlusJakartaSans.woff2') format('woff2');
+  font-weight: 300 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Inter';
+  src: url('./assets/fonts/google/Inter.woff2') format('woff2');
+  font-weight: 300 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Outfit';
+  src: url('./assets/fonts/google/Outfit.woff2') format('woff2');
+  font-weight: 300 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'JetBrains Mono';
+  src: url('./assets/fonts/google/JetBrainsMono.woff2') format('woff2');
+  font-weight: 400 600;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Fira Code';
+  src: url('./assets/fonts/google/FiraCode.woff2') format('woff2');
+  font-weight: 400 600;
   font-style: normal;
   font-display: swap;
 }
@@ -82,7 +121,7 @@ body {
   --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
 
   /* ─── Font Variables ─── */
-  --font-family: 'Plus Jakarta Sans';
+  --font-family: 'HarmonyOS Sans SC';
   --font-size-base: 14px;
   --fs-9:  calc(var(--font-size-base) - 5px);
   --fs-10: calc(var(--font-size-base) - 4px);
