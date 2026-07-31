@@ -112,6 +112,7 @@ Execute the following commands from the project root directory:
 - **Node Runtime**: Bun or Node.js environment. Use `pnpm` workspace constraints for test runners, and raw `npm` commands for standard frontend directory work.
 - **GUI Engine**: Tauri v2.x.
 - **External UI Libs**: Monoco React component and Xterm.js v6.x (incorporates webgl and fit addons).
+- **React 版本策略**: 当前固定使用 `19.3.0-canary-0f42eac2-20260730`(exact 版本)。这是**临时方案**,用于规避 React 官方 StrictMode bug:keyed children 重排时重跑 effects(issue #29585,修复 PR #36948)。此 canary 依赖不满足 `@monaco-editor/react` 等库的 `^19.0.0` peer 范围,需配合 `crates/gui/frontend/.npmrc` 的 `legacy-peer-deps=true`。**后续 React 官方发布包含该修复的稳定版本时,必须跟进升级并移除 canary 依赖**,升级后同时验证拖拽排序回归测试 `keyedFlip.test.tsx` 与全量测试。
 
 ---
 
