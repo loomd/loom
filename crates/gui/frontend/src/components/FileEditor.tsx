@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import Editor from '@monaco-editor/react';
 import { readTextFile, writeTextFile } from '../api';
 import { useToast } from '../ToastContext';
@@ -28,6 +28,8 @@ export function FileEditor({ filePath, onContentDirtyChange, theme }: FileEditor
   const [error, setError] = useState<string | null>(null);
   const toast = useToast();
   const { t } = useI18n();
+  const dirtyChangeRef = useRef(onContentDirtyChange);
+  useEffect(() => { dirtyChangeRef.current = onContentDirtyChange; }, [onContentDirtyChange]);
 
   // Load file content
   useEffect(() => {
@@ -40,7 +42,7 @@ export function FileEditor({ filePath, onContentDirtyChange, theme }: FileEditor
         if (!active) return;
         setContent(data);
         setInitialContent(data);
-        onContentDirtyChange(false);
+        dirtyChangeRef.current(false);
       })
       .catch((err: unknown) => {
         if (!active) return;
@@ -100,17 +102,17 @@ export function FileEditor({ filePath, onContentDirtyChange, theme }: FileEditor
     }
   };
 
-  const handleSave = async (currentVal: string) => {
+  const handleSave = useCallback(async (currentVal: string) => {
     try {
       await writeTextFile(filePath, currentVal);
       setInitialContent(currentVal);
-      onContentDirtyChange(false);
+      dirtyChangeRef.current(false);
       toast.success(t('editor.toast.saved') || '文件保存成功');
     } catch (err) {
       console.error('Failed to save file:', err);
       toast.error((t('editor.toast.saveFailed') || '保存失败: ') + String(err));
     }
-  };
+  }, [filePath, toast, t]);
 
   const handleEditorChange = (value: string | undefined) => {
     const newVal = value || '';
@@ -133,7 +135,7 @@ export function FileEditor({ filePath, onContentDirtyChange, theme }: FileEditor
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [content, loading, error, filePath, initialContent]);
+  }, [content, loading, error, handleSave]);
 
   if (loading) {
     return (

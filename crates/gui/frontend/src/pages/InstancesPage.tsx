@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { killCliInstance } from '../api';
 import type { RunningInstance } from '../types';
 import { useToast } from '../ToastContext';
@@ -24,9 +24,13 @@ export default function InstancesPage({ instances, onInstancesChange }: Props) {
   }, []);
 
   // Auto-scroll terminal
+  const selectedLogsLength = useMemo(
+    () => instances.find(i => i.instance_id === selectedId)?.logs.length,
+    [instances, selectedId]
+  );
   useEffect(() => {
     logEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [instances.find(i => i.instance_id === selectedId)?.logs.length]);
+  }, [selectedLogsLength]);
 
   const handleKill = async (instanceId: string) => {
     const ok = await dialog.confirm({ message: t('inst.confirm.terminate'), danger: true });

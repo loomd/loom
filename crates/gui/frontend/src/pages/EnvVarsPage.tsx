@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   getGlobalEnvVars,
   createGlobalEnvVar,
@@ -37,17 +37,17 @@ export default function EnvVarsPage() {
   const toast = useToast();
   const dialog = useDialog();
 
-  const load = async () => {
+  const load = useCallback(async () => {
     try {
       const vars = await getGlobalEnvVars();
       setEnvVars(vars);
     } catch {
       toast.error('Failed to load global environment variables');
     }
-  };
+  }, [toast]);
 
   // eslint-disable-next-line react-hooks/set-state-in-effect
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); }, [load]);
 
   const openNew = (keyPrefill = '') => {
     setEditingVar(null);

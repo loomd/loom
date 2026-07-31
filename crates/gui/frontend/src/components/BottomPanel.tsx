@@ -36,6 +36,8 @@ export default function BottomPanel({
   const panelRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const hideTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const sidebarWidthRef = useRef(sidebarWidth);
+  useEffect(() => { sidebarWidthRef.current = sidebarWidth; }, [sidebarWidth]);
 
   const calcRows = useCallback(() => {
     const el = listRef.current;
@@ -79,7 +81,7 @@ export default function BottomPanel({
 
     const handleMouseMove = (e: MouseEvent) => {
       const windowHeight = window.innerHeight;
-      if (e.clientX >= sidebarWidth && e.clientY >= windowHeight - triggerZone) {
+      if (e.clientX >= sidebarWidthRef.current && e.clientY >= windowHeight - triggerZone) {
         setIsVisible(true);
         if (hideTimeoutRef.current) {
           clearTimeout(hideTimeoutRef.current);

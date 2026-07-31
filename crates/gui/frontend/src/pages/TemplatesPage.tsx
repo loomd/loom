@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   getTemplates,
   createTemplate,
@@ -353,14 +353,14 @@ export default function TemplatesPage({ tools, onInstanceLaunched }: Props) {
   const toast = useToast();
   const dialog = useDialog();
 
-  const load = async () => {
+  const load = useCallback(async () => {
     try { setTemplates(await getTemplates()); } catch { toast.error(t('temp.toast.launchFailed')); }
-  };
+  }, [toast, t]);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     load();
-  }, []);
+  }, [load]);
 
   const handleDelete = async (id: string, name: string) => {
     const ok = await dialog.confirm({ message: t('temp.confirm.delete', { name }), danger: true });

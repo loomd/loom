@@ -15,7 +15,6 @@ interface TerminalTabProps {
   env?: Record<string, string>;
   isVisible: boolean;
   theme?: 'dark' | 'day' | 'gray';
-  isTopInVerticalLayout?: boolean;
 }
 
 const getTerminalTheme = (theme?: 'dark' | 'day' | 'gray') => {
@@ -89,7 +88,7 @@ const getTerminalTheme = (theme?: 'dark' | 'day' | 'gray') => {
   }
 };
 
-export function TerminalTab({ sessionId, cwd, command, args, env, isVisible, theme, isTopInVerticalLayout }: TerminalTabProps) {
+export function TerminalTab({ sessionId, cwd, command, args, env, isVisible, theme }: TerminalTabProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const outerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
@@ -515,7 +514,7 @@ export function TerminalTab({ sessionId, cwd, command, args, env, isVisible, the
       }
       invoke('pty_close', { sessionId }).catch((err) => console.warn('Failed to close PTY session:', err));
     };
-  }, [sessionId, cwd, command, args, env]);
+  }, [sessionId, cwd, command, args, env, theme]);
 
   // Ensure calculations fire when visibility switches back on
   useEffect(() => {

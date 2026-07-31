@@ -53,10 +53,9 @@ export function TerminalPanel({ terminals, activeTabId, layoutMode, showGrid, is
                 command={tab.command}
                 args={tab.args}
                 env={tab.env}
-                isVisible={isTerminalVisible}
-                theme={theme}
-                isTopInVerticalLayout={layoutMode === 'vertical' && idx === 0}
-              />
+              isVisible={isTerminalVisible}
+              theme={theme}
+            />
             </Suspense>
           </div>
         );

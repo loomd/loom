@@ -86,11 +86,13 @@ const handleAddTerminal = () => { if (showGrid && layoutMode !== 'single') setPe
 		removeTabById: tabsState.removeTabById,
 	});
 
+	const loadSkillsAndDocs = data.loadSkillsAndDocs;
+
 	useEffect(() => {
 		if (activeTabId === 'agents-skills') {
-			data.loadSkillsAndDocs();
+			loadSkillsAndDocs();
 		}
-	}, [activeTabId, data.loadSkillsAndDocs]);
+	}, [activeTabId, loadSkillsAndDocs]);
 
 	useEffect(() => {
 		if (!isVisible) return;
