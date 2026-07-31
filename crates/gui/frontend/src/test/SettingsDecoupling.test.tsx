@@ -132,7 +132,8 @@ describe("CliToolsTab", () => {
     await act(async () => {
       renderWithProviders(<CliToolsTab />);
     });
-    expect(screen.getByText((c) => c.includes("扫描 PATH"))).toBeInTheDocument();
+    expect(screen.getByText((c) => c.includes("刷新列表"))).toBeInTheDocument();
+    expect(screen.getByText((c) => c.includes("导入可执行文件"))).toBeInTheDocument();
   });
 });
 
@@ -291,7 +292,7 @@ describe("SettingsPage", () => {
       renderWithProviders(<SettingsPage {...defaultProps} />);
     });
     expect(screen.getByText((c) => c.includes("外观偏好"))).toBeInTheDocument();
-    expect(screen.getByText((c) => c.includes("CLI 工具"))).toBeInTheDocument();
+    expect(screen.getByText((c) => c.includes("Agent 工具"))).toBeInTheDocument();
     expect(screen.getByText((c) => c.includes("环境变量"))).toBeInTheDocument();
     expect(screen.getByText((c) => c.includes("模版库管理"))).toBeInTheDocument();
   });
@@ -307,9 +308,9 @@ describe("SettingsPage", () => {
     await act(async () => {
       renderWithProviders(<SettingsPage {...defaultProps} />);
     });
-    const toolsTab = screen.getByText((c) => c.includes("CLI 工具"));
+    const toolsTab = screen.getByText((c) => c.includes("Agent 工具"));
     await act(async () => { fireEvent.click(toolsTab); });
-    expect(screen.getByText((c) => c.includes("扫描 PATH"))).toBeInTheDocument();
+    expect(screen.getByText((c) => c.includes("刷新列表"))).toBeInTheDocument();
   });
 
   it("switches to env tab on click", async () => {
