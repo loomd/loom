@@ -15,6 +15,20 @@ export interface ConsoleTab {
   isDirty?: boolean;
 }
 
+export type GridLayout = '2x1' | '1x2' | '3x1' | '1x3' | '2x2' | '2x3' | '3x2' | '3x3';
+
+export const GRID_LAYOUTS: readonly GridLayout[] = ['2x1', '1x2', '3x1', '1x3', '2x2', '2x3', '3x2', '3x3'];
+
+export function gridDims(layout: GridLayout): { cols: number; rows: number } {
+  const [cols, rows] = layout.split('x').map(Number);
+  return { cols, rows };
+}
+
+export function gridCellCount(layout: GridLayout): number {
+  const { cols, rows } = gridDims(layout);
+  return cols * rows;
+}
+
 export function useTabs(projectRoot: string) {
   const dialog = useDialog();
   const [tabs, setTabs] = useState<ConsoleTab[]>([
@@ -22,12 +36,12 @@ export function useTabs(projectRoot: string) {
     { id: 'agents-skills', title: '技能管理', type: 'agents-skills', cwd: projectRoot }
   ]);
   const [activeTabId, setActiveTabId] = useState<string>('overview');
-  const [layoutMode, setLayoutMode] = useState<'single' | 'horizontal' | 'vertical'>('single');
+  const [layoutMode, setLayoutMode] = useState<GridLayout | null>(null);
 
   const terminals = tabs.filter(t => t.type === 'terminal');
-  const showGrid = layoutMode !== 'single' && terminals.length > 1;
+  const showGrid = layoutMode !== null;
 
-  const handleAddRawTerminal = useCallback(() => {
+  const handleAddRawTerminal = useCallback((keepGrid = false) => {
     const sessionId = crypto.randomUUID();
     const newTab: ConsoleTab = {
       id: sessionId,
@@ -35,32 +49,33 @@ export function useTabs(projectRoot: string) {
       type: 'terminal',
       cwd: projectRoot
     };
-    setLayoutMode('single');
+    if (!keepGrid) setLayoutMode(null);
     setTabs(prev => [...prev, newTab]);
     setActiveTabId(sessionId);
   }, [projectRoot, terminals.length]);
 
-  const handleCloseTerminal = useCallback(async (id: string, e: React.MouseEvent) => {
+  const handleCloseTerminal = useCallback(async (id: string, e: React.MouseEvent): Promise<string | null> => {
     e.stopPropagation();
     const tabToClose = tabs.find(t => t.id === id);
     if (tabToClose?.type === 'editor' && tabToClose.isDirty) {
       const confirmed = await dialog.confirm({ message: '文件有未保存的更改，确定要关闭吗？', danger: true });
-      if (!confirmed) return;
+      if (!confirmed) return null;
     }
-    setTabs(prev => {
-      if (id === activeTabId) {
-        const idx = prev.findIndex(t => t.id === id);
-        const filtered = prev.filter(t => t.id !== id);
-        if (idx > 0 && prev[idx - 1].id !== 'agents-skills') {
-          setActiveTabId(prev[idx - 1].id);
-        } else if (idx < prev.length - 1) {
-          setActiveTabId(prev[idx + 1].id);
-        } else {
-          setActiveTabId(filtered[0]?.id ?? 'overview');
-        }
+    const filtered = tabs.filter(t => t.id !== id);
+    let nextActive: string | null = null;
+    if (id === activeTabId) {
+      const idx = tabs.findIndex(t => t.id === id);
+      if (idx > 0 && tabs[idx - 1].id !== 'agents-skills') {
+        nextActive = tabs[idx - 1].id;
+      } else if (idx < tabs.length - 1) {
+        nextActive = tabs[idx + 1].id;
+      } else {
+        nextActive = filtered[0]?.id ?? 'overview';
       }
-      return prev.filter(t => t.id !== id);
-    });
+    }
+    setTabs(filtered);
+    if (nextActive) setActiveTabId(nextActive);
+    return nextActive;
   }, [activeTabId, dialog, tabs]);
 
   const handleOpenFile = useCallback((file: FileEntry, cwd: string) => {
@@ -85,22 +100,23 @@ export function useTabs(projectRoot: string) {
     setTabs(prev => [...prev, tab]);
   }, []);
 
-	const removeTabById = useCallback((id: string) => {
-		setTabs(prev => {
-			const filtered = prev.filter(t => t.id !== id);
-			if (id === activeTabId) {
-				const idx = prev.findIndex(t => t.id === id);
-				if (idx > 0 && prev[idx - 1].id !== 'agents-skills') {
-					setActiveTabId(prev[idx - 1].id);
-				} else if (idx < prev.length - 1) {
-					setActiveTabId(prev[idx + 1].id);
-				} else {
-					setActiveTabId(filtered[0]?.id ?? 'overview');
-				}
+	const removeTabById = useCallback((id: string): string | null => {
+		const filtered = tabs.filter(t => t.id !== id);
+		let nextActive: string | null = null;
+		if (id === activeTabId) {
+			const idx = tabs.findIndex(t => t.id === id);
+			if (idx > 0 && tabs[idx - 1].id !== 'agents-skills') {
+				nextActive = tabs[idx - 1].id;
+			} else if (idx < tabs.length - 1) {
+				nextActive = tabs[idx + 1].id;
+			} else {
+				nextActive = filtered[0]?.id ?? 'overview';
 			}
-			return filtered;
-		});
-	}, [activeTabId]);
+		}
+		setTabs(filtered);
+		if (nextActive) setActiveTabId(nextActive);
+		return nextActive;
+	}, [tabs, activeTabId]);
 
   const updateTabDirty = useCallback((tabId: string, dirty: boolean) => {
     setTabs(prev => prev.map(t => t.id === tabId ? { ...t, isDirty: dirty } : t));

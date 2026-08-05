@@ -228,6 +228,12 @@ function App() {
 	}, []);
 
 	useEffect(() => {
+		const openSpawn = () => setShowSpawnPanel(true);
+		window.addEventListener("loom-open-spawn", openSpawn);
+		return () => window.removeEventListener("loom-open-spawn", openSpawn);
+	}, []);
+
+	useEffect(() => {
 		const handleGlobalKeyDown = (e: KeyboardEvent) => {
 			if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "a") {
 				const active = document.activeElement;

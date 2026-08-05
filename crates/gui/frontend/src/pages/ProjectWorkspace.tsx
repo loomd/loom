@@ -1,8 +1,9 @@
-import React, { Suspense, useEffect, useMemo, useRef, useState } from 'react';
+import React, { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import WindowControlButtons from '../components/WindowControlButtons';
 import { useTabs } from '../hooks/useTabs';
 import { useWorkspaceData } from '../hooks/useWorkspaceData';
 import { TerminalPanel } from '../components/TerminalPanel';
+import { LayoutSelector } from '../components/LayoutSelector';
 import { FileExplorerPanel } from '../components/FileExplorerPanel';
 import { useToast } from '../ToastContext';
 import { useI18n } from '../I18nContext';
@@ -10,6 +11,8 @@ import { EditorPlaceholder } from '../components/EditorPlaceholder';
 import { pollAgentState } from '../api';
 import { reportShellStatus, removeShellStatus } from '../hooks/useProjectCompositeStates';
 import type { Project, AgentStateInfo } from '../types';
+import type { GridLayout } from '../hooks/useTabs';
+import { gridCellCount } from '../hooks/useTabs';
 const FileEditor = React.lazy(() => import('../components/FileEditor').then(m => ({ default: m.FileEditor })));
 
 interface Props {
@@ -27,18 +30,45 @@ export default function ProjectWorkspace({ project, isVisible, onUnregisterProje
   const { t } = useI18n();
   const toast = useToast();
 
-  const tabsState = useTabs(project.root_path);	const {
+	const tabsState = useTabs(project.root_path);	const {
 		tabs, activeTabId, setActiveTabId, layoutMode, setLayoutMode,
 		terminals, showGrid, handleAddRawTerminal, handleCloseTerminal,
 		handleOpenFile, updateTabDirty, removeTabById, moveTab,
 	} = tabsState;
 const opencodeTerms = useMemo(() => terminals.filter(t => t.isOpencode), [terminals]);
 const [agentStateMap, setAgentStateMap] = useState<Record<string, AgentStateInfo>>({});
-const [pendingGridMode, setPendingGridMode] = useState<'horizontal' | 'vertical' | null>(null);
+const [pendingGridMode, setPendingGridMode] = useState<GridLayout | null>(null);
 const [dragTabId, setDragTabId] = useState<string | null>(null);
 const opencodeTermIdsRef = useRef<string[]>([]);
+const gridCount = layoutMode ? gridCellCount(layoutMode) : 0;
 
-const handleAddTerminal = () => { if (showGrid && layoutMode !== 'single') setPendingGridMode(layoutMode); handleAddRawTerminal(); };
+const handleAddTerminal = () => {
+  if (showGrid && layoutMode && terminals.length < gridCount) {
+    handleAddRawTerminal(true);
+    return;
+  }
+  if (showGrid && layoutMode) setPendingGridMode(layoutMode);
+  handleAddRawTerminal();
+};
+const openSpawnPanel = () => window.dispatchEvent(new CustomEvent("loom-open-spawn"));
+
+const maybeRestoreGrid = useCallback((closedId: string, nextActive: string | null) => {
+  if (nextActive === null || layoutMode !== null || !pendingGridMode) return;
+  const remaining = terminals.filter(t => t.id !== closedId);
+  const idx = remaining.findIndex(t => t.id === nextActive);
+  if (idx >= 0 && idx < gridCellCount(pendingGridMode)) {
+    setLayoutMode(pendingGridMode);
+    setPendingGridMode(null);
+  }
+}, [layoutMode, pendingGridMode, terminals, setLayoutMode, setPendingGridMode]);
+const closeTerminalTab = useCallback(async (id: string, e: React.MouseEvent) => {
+  const next = await handleCloseTerminal(id, e);
+  if (next !== null) maybeRestoreGrid(id, next);
+}, [handleCloseTerminal, maybeRestoreGrid]);
+const closeActiveByShortcut = useCallback(() => {
+  const next = removeTabById(activeTabId);
+  if (next !== null) maybeRestoreGrid(activeTabId, next);
+}, [removeTabById, activeTabId, maybeRestoreGrid]);
 
   // Poll opencode AI state per terminal
   useEffect(() => {
@@ -105,8 +135,8 @@ const handleAddTerminal = () => { if (showGrid && layoutMode !== 'single') setPe
 			if (detail === "ctrl-tab") {
 				const idx = tabs.findIndex(t => t.id === activeTabId);
 				const next = (idx + 1) % tabs.length;
-				if (showGrid && layoutMode !== 'single') setPendingGridMode(layoutMode);
-				setLayoutMode("single");
+				if (showGrid && layoutMode) setPendingGridMode(layoutMode);
+				setLayoutMode(null);
 				setActiveTabId(tabs[next].id);
 			} else if (detail === "ctrl-w") {
 				if (activeTabId !== "overview" && activeTabId !== "agents-skills") {
@@ -117,7 +147,7 @@ const handleAddTerminal = () => { if (showGrid && layoutMode !== 'single') setPe
 						delete n[activeTabId];
 						return n;
 					});
-					removeTabById(activeTabId);
+					closeActiveByShortcut();
 				}
 			}
 		};
@@ -127,7 +157,7 @@ const handleAddTerminal = () => { if (showGrid && layoutMode !== 'single') setPe
 			window.removeEventListener("loom-shortcut", handler);
 			window.removeEventListener("loom-run-template", handler);
 		};
-	}, [tabs, activeTabId, setActiveTabId, setLayoutMode, removeTabById, data, isVisible, showGrid, layoutMode, project.id]);
+	}, [tabs, activeTabId, setActiveTabId, setLayoutMode, removeTabById, data, isVisible, showGrid, layoutMode, project.id, closeActiveByShortcut]);
 
 	return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
@@ -145,7 +175,7 @@ const handleAddTerminal = () => { if (showGrid && layoutMode !== 'single') setPe
           )}
           {tabs.filter(tab => tab.id === 'overview' || tab.id === 'agents-skills').map(tab => (
             <div key={tab.id}
-              onClick={() => { if (showGrid && layoutMode !== 'single') setPendingGridMode(layoutMode); setLayoutMode('single'); setActiveTabId(tab.id); }}
+              onClick={() => { if (showGrid && layoutMode) setPendingGridMode(layoutMode); setLayoutMode(null); setActiveTabId(tab.id); }}
               data-tauri-drag-region
               style={{
                 display: 'flex', alignItems: 'center', lineHeight: 1, gap: '6px', padding: '4px 4px',
@@ -176,7 +206,7 @@ const handleAddTerminal = () => { if (showGrid && layoutMode !== 'single') setPe
               fontSize: '0.82rem', fontWeight: 400, whiteSpace: 'nowrap', userSelect: 'none',
             }}>
             <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'inline-block' }}>
-              {t('proj.launcher.btn.spawn') === '启动 Agent' ? '新建' : 'New'}
+              {t('proj.newTerminal')}
             </span>
           </div>
           {tabs.filter(tab => tab.id !== 'overview' && tab.id !== 'agents-skills').length > 0 && (
@@ -188,7 +218,7 @@ const handleAddTerminal = () => { if (showGrid && layoutMode !== 'single') setPe
         >
           {tabs.filter(tab => tab.id !== 'overview' && tab.id !== 'agents-skills').map(tab => {
             const isActive = showGrid
-              ? tab.type === 'terminal' && terminals.findIndex(t => t.id === tab.id) < 2
+              ? tab.type === 'terminal' && terminals.findIndex(t => t.id === tab.id) < gridCount
               : tab.id === activeTabId;
             return (
               <div key={tab.id}
@@ -204,14 +234,14 @@ const handleAddTerminal = () => { if (showGrid && layoutMode !== 'single') setPe
                 }}
                 onDrop={(e) => { e.preventDefault(); setDragTabId(null); }}
                 onClick={() => {
-                  if (showGrid && tab.type === 'terminal' && terminals.findIndex(t => t.id === tab.id) < 2) return;
-                  if (showGrid && layoutMode !== 'single') {
+                  if (showGrid && tab.type === 'terminal' && terminals.findIndex(t => t.id === tab.id) < gridCount) return;
+                  if (showGrid && layoutMode) {
                     setPendingGridMode(layoutMode);
-                    setLayoutMode('single');
+                    setLayoutMode(null);
                     setActiveTabId(tab.id);
                     return;
                   }
-                  if (pendingGridMode && tab.type === 'terminal' && terminals.findIndex(t => t.id === tab.id) < 2) {
+                  if (pendingGridMode && tab.type === 'terminal' && terminals.findIndex(t => t.id === tab.id) < gridCellCount(pendingGridMode)) {
                     setLayoutMode(pendingGridMode);
                     setPendingGridMode(null);
                   }
@@ -239,7 +269,7 @@ const handleAddTerminal = () => { if (showGrid && layoutMode !== 'single') setPe
                 <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'inline-block', lineHeight: 1.3, transform: 'translateY(-0.06em)', minWidth: tab.type === 'terminal' ? '24px' : 0, maxWidth: tab.type === 'terminal' ? 'none' : '60px' }}>
                   {tab.title}
                 </span>
-                <span onClick={(e) => { if (!isActive) return; removeShellStatus(project.id, tab.id); setAgentStateMap(prev => { const n = { ...prev }; delete n[tab.id]; return n; }); handleCloseTerminal(tab.id, e); }}
+                <span onClick={(e) => { if (!isActive) return; removeShellStatus(project.id, tab.id); setAgentStateMap(prev => { const n = { ...prev }; delete n[tab.id]; return n; }); closeTerminalTab(tab.id, e); }}
                   style={{ marginLeft: '2px', cursor: 'pointer', display: 'inline-block', width: '12px', height: '12px', textAlign: 'center', lineHeight: '12px', fontSize: tab.isDirty ? '0.6rem' : '0.7rem', visibility: isActive ? 'visible' : 'hidden', pointerEvents: isActive ? 'auto' : 'none' }}
                   className={`tab-close-icon ${tab.isDirty ? 'dirty' : ''}`}
                   title={tab.isDirty ? '有未保存的更改' : undefined}
@@ -251,12 +281,7 @@ const handleAddTerminal = () => { if (showGrid && layoutMode !== 'single') setPe
         <div data-tauri-drag-region onDoubleClick={() => { document.querySelector('.titlebar-tabs-scroll')?.scrollTo({ left: 0, behavior: 'smooth' }); }}
           style={{ width: '24px', flexShrink: 0, alignSelf: 'stretch', cursor: 'grab' }} title="拖拽窗口 / 双击回到起始位置" />
         <div style={{ display: 'flex', gap: '2px', alignItems: 'stretch', alignSelf: 'stretch' }}>
-          {terminals.length > 1 && (
-            <button onClick={() => { setPendingGridMode(null); setLayoutMode(prev => prev === 'single' ? 'horizontal' : prev === 'horizontal' ? 'vertical' : 'single'); }}
-              style={{ display: 'inline-flex', alignItems: 'center', alignSelf: 'center', lineHeight: 1, padding: '4px 4px', fontSize: '0.82rem', borderRadius: 'var(--radius-sm, 4px)', cursor: 'pointer', backgroundColor: layoutMode !== 'single' ? 'var(--accent-emerald, #10b981)' : 'var(--bg-elevated, #18181b)', border: '1px solid var(--border-subtle, #27272a)', color: layoutMode !== 'single' ? '#fff' : 'var(--text-primary, #fff)', fontWeight: 500, userSelect: 'none' }}>
-              {layoutMode === 'single' ? t('proj.layout.next.horizontal') : layoutMode === 'horizontal' ? t('proj.layout.next.vertical') : t('proj.layout.next.single')}
-            </button>
-          )}
+          <LayoutSelector layoutMode={layoutMode} onSelect={(l) => { setPendingGridMode(null); setLayoutMode(l); }} />
           <WindowControlButtons />
         </div>
       </div>
@@ -423,6 +448,8 @@ const handleAddTerminal = () => { if (showGrid && layoutMode !== 'single') setPe
           showGrid={showGrid}
           isVisible={isVisible}
           theme={theme}
+          onAddTerminal={openSpawnPanel}
+          onPaneFocus={setActiveTabId}
         />
 
         {tabs.map(tab => {
