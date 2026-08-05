@@ -110,6 +110,13 @@ const handleAddTerminal = () => { if (showGrid && layoutMode !== 'single') setPe
 				setActiveTabId(tabs[next].id);
 			} else if (detail === "ctrl-w") {
 				if (activeTabId !== "overview" && activeTabId !== "agents-skills") {
+					removeShellStatus(project.id, activeTabId);
+					setAgentStateMap(prev => {
+						if (!(activeTabId in prev)) return prev;
+						const n = { ...prev };
+						delete n[activeTabId];
+						return n;
+					});
 					removeTabById(activeTabId);
 				}
 			}
@@ -120,7 +127,7 @@ const handleAddTerminal = () => { if (showGrid && layoutMode !== 'single') setPe
 			window.removeEventListener("loom-shortcut", handler);
 			window.removeEventListener("loom-run-template", handler);
 		};
-	}, [tabs, activeTabId, setActiveTabId, setLayoutMode, removeTabById, data, isVisible, showGrid, layoutMode]);
+	}, [tabs, activeTabId, setActiveTabId, setLayoutMode, removeTabById, data, isVisible, showGrid, layoutMode, project.id]);
 
 	return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>

@@ -514,7 +514,8 @@ export function TerminalTab({ sessionId, cwd, command, args, env, isVisible, the
       }
       invoke('pty_close', { sessionId }).catch((err) => console.warn('Failed to close PTY session:', err));
     };
-  }, [sessionId, cwd, command, args, env, theme]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionId, cwd, command, args, env]);
 
   // Ensure calculations fire when visibility switches back on
   useEffect(() => {
