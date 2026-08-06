@@ -17,6 +17,8 @@ pub struct CliTool {
     pub custom_args: Vec<String>,
     #[serde(default)]
     pub is_agent: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub alias: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -48,8 +50,6 @@ pub struct Template {
     pub pwd: Option<PathBuf>,
     #[serde(default)]
     pub last_run: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub cmd_override: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub env_mode: Option<String>,
 }

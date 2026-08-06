@@ -10,5 +10,8 @@ uuid = { workspace = true }
 directories = { workspace = true }
 thiserror = { workspace = true }
 
+[target.'cfg(windows)'.dependencies]
+winreg = { workspace = true }
+
 [dev-dependencies]
 tempfile = { workspace = true }

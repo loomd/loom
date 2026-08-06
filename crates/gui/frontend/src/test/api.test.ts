@@ -150,9 +150,9 @@ describe("api - Templates", () => {
   it("createTemplate calls invoke with all fields", async () => {
     mockInvoke.mockResolvedValueOnce({ id: "t-1", name: "Test", cli_id: "cli-1", args: [], env: {}, env_var_ids: [] });
     const { createTemplate } = await import("../api");
-    const result = await createTemplate("cli-1", "Test", [], {}, [], "/tmp", "/usr/bin/bash", "isolated");
+    const result = await createTemplate("cli-1", "Test", [], {}, [], "/tmp", "isolated");
     expect(mockInvoke).toHaveBeenCalledWith("create_template", {
-      cliId: "cli-1", name: "Test", args: [], env: {}, envVarIds: [], pwd: "/tmp", cmdOverride: "/usr/bin/bash", envMode: "isolated",
+      cliId: "cli-1", name: "Test", args: [], env: {}, envVarIds: [], pwd: "/tmp", envMode: "isolated",
     });
     expect(result.name).toBe("Test");
   });
@@ -162,7 +162,7 @@ describe("api - Templates", () => {
     const { updateTemplate } = await import("../api");
     const result = await updateTemplate("t-1", "Updated", [], {}, []);
     expect(mockInvoke).toHaveBeenCalledWith("update_template", {
-      templateId: "t-1", name: "Updated", args: [], env: {}, envVarIds: [], pwd: undefined, cmdOverride: undefined, envMode: undefined,
+      templateId: "t-1", name: "Updated", args: [], env: {}, envVarIds: [], pwd: undefined, envMode: undefined,
     });
     expect(result.name).toBe("Updated");
   });

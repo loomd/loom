@@ -62,6 +62,11 @@ fn scan_path_env() -> Result<Vec<CliTool>, String> {
 }
 
 #[tauri::command]
+fn scan_path_env_auto_register() -> Result<Vec<CliTool>, String> {
+    cstore::scan_path_env_auto_register().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 fn scan_directory(path: String) -> Result<Vec<CliTool>, String> {
     cstore::scan_directory(path).map_err(|e| e.to_string())
 }
@@ -87,6 +92,11 @@ fn update_cli_args(cli_id: String, args: Vec<String>) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn update_cli_alias(cli_id: String, alias: Option<String>) -> Result<(), String> {
+    cstore::update_cli_alias(cli_id, alias).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 fn create_template(
     cli_id: String,
     name: String,
@@ -94,20 +104,10 @@ fn create_template(
     env: HashMap<String, String>,
     env_var_ids: Vec<String>,
     pwd: Option<String>,
-    cmd_override: Option<String>,
     env_mode: Option<String>,
 ) -> Result<Template, String> {
-    cstore::create_template(
-        cli_id,
-        name,
-        args,
-        env,
-        env_var_ids,
-        pwd,
-        cmd_override,
-        env_mode,
-    )
-    .map_err(|e| e.to_string())
+    cstore::create_template(cli_id, name, args, env, env_var_ids, pwd, env_mode)
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -128,20 +128,10 @@ fn update_template(
     env: HashMap<String, String>,
     env_var_ids: Vec<String>,
     pwd: Option<String>,
-    cmd_override: Option<String>,
     env_mode: Option<String>,
 ) -> Result<Template, String> {
-    cstore::update_template(
-        template_id,
-        name,
-        args,
-        env,
-        env_var_ids,
-        pwd,
-        cmd_override,
-        env_mode,
-    )
-    .map_err(|e| e.to_string())
+    cstore::update_template(template_id, name, args, env, env_var_ids, pwd, env_mode)
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -877,6 +867,10 @@ fn execute_test_command(cmd: &str, args_json: &str) -> Result<String, String> {
             let res = scan_path_env()?;
             serde_json::to_string(&res).map_err(|e| e.to_string())
         }
+        "scan_path_env_auto_register" => {
+            let res = scan_path_env_auto_register()?;
+            serde_json::to_string(&res).map_err(|e| e.to_string())
+        }
         "scan_directory" => {
             let path = args["path"]
                 .as_str()
@@ -954,7 +948,6 @@ fn execute_test_command(cmd: &str, args_json: &str) -> Result<String, String> {
                 }
             }
             let pwd = args["pwd"].as_str().map(|s| s.to_string());
-            let cmd_override = args["cmd_override"].as_str().map(|s| s.to_string());
             let env_mode = args
                 .get("env_mode")
                 .and_then(|v| v.as_str())
@@ -966,7 +959,6 @@ fn execute_test_command(cmd: &str, args_json: &str) -> Result<String, String> {
                 env,
                 env_var_ids,
                 pwd,
-                cmd_override,
                 env_mode,
             )
             .map_err(|e| e.to_string())?;
@@ -1020,7 +1012,6 @@ fn execute_test_command(cmd: &str, args_json: &str) -> Result<String, String> {
                 }
             }
             let pwd = args["pwd"].as_str().map(|s| s.to_string());
-            let cmd_override = args["cmd_override"].as_str().map(|s| s.to_string());
             let env_mode = args
                 .get("env_mode")
                 .and_then(|v| v.as_str())
@@ -1032,7 +1023,6 @@ fn execute_test_command(cmd: &str, args_json: &str) -> Result<String, String> {
                 env,
                 env_var_ids,
                 pwd,
-                cmd_override,
                 env_mode,
             )
             .map_err(|e| e.to_string())?;
@@ -1342,6 +1332,14 @@ fn execute_test_command(cmd: &str, args_json: &str) -> Result<String, String> {
             update_cli_args(cli_id.to_string(), cmd_args)?;
             Ok("null".to_string())
         }
+        "update_cli_alias" => {
+            let cli_id = args["cli_id"]
+                .as_str()
+                .ok_or_else(|| "Missing argument 'cli_id'".to_string())?;
+            let alias = args.get("alias").and_then(|v| v.as_str()).map(|s| s.to_string());
+            update_cli_alias(cli_id.to_string(), alias)?;
+            Ok("null".to_string())
+        }
         "get_agent_logs" => {
             let instance_id = args["instance_id"]
                 .as_str()
@@ -1383,6 +1381,7 @@ fn log_frontend(level: String, message: String) {
 
 mod pty;
 mod agent_monitor;
+mod crash_shield;
 
 fn get_window_state_path() -> std::path::PathBuf {
     let mut path = cstore::get_config_path();
@@ -1464,12 +1463,13 @@ fn set_update_check_interval(interval: String) -> Result<(), String> {
 }
 
 fn main() {
+    crash_shield::install();
     PROCESS_START.get_or_init(std::time::Instant::now);
-    println!("[Startup] process created t=+0ms ({})", if cfg!(debug_assertions) { "debug build" } else { "release build" });
+    eprintln!("[Startup] process created t=+0ms ({})", if cfg!(debug_assertions) { "debug build" } else { "release build" });
 
     #[cfg(target_os = "windows")]
     pty::init_process_session_job();
-    println!("[Startup] process session job ready t=+{}ms", startup_elapsed_ms());
+    eprintln!("[Startup] process session job ready t=+{}ms", startup_elapsed_ms());
 
     if let Ok(cmd) = std::env::var("TAURI_TEST_CMD") {
         let args_json = std::env::var("TAURI_TEST_ARGS").unwrap_or_else(|_| "{}".to_string());
@@ -1688,11 +1688,13 @@ std::thread::spawn(|| {
             get_categories,
             import_cli_tool,
             scan_path_env,
+            scan_path_env_auto_register,
             scan_directory,
             create_category,
             assign_cli_category,
             update_cli_env,
             update_cli_args,
+            update_cli_alias,
             create_template,
             get_templates,
             delete_template,

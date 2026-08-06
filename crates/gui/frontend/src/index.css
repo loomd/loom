@@ -1435,8 +1435,8 @@ body.theme-day select.input option {
 }
 
 .spec-preview-terminal {
-  background: var(--terminal-bg, #050507);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: var(--terminal-bg, #121214);
+  border: 1px solid var(--border-subtle);
   border-radius: var(--radius-md);
   padding: 12px 14px;
   font-family: 'JetBrains Mono', 'Fira Code', monospace;
@@ -1445,7 +1445,7 @@ body.theme-day select.input option {
   color: var(--terminal-text, #a1a1aa);
   overflow-x: auto;
   position: relative;
-  box-shadow: inset 0 2px 8px rgba(0,0,0,0.8);
+  box-shadow: inset 0 2px 8px rgba(0,0,0,0.4);
 }
 
 .spec-preview-terminal-header {
@@ -1479,6 +1479,21 @@ body.theme-day select.input option {
   color: var(--terminal-text, #f4f4f5);
   white-space: pre-wrap;
   word-break: break-all;
+  font-size: 12px;
+  line-height: 1.7;
+}
+
+.spec-preview-env {
+  color: #7dd3fc;
+}
+
+.spec-preview-cmd {
+  color: var(--terminal-text, #f4f4f5);
+  font-weight: 600;
+}
+
+.spec-preview-dim {
+  color: #71717a;
 }
 
 .env-chip-grid {

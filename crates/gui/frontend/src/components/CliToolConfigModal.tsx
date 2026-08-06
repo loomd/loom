@@ -1,7 +1,12 @@
 import React, { useState, useEffect } from "react";
 import { useI18n } from "../I18nContext";
 import { useToast } from "../ToastContext";
-import { getGlobalEnvVars, updateCliEnv, updateCliArgs } from "../api";
+import {
+	getGlobalEnvVars,
+	updateCliEnv,
+	updateCliArgs,
+	updateCliAlias,
+} from "../api";
 import type { CliTool, GlobalEnvVar } from "../types";
 
 interface Props {
@@ -14,6 +19,7 @@ export default function CliToolConfigModal({ tool, onClose, onSave }: Props) {
 	const { t } = useI18n();
 	const toast = useToast();
 	const [argsStr, setArgsStr] = useState(tool.custom_args?.join(" ") ?? "");
+	const [aliasStr, setAliasStr] = useState(tool.alias ?? "");
 	const [envPairs, setEnvPairs] = useState<{ k: string; v: string }[]>(
 		Object.entries(tool.custom_env ?? {}).map(([k, v]) => ({ k, v })),
 	);
@@ -69,6 +75,7 @@ export default function CliToolConfigModal({ tool, onClose, onSave }: Props) {
 
 			await updateCliEnv(tool.id, env);
 			await updateCliArgs(tool.id, args);
+			await updateCliAlias(tool.id, aliasStr.trim() || null);
 			toast.success(t("env.toast.saved") || "Saved successfully");
 			onSave();
 			onClose();
@@ -122,6 +129,22 @@ export default function CliToolConfigModal({ tool, onClose, onSave }: Props) {
 									}
 									value={argsStr}
 									onChange={(e) => setArgsStr(e.target.value)}
+								/>
+							</div>
+
+							<div className="form-group">
+								<label className="form-label">
+									{t("db.tool.alias") || "Custom Alias"}
+								</label>
+								<input
+									className="input"
+									placeholder={
+										t("db.tool.aliasPlaceholder") ||
+										"loom <alias> to run this tool"
+									}
+									value={aliasStr}
+									onChange={(e) => setAliasStr(e.target.value)}
+									style={{ fontFamily: "monospace", fontSize: 12 }}
 								/>
 							</div>
 

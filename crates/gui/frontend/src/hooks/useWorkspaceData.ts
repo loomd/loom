@@ -131,13 +131,20 @@ export function useWorkspaceData(
   }, [project.id]);
 
   useEffect(() => {
-    const handler = () => loadToolsAndTemplates();
+    // Refresh cache on every data refresh event too, otherwise env vars
+    // configured while loom is running are never picked up by handleRunTemplate.
+    const refreshVarsCache = () =>
+      getGlobalEnvVars().then(vars => { globalVarsCache.current = vars; });
+    const handler = () => {
+      loadToolsAndTemplates();
+      refreshVarsCache();
+    };
     window.addEventListener('loom-refresh-data', handler);
     const timer = setTimeout(() => {
       loadToolsAndTemplates();
     }, 0);
     // Eagerly cache global env vars so handleRunTemplate doesn't need await
-    getGlobalEnvVars().then(vars => { globalVarsCache.current = vars; });
+    refreshVarsCache();
     return () => {
       window.removeEventListener('loom-refresh-data', handler);
       clearTimeout(timer);

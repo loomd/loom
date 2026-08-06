@@ -32,8 +32,6 @@ export function TemplateModal({
   const [cliId, setCliId] = useState(template?.cli_id ?? defaultCliId ?? (tools[0]?.id ?? ''));
   const [name, setName] = useState(template?.name ?? '');
   const [argsStr, setArgsStr] = useState(template?.args.join(' ') ?? '');
-  const [pwd, setPwd] = useState(template?.pwd ?? '');
-  const [cmdOverride, setCmdOverride] = useState(template?.cmd_override ?? '');
   const [envMode, setEnvMode] = useState<'inherit' | 'isolated'>(template?.env_mode ?? 'inherit');
   const [globalVars, setGlobalVars] = useState<GlobalEnvVar[]>([]);
   const [selectedGlobalVarIds, setSelectedGlobalVarIds] = useState<string[]>(template?.env_var_ids ?? []);
@@ -62,11 +60,10 @@ export function TemplateModal({
       for (const { k, v } of envPairs) {
         if (k.trim()) env[k.trim()] = v;
       }
-      const overrideVal = cmdOverride.trim() || undefined;
       if (template) {
-        await updateTemplate(template.id, name.trim(), args, env, selectedGlobalVarIds, pwd.trim() || undefined, overrideVal, envMode);
+        await updateTemplate(template.id, name.trim(), args, env, selectedGlobalVarIds, undefined, envMode);
       } else {
-        await createTemplate(cliId, name.trim(), args, env, selectedGlobalVarIds, pwd.trim() || undefined, overrideVal, envMode);
+        await createTemplate(cliId, name.trim(), args, env, selectedGlobalVarIds, undefined, envMode);
       }
       onSave();
       onClose();
@@ -79,7 +76,7 @@ export function TemplateModal({
   };
 
   // Generate real-time execution preview
-  const getPreviewText = () => {
+  const getPreview = () => {
     const selectedToolObj = tools.find(t => t.id === cliId);
     const exeName = selectedToolObj ? selectedToolObj.name : 'cli-tool';
     
@@ -102,10 +99,7 @@ export function TemplateModal({
       }
     });
     
-    const envPrefix = activeEnvs.length > 0 ? `${activeEnvs.join(' ')} ` : '';
-    const pwdPrefix = pwd.trim() ? `cd ${pwd.trim()} && ` : '';
-    
-    return `${pwdPrefix}${envPrefix}${exeName}${finalArgs}`;
+    return { pwd: '', envs: activeEnvs, exeName, finalArgs };
   };
 
   return (
@@ -123,14 +117,31 @@ export function TemplateModal({
             className={`spec-tab-btn ${activeTab === 'general' ? 'active' : ''}`}
             onClick={() => setActiveTab('general')}
           >
-            <span>📝</span> {t('temp.modal.general') || '基本设置'}
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+              <polyline points="14 2 14 8 20 8" />
+              <line x1="16" y1="13" x2="8" y2="13" />
+              <line x1="16" y1="17" x2="8" y2="17" />
+            </svg>
+            {t('temp.modal.general') || '基本设置'}
           </button>
           <button
             type="button"
             className={`spec-tab-btn ${activeTab === 'env' ? 'active' : ''}`}
             onClick={() => setActiveTab('env')}
           >
-            <span>🌐</span> {t('temp.modal.envTab') || '环境变量'}
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="4" y1="21" x2="4" y2="14" />
+              <line x1="4" y1="10" x2="4" y2="3" />
+              <line x1="12" y1="21" x2="12" y2="12" />
+              <line x1="12" y1="8" x2="12" y2="3" />
+              <line x1="20" y1="21" x2="20" y2="16" />
+              <line x1="20" y1="12" x2="20" y2="3" />
+              <line x1="1" y1="14" x2="7" y2="14" />
+              <line x1="9" y1="8" x2="15" y2="8" />
+              <line x1="17" y1="16" x2="23" y2="16" />
+            </svg>
+            {t('temp.modal.envTab') || '环境变量'}
           </button>
         </div>
 
@@ -141,35 +152,18 @@ export function TemplateModal({
               {activeTab === 'general' && (
                 <>
                   <div className="form-group">
-                    <label className="form-label">{t('temp.modal.tool')} *</label>
+                    <label className="form-label">{t('temp.modal.tool')} <span style={{ color: 'var(--accent-red)' }}>*</span></label>
                     <select className="input" value={cliId} onChange={e => setCliId(e.target.value)} disabled={!!template}>
                       {tools.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
                     </select>
                   </div>
                   <div className="form-group">
-                    <label className="form-label">{t('temp.modal.name')} *</label>
+                    <label className="form-label">{t('temp.modal.name')} <span style={{ color: 'var(--accent-red)' }}>*</span></label>
                     <input className="input" placeholder={t('temp.modal.namePlaceholder')} value={name} onChange={e => setName(e.target.value)} autoFocus />
                   </div>
                   <div className="form-group">
                     <label className="form-label">{t('temp.card.args') || '参数'}</label>
                     <input className="input" placeholder={t('temp.modal.argsPlaceholder')} value={argsStr} onChange={e => setArgsStr(e.target.value)} />
-                  </div>
-                  <div className="form-group">
-                    <label className="form-label">{t('temp.modal.pwd')}</label>
-                    <input className="input" placeholder={t('temp.modal.pwdPlaceholder')} value={pwd} onChange={e => setPwd(e.target.value)} />
-                  </div>
-                  <div className="form-group">
-                    <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                      {t('temp.modal.cmdOverride')}
-                      <span style={{ fontSize: 10, color: 'var(--text-tertiary)', fontWeight: 400, fontFamily: 'monospace' }}>loom &lt;name&gt;</span>
-                    </label>
-                    <input
-                      className="input"
-                      placeholder={t('temp.modal.cmdOverridePlaceholder')}
-                      value={cmdOverride}
-                      onChange={e => setCmdOverride(e.target.value)}
-                      style={{ fontFamily: 'monospace', fontSize: 12 }}
-                    />
                   </div>
                 </>
               )}
@@ -318,7 +312,7 @@ export function TemplateModal({
           </div>
           
           {/* Live Execution Preview Terminal */}
-          <div style={{ marginTop: '4px' }}>
+          <div style={{ marginTop: '12px' }}>
             <div className="spec-preview-terminal">
               <div className="spec-preview-terminal-header">
                 <div className="spec-terminal-dot red" />
@@ -327,7 +321,22 @@ export function TemplateModal({
                 <div className="spec-preview-terminal-title">{t('temp.modal.preview') || 'Execution Preview'}</div>
               </div>
               <div className="spec-preview-cmd-line">
-                {getPreviewText()}
+                {(() => {
+                  const preview = getPreview();
+                  return (
+                    <>
+                      {preview.pwd && (
+                        <>
+                          <span className="spec-preview-dim">cd {preview.pwd} &&</span>{' '}
+                        </>
+                      )}
+                      {preview.envs.map(e => (
+                        <span key={e} className="spec-preview-env">{e}{' '}</span>
+                      ))}
+                      <span className="spec-preview-cmd">{preview.exeName}{preview.finalArgs}</span>
+                    </>
+                  );
+                })()}
               </div>
             </div>
           </div>
@@ -414,11 +423,6 @@ export default function TemplatesPage({ tools, onInstanceLaunched }: Props) {
                     <div className="flex items-center gap-2 min-w-0">
                       <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)' }}>{tpl.name}</span>
                       <span className="badge badge-purple" style={{ fontSize: 10 }}>{getToolName(tpl.cli_id)}</span>
-                      {tpl.cmd_override && (
-                        <span className="badge badge-emerald" style={{ fontSize: 10 }} title={t('temp.card.cmdOverride')}>
-                          {tpl.cmd_override}
-                        </span>
-                      )}
                     </div>
                     <div className="flex items-center gap-2">
                       <button
@@ -436,12 +440,6 @@ export default function TemplatesPage({ tools, onInstanceLaunched }: Props) {
                   </div>
 
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px 20px', fontSize: 12, color: 'var(--text-tertiary)' }}>
-                    {tpl.cmd_override && (
-                      <span style={{ fontFamily: 'monospace', fontSize: 11 }}>
-                        <span style={{ color: 'var(--accent-purple)', marginRight: 4 }}>{t('temp.card.cmdOverride')}:</span>
-                        loom {tpl.cmd_override}
-                      </span>
-                    )}
                     {tpl.args.length > 0 && (
                       <span style={{ fontFamily: 'monospace', fontSize: 11 }}>
                         <span style={{ color: 'var(--accent-emerald)', marginRight: 4 }}>{t('temp.card.args')}:</span>

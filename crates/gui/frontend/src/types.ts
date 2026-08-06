@@ -9,6 +9,7 @@ export interface CliTool {
   custom_env: Record<string, string>;
   custom_args?: string[];
   is_agent: boolean;
+  alias?: string;
 }
 
 export interface Category {
@@ -33,7 +34,6 @@ export interface Template {
   env_var_ids: string[];
   pwd?: string;
   last_run?: string;
-  cmd_override?: string;
   env_mode?: 'inherit' | 'isolated';
 }
 

@@ -34,8 +34,17 @@ export default function EnvVarsPage() {
   const [modalValue, setModalValue] = useState('');
   const [modalDesc, setModalDesc] = useState('');
   const [saving, setSaving] = useState(false);
+  const [expandedKeys, setExpandedKeys] = useState<Set<string>>(new Set());
   const toast = useToast();
   const dialog = useDialog();
+
+  const toggleExpand = (key: string) => {
+    setExpandedKeys(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
+  };
 
   const load = useCallback(async () => {
     try {
@@ -80,6 +89,7 @@ export default function EnvVarsPage() {
       }
       setShowModal(false);
       load();
+      window.dispatchEvent(new Event('loom-refresh-data'));
       toast.success(t('env.toast.saved'));
     } catch {
       toast.error(t('env.toast.saveFailed'));
@@ -94,6 +104,7 @@ export default function EnvVarsPage() {
     try {
       await deleteGlobalEnvVar(id);
       load();
+      window.dispatchEvent(new Event('loom-refresh-data'));
       toast.success(t('temp.toast.deleted'));
     } catch {
       toast.error('Delete failed');
@@ -110,8 +121,16 @@ export default function EnvVarsPage() {
   const grouped = groupByKey(allVars);
   const groupEntries = Array.from(grouped.entries());
 
-return (
-		<div data-tour-target="env-vars-page" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+  const columnHeaderStyle = {
+    fontSize: 11,
+    fontWeight: 600,
+    letterSpacing: '0.06em',
+    textTransform: 'uppercase',
+    color: 'var(--text-tertiary)'
+  };
+
+	return (
+		<div data-tour-target="env-vars-page" style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
 			<div className="page-header">
 				<div>
 					<div className="page-title">{t('env.title')}</div>
@@ -122,9 +141,14 @@ return (
 				</button>
 			</div>
 
-      <div className="page-body" style={{ display: 'flex', flexDirection: 'column', gap: 12, flexGrow: 1, minHeight: 0 }}>
-        <div className="search-input-wrap" style={{ width: '100%', maxWidth: '320px', marginBottom: 4, flex: 'none' }}>
-          <span className="search-icon">🔍</span>
+      <div style={{ padding: '16px 28px 0', flex: 'none' }}>
+        <div className="search-input-wrap" style={{ width: '100%', maxWidth: '320px' }}>
+          <span className="search-icon">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="11" cy="11" r="7" />
+              <path d="m21 21-4.35-4.35" />
+            </svg>
+          </span>
           <input
             className="input"
             placeholder={t('env.search.placeholder')}
@@ -133,78 +157,134 @@ return (
             style={{ fontSize: 12 }}
           />
         </div>
+      </div>
 
+      <div className="page-body" style={{ display: 'flex', flexDirection: 'column', gap: 12, minHeight: 0, paddingTop: 12, paddingRight: 32 }}>
         {groupEntries.length === 0 ? (
           <div className="empty-state">
-            <div className="empty-state-icon">📭</div>
             <div className="empty-state-title">{t('env.empty.noVars')}</div>
             {search && <div className="empty-state-desc">{t('env.empty.noSearchResult')}</div>}
           </div>
         ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12, flexGrow: 1, minHeight: 0, overflowY: 'auto', paddingRight: '4px' }}>
-            {groupEntries.map(([key, values], idx) => (
-              <div key={key} className="card-outer" style={{ animationDelay: `${idx * 40}ms` }}>
-                <div className="card-inner" style={{ padding: '14px 18px' }}>
-                  {/* Key header row */}
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                      <span style={{ fontFamily: 'monospace', fontSize: 13, fontWeight: 700, color: 'var(--accent-purple)' }}>
-                        {key}
-                      </span>
-                      <span style={{
-                        fontSize: 10, padding: '2px 7px',
-                        borderRadius: 99,
-                        background: 'var(--accent-purple-dim)',
-                        color: 'var(--accent-purple)',
-                        fontWeight: 600
-                      }}>
-                        {values.length} {t('env.group.valueCount')}
-                      </span>
-                    </div>
-                    {/* Add another value for this key */}
-                    <button
-                      className="btn btn-ghost"
-                      onClick={() => openNew(key)}
-                      style={{ fontSize: 11, padding: '3px 10px' }}
-                      title={t('env.btn.addValue')}
-                    >
-                      ＋ {t('env.btn.addValue')}
-                    </button>
+          <>
+            {groupEntries.map(([key, values]) => {
+              const isExpanded = !!search || expandedKeys.has(key);
+              return (
+              <div
+                key={key}
+                style={{
+                  flexShrink: 0,
+                  background: 'var(--bg-surface)',
+                  border: '1px solid var(--border-subtle)',
+                  borderRadius: 'var(--radius-md)',
+                  overflow: 'hidden'
+                }}
+              >
+                {/* Key header row */}
+                <div
+                  onClick={() => toggleExpand(key)}
+                  title={isExpanded ? t('env.group.collapse') : t('env.group.expand')}
+                  style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                    padding: '10px 14px',
+                    borderBottom: isExpanded ? '1px solid var(--border-subtle)' : 'none',
+                    cursor: 'pointer', userSelect: 'none'
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
+                    <span style={{
+                      display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                      width: 14, height: 14, flexShrink: 0,
+                      color: 'var(--text-tertiary)',
+                      transform: isExpanded ? 'rotate(90deg)' : 'none',
+                      transition: 'transform 200ms var(--ease-spring)'
+                    }}>
+                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="m9 18 6-6-6-6" />
+                      </svg>
+                    </span>
+                    <span style={{ fontFamily: 'monospace', fontSize: 13, fontWeight: 700, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {key}
+                    </span>
+                    <span style={{
+                      fontSize: 10, padding: '2px 7px', flexShrink: 0,
+                      borderRadius: 99,
+                      border: '1px solid var(--border-subtle)',
+                      color: 'var(--text-tertiary)',
+                      fontWeight: 600
+                    }}>
+                      {values.length} {t('env.group.valueCount')}
+                    </span>
                   </div>
-
-                  {/* Values list */}
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                    {values.map((ev, vi) => (
-                      <div
-                        key={ev.id}
-                        style={{
-                          display: 'grid',
-                          gridTemplateColumns: '1fr 1fr auto',
-                          gap: 12,
-                          alignItems: 'center',
-                          padding: '8px 10px',
-                          borderRadius: 'var(--radius-sm)',
-                          background: vi % 2 === 0 ? 'var(--bg-elevated)' : 'transparent',
-                          border: '1px solid var(--border-subtle)'
-                        }}
-                      >
-                        <div style={{ fontFamily: 'monospace', fontSize: 12, color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                          {ev.value || <span style={{ color: 'var(--text-tertiary)', fontStyle: 'italic' }}>(empty)</span>}
-                        </div>
-                        <div style={{ fontSize: 12, color: 'var(--text-tertiary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                          {ev.description || '-'}
-                        </div>
-                        <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
-                          <button className="btn-icon" onClick={() => openEdit(ev)} style={{ fontSize: 12 }}>📝</button>
-                          <button className="btn-icon" onClick={() => handleDelete(ev.id, ev.key)} style={{ color: 'var(--accent-red)', fontSize: 12 }}>✕</button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
+                  {/* Add another value for this key */}
+                  <button
+                    className="btn btn-ghost"
+                    onClick={e => { e.stopPropagation(); openNew(key); }}
+                    style={{ fontSize: 11, padding: '3px 10px', flexShrink: 0 }}
+                    title={t('env.btn.addValue')}
+                  >
+                    ＋ {t('env.btn.addValue')}
+                  </button>
                 </div>
+
+                {/* Values list */}
+                {isExpanded && (
+                <div style={{ padding: '0 14px' }}>
+                  {/* Column header */}
+                  <div style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr) auto',
+                    gap: 12,
+                    alignItems: 'center',
+                    padding: '8px 10px'
+                  }}>
+                    <span style={{ ...columnHeaderStyle, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t('env.table.value')}</span>
+                    <span style={{ ...columnHeaderStyle, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t('env.table.desc')}</span>
+                    <span style={{ ...columnHeaderStyle, textAlign: 'right' }}>{t('env.table.actions')}</span>
+                  </div>
+                  {values.map((ev) => (
+                    <div
+                      key={ev.id}
+                      style={{
+                        display: 'grid',
+                        gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr) auto',
+                        gap: 12,
+                        alignItems: 'center',
+                        padding: '7px 10px',
+                        borderTop: '1px solid var(--border-subtle)'
+                      }}
+                    >
+                      <div style={{ fontFamily: 'monospace', fontSize: 12, color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {ev.value || <span style={{ color: 'var(--text-tertiary)', fontStyle: 'italic' }}>(empty)</span>}
+                      </div>
+                      <div style={{ fontSize: 12, color: 'var(--text-tertiary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {ev.description || '-'}
+                      </div>
+                      <div style={{ display: 'flex', gap: 4, alignItems: 'center', justifyContent: 'flex-end', flexShrink: 0 }}>
+                        <button
+                          className="btn btn-ghost"
+                          onClick={() => openEdit(ev)}
+                          style={{ fontSize: 11, padding: '2px 8px', height: 'auto', minHeight: 'auto', lineHeight: 1.6 }}
+                        >
+                          {t('temp.card.btn.edit')}
+                        </button>
+                        <button
+                          className="btn-delete-project"
+                          onClick={() => handleDelete(ev.id, ev.key)}
+                          style={{ fontSize: 12, padding: '2px 6px' }}
+                          title={t('temp.card.btn.delete')}
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                )}
               </div>
-            ))}
-          </div>
+              );
+            })}
+          </>
         )}
       </div>
 

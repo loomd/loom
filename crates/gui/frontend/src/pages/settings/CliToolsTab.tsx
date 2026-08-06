@@ -5,19 +5,16 @@ import { useDialog } from "../../DialogContext";
 import {
 	getCliTools,
 	deleteCliTool,
-	deleteAiAgent,
 	importCliTool,
-	assignCliCategory,
 	getTemplates,
 	deleteTemplate,
 	reorderCliTools,
 	toggleCliToolAgent,
-	scanPathEnv,
+	scanPathEnvAutoRegister,
 } from "../../api";
-import type { CliTool, Category, Template } from "../../types";
+import type { CliTool, Template } from "../../types";
 import CliToolConfigModal from "../../components/CliToolConfigModal";
 import { TemplateModal } from "../TemplatesPage";
-import { invoke } from "@tauri-apps/api/core";
 
 const OTHER_TOOLS_PAGE_SIZE = 50;
 
@@ -26,10 +23,8 @@ export default function CliToolsTab() {
 	const toast = useToast();
 	const dialog = useDialog();
 	const [cliTools, setCliTools] = useState<CliTool[]>([]);
-	const [categories, setCategories] = useState<Category[]>([]);
 	const [templates, setTemplates] = useState<Template[]>([]);
 	const [toolsSearch, setToolsSearch] = useState("");
-	const [toolsFilterCat, setToolsFilterCat] = useState("");
 	const [selectedTool, setSelectedTool] = useState<CliTool | null>(null);
 	const [showTemplateModal, setShowTemplateModal] = useState(false);
 	const [editingTemplate, setEditingTemplate] = useState<
@@ -46,7 +41,7 @@ export default function CliToolsTab() {
 	const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
 	const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
 
-	const isFilterActive = !!toolsSearch || !!toolsFilterCat;
+	const isFilterActive = !!toolsSearch;
 
 	const handleDragStart = (e: React.DragEvent, index: number) => {
 		if (isFilterActive) return;
@@ -100,15 +95,6 @@ export default function CliToolsTab() {
 		setDragOverIndex(null);
 	};
 
-	const loadCategories = useCallback(async () => {
-		try {
-			const cats = await invoke<Category[]>("get_categories");
-			setCategories(cats);
-		} catch (e) {
-			console.error("Failed to get categories:", e);
-		}
-	}, []);
-
 	const loadToolsAndTemplates = useCallback(async () => {
 		try {
 			const toolsData = await getCliTools();
@@ -123,21 +109,29 @@ export default function CliToolsTab() {
 
 	useEffect(() => {
 		const timer = setTimeout(() => {
-			loadCategories();
 			loadToolsAndTemplates();
 		}, 0);
 		return () => clearTimeout(timer);
-	}, [loadCategories, loadToolsAndTemplates]);
+	}, [loadToolsAndTemplates]);
 
 	useEffect(() => {
 		const timer = setTimeout(() => {
 			if (cliTools.length === 0) {
 				setSelectedTool(null);
-			} else if (selectedTool && !cliTools.find((t) => t.id === selectedTool.id)) {
-				setSelectedTool(null);
-			} else if (!selectedTool && cliTools.length > 0) {
-				setSelectedTool(cliTools[0]);
+				return;
 			}
+			if (selectedTool && cliTools.find((t) => t.id === selectedTool.id)) {
+				return;
+			}
+			let savedId: string | null = null;
+			try {
+				savedId = localStorage.getItem("loom_selected_tool_id");
+			} catch { /* localStorage may be unavailable */ }
+			const saved = savedId
+				? cliTools.find((t) => t.id === savedId)
+				: undefined;
+			const firstAgent = cliTools.find((t) => t.is_agent);
+			setSelectedTool(saved ?? firstAgent ?? cliTools[0]);
 		}, 0);
 		return () => clearTimeout(timer);
 	}, [cliTools, selectedTool]);
@@ -145,7 +139,7 @@ export default function CliToolsTab() {
 	const handleRefresh = async () => {
 		setScanningTools(true);
 		try {
-			const discovered = await scanPathEnv();
+			const discovered = await scanPathEnvAutoRegister();
 			await loadToolsAndTemplates();
 			window.dispatchEvent(new Event('loom-refresh-data'));
 			toast.success(t("db.toast.scanSuccess", { count: discovered.length }));
@@ -180,6 +174,9 @@ export default function CliToolsTab() {
 			await deleteCliTool(id);
 			if (selectedTool?.id === id) {
 				setSelectedTool(null);
+				try {
+					localStorage.removeItem("loom_selected_tool_id");
+				} catch { /* localStorage may be unavailable */ }
 			}
 			await loadToolsAndTemplates();
 			window.dispatchEvent(new Event('loom-refresh-data'));
@@ -202,17 +199,6 @@ export default function CliToolsTab() {
 		}
 	};
 
-	const handleCategoryChange = async (toolId: string, catId: string) => {
-		try {
-			await assignCliCategory(toolId, catId || null);
-			await loadToolsAndTemplates();
-			window.dispatchEvent(new Event('loom-refresh-data'));
-			toast.success(t("db.toast.catUpdated"));
-		} catch (e) {
-			toast.error(String(e) || t("db.toast.catUpdateFailed"));
-		}
-	};
-
 	const handleDeleteTemplate = async (id: string, name: string) => {
 		const ok = await dialog.confirm({ message: t("temp.confirm.delete", { name }), danger: true });
 		if (!ok) return;
@@ -226,28 +212,13 @@ export default function CliToolsTab() {
 		}
 	};
 
-	const handleDeleteAgent = async (e: React.MouseEvent, toolId: string, toolName: string) => {
-		e.stopPropagation();
-		const ok = await dialog.confirm({ message: t("db.confirm.deleteAgent", { name: toolName }), danger: true });
-		if (!ok) return;
-		try {
-			await deleteAiAgent(toolId);
-			await loadToolsAndTemplates();
-			window.dispatchEvent(new Event('loom-refresh-data'));
-			toast.success(t("db.toast.agentRemoved"));
-		} catch (e) {
-			toast.error(String(e) || "Failed to delete AI agent");
-		}
-	};
-
 	const filteredTools = cliTools.filter((t) => {
 		const q = toolsSearch.toLowerCase();
-		const matchSearch =
+		return (
 			!q ||
 			t.name.toLowerCase().includes(q) ||
-			t.path.toLowerCase().includes(q);
-		const matchCat = !toolsFilterCat || t.category_id === toolsFilterCat;
-		return matchSearch && matchCat;
+			t.path.toLowerCase().includes(q)
+		);
 	});
 
 	const filteredAgentTools = filteredTools.filter((t) => t.is_agent);
@@ -282,7 +253,12 @@ export default function CliToolsTab() {
 				onDragLeave={handleDragLeave}
 				onDrop={(e) => handleDrop(e, index)}
 				onDragEnd={handleDragEnd}
-				onClick={() => setSelectedTool(tool)}
+				onClick={() => {
+					setSelectedTool(tool);
+					try {
+						localStorage.setItem("loom_selected_tool_id", tool.id);
+					} catch { /* localStorage may be unavailable */ }
+				}}
 				style={{
 					display: "flex",
 					justifyContent: "space-between",
@@ -353,20 +329,6 @@ export default function CliToolsTab() {
 							}}
 						>
 							{tool.name}
-							{isAgent && (
-								<span
-									style={{
-										fontSize: "0.65rem",
-										fontWeight: 600,
-										backgroundColor: "var(--accent-purple, #9b5de5)",
-										color: "#fff",
-										padding: "1px 5px",
-										borderRadius: "8px",
-									}}
-								>
-									{t("db.agentBadge")}
-								</span>
-							)}
 						</span>
 						<span
 							style={{
@@ -388,30 +350,6 @@ export default function CliToolsTab() {
 								marginTop: "4px",
 							}}
 						>
-							<select
-								value={tool.category_id || ""}
-								onChange={(e) =>
-									handleCategoryChange(tool.id, e.target.value)
-								}
-								onClick={(e) => e.stopPropagation()}
-								style={{
-									fontSize: "0.7rem",
-									padding: "2px 4px",
-									borderRadius: "4px",
-									border: "1px solid var(--border-subtle)",
-									backgroundColor: "var(--bg-input)",
-									color: "var(--text-secondary)",
-								}}
-							>
-								<option value="">
-									{t("db.tool.noCategory")}
-								</option>
-								{categories.map((c) => (
-									<option key={c.id} value={c.id}>
-										{c.name}
-									</option>
-								))}
-							</select>
 							<button
 								onClick={(e) => {
 									e.stopPropagation();
@@ -446,45 +384,29 @@ export default function CliToolsTab() {
 									borderColor: isAgent ? "rgba(251,191,36,0.3)" : "rgba(139,92,246,0.3)",
 								}}
 							>
-								{isAgent ? "AI" : "+AI"}
+								{isAgent ? "-AI" : "+AI"}
 							</button>
 						</div>
 					</div>
 				</div>
 
 				<div style={{ display: "flex", gap: "4px", alignItems: "center" }}>
-					{isAgent && (
+					{!isAgent && (
 						<button
-							onClick={(e) => handleDeleteAgent(e, tool.id, tool.name)}
+							onClick={(e) => handleDeleteTool(e, tool.id)}
 							style={{
 								background: "none",
-								border: "1px solid rgba(239,68,68,0.3)",
+								border: "none",
 								color: "var(--accent-red)",
 								cursor: "pointer",
-								padding: "2px 6px",
-								borderRadius: "4px",
-								fontSize: "0.65rem",
-								whiteSpace: "nowrap",
+								padding: "4px",
+								opacity: 0.6,
 							}}
-							title="Delete AI Agent (keep CLI tool)"
+							title="Remove CLI Tool"
 						>
-							{t("db.btn.deleteAgent")}
+							✕
 						</button>
 					)}
-					<button
-						onClick={(e) => handleDeleteTool(e, tool.id)}
-						style={{
-							background: "none",
-							border: "none",
-							color: "var(--accent-red)",
-							cursor: "pointer",
-							padding: "4px",
-							opacity: 0.6,
-						}}
-						title="Remove CLI Tool"
-					>
-						✕
-					</button>
 				</div>
 			</div>
 		);
@@ -543,23 +465,6 @@ export default function CliToolsTab() {
 						className="input"
 						style={{ padding: "6px 10px", fontSize: "0.85rem" }}
 					/>
-
-					<select
-						value={toolsFilterCat}
-						onChange={(e) => setToolsFilterCat(e.target.value)}
-						className="input"
-						style={{ padding: "6px 10px", fontSize: "0.85rem" }}
-					>
-						<option value="">{t("db.filter.allCategories")}</option>
-						{categories.map((c) => (
-							<option key={c.id} value={c.id}>
-								{c.name}
-							</option>
-						))}
-						<option value="uncategorized">
-							{t("db.tool.uncategorized")}
-						</option>
-					</select>
 				</div>
 
 				{/* Tool List: AI Agents + Other Tools */}
@@ -744,14 +649,14 @@ export default function CliToolsTab() {
 							</div>
 
 							<button
-								className="btn-primary"
+								className="btn btn-primary"
 								onClick={() => {
 									setEditingTemplate(undefined);
 									setShowTemplateModal(true);
 								}}
-								style={{ padding: "6px 12px", fontSize: "0.85rem" }}
+								style={{ padding: "6px 12px", fontSize: "0.85rem", marginRight: "16px" }}
 							>
-								＋ {t("temp.btn.new")}
+								<span>＋</span> {t("temp.btn.new")}
 							</button>
 						</div>
 
@@ -810,7 +715,7 @@ export default function CliToolsTab() {
 
 											<div style={{ display: "flex", gap: "8px" }}>
 												<button
-													className="btn-secondary"
+													className="btn btn-ghost"
 													onClick={() => {
 														setEditingTemplate(tpl);
 														setShowTemplateModal(true);
@@ -823,15 +728,13 @@ export default function CliToolsTab() {
 													{t("temp.card.btn.edit")}
 												</button>
 												<button
-													className="btn-secondary"
+													className="btn btn-danger"
 													onClick={() =>
 														handleDeleteTemplate(tpl.id, tpl.name)
 													}
 													style={{
 														padding: "4px 10px",
 														fontSize: "0.8rem",
-														color: "var(--accent-red)",
-														borderColor: "rgba(239, 68, 68, 0.2)",
 													}}
 												>
 													{t("temp.card.btn.delete")}
@@ -848,24 +751,6 @@ export default function CliToolsTab() {
 												color: "var(--text-secondary)",
 											}}
 										>
-											{tpl.cmd_override && (
-												<div
-													style={{
-														display: "flex",
-														justifyContent: "space-between",
-													}}
-												>
-													<span>{t("temp.card.cmdOverride")}</span>
-													<span
-														style={{
-															fontFamily: "monospace",
-															color: "var(--text-primary)",
-														}}
-													>
-														loom {tpl.cmd_override}
-													</span>
-												</div>
-											)}
 											<div
 												style={{
 													display: "flex",

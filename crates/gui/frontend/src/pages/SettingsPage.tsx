@@ -140,7 +140,7 @@ export default function SettingsPage({
 				style={{
 					flexGrow: 1,
 					minHeight: 0,
-					overflowY: activeSubTab === "tools" ? "hidden" : "auto",
+					overflowY: activeSubTab === "tools" || activeSubTab === "env" ? "hidden" : "auto",
 				}}
 			>
 				{activeSubTab === "general" && (
@@ -169,11 +169,7 @@ export default function SettingsPage({
 					/>
 				)}
 				{activeSubTab === "tools" && <CliToolsTab />}
-				{activeSubTab === "env" && (
-					<div style={{ height: "100%", overflowY: "auto" }}>
-						<EnvVarsPage />
-					</div>
-				)}
+				{activeSubTab === "env" && <EnvVarsPage />}
 				{activeSubTab === "libs" && <LibsTab />}
 			</div>
 		</div>

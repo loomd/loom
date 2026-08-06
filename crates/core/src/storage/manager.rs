@@ -74,9 +74,8 @@ const KNOWN_AGENTS: &[&str] = &[
     "agy",
     "grok",
     "copilot",
-    "cursor",
-    "aider",
-    "windsurf",
+    "kimi",
+    "qwen",
 ];
 
 fn is_likely_agent(name: &str) -> bool {
@@ -194,7 +193,6 @@ pub fn create_agent_templates(
             env_var_ids: Vec::new(),
             pwd: None,
             last_run: None,
-            cmd_override: None,
             env_mode: None,
         };
         config.templates.push(template.clone());
@@ -817,19 +815,75 @@ pub fn import_cli_tool(path: String) -> Result<CliTool> {
         custom_env: HashMap::new(),
         custom_args: Vec::new(),
         is_agent,
+        alias: None,
     };
     config.cli_tools.push(new_tool.clone());
     save_config(&config)?;
     Ok(new_tool)
 }
 
-pub fn scan_path_env() -> Result<Vec<CliTool>> {
-    let path_val = match env::var("PATH") {
-        Ok(v) => v,
-        Err(_) => return Ok(Vec::new()),
-    };
+#[cfg(target_os = "windows")]
+fn expand_process_env(input: &str) -> String {
+    let mut result = String::new();
+    let mut rest = input;
+    while let Some(start) = rest.find('%') {
+        result.push_str(&rest[..start]);
+        let after = &rest[start + 1..];
+        if let Some(end) = after.find('%') {
+            let var_name = &after[..end];
+            match env::var(var_name) {
+                Ok(v) => result.push_str(&v),
+                Err(_) => {
+                    result.push('%');
+                    result.push_str(var_name);
+                    result.push('%');
+                }
+            }
+            rest = &after[end + 1..];
+        } else {
+            result.push('%');
+            result.push_str(after);
+            break;
+        }
+    }
+    result.push_str(rest);
+    result
+}
 
-    let paths: Vec<PathBuf> = env::split_paths(&path_val).collect();
+#[cfg(target_os = "windows")]
+fn registry_path_entries() -> Vec<String> {
+    use winreg::enums::{HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE};
+    use winreg::RegKey;
+
+    let mut entries = Vec::new();
+    let machine = RegKey::predef(HKEY_LOCAL_MACHINE)
+        .open_subkey("SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment")
+        .and_then(|k| k.get_value::<String, _>("Path"));
+    let user = RegKey::predef(HKEY_CURRENT_USER)
+        .open_subkey("Environment")
+        .and_then(|k| k.get_value::<String, _>("Path"));
+
+    for path in [machine, user].into_iter().flatten() {
+        for seg in expand_process_env(&path).split(';') {
+            if !seg.is_empty() {
+                entries.push(seg.to_string());
+            }
+        }
+    }
+    entries
+}
+
+pub fn scan_path_env() -> Result<Vec<CliTool>> {
+    let mut paths: Vec<PathBuf> = Vec::new();
+    #[cfg(target_os = "windows")]
+    paths.extend(registry_path_entries().into_iter().map(PathBuf::from));
+    if let Ok(path_val) = env::var("PATH") {
+        paths.extend(env::split_paths(&path_val));
+    }
+    if paths.is_empty() {
+        return Ok(Vec::new());
+    }
+
     let mut config = load_config()?;
     let mut scanned = Vec::new();
     let mut seen_names = std::collections::HashSet::new();
@@ -903,6 +957,7 @@ pub fn scan_path_env() -> Result<Vec<CliTool>> {
                                 custom_env: HashMap::new(),
                                 custom_args: Vec::new(),
                                 is_agent,
+                                alias: None,
                             };
                             config.cli_tools.push(new_tool.clone());
                             new_tool
@@ -916,6 +971,19 @@ pub fn scan_path_env() -> Result<Vec<CliTool>> {
 
     save_config(&config)?;
     Ok(scanned)
+}
+
+pub fn scan_path_env_auto_register() -> Result<Vec<CliTool>> {
+    let tools = scan_path_env()?;
+    let agents: Vec<(String, String)> = tools
+        .iter()
+        .filter(|t| t.is_agent)
+        .map(|t| (t.id.clone(), t.name.clone()))
+        .collect();
+    if !agents.is_empty() {
+        create_agent_templates(agents).map_err(StorageError::Validation)?;
+    }
+    Ok(tools)
 }
 
 pub fn scan_directory(path: String) -> Result<Vec<CliTool>> {
@@ -1008,6 +1076,7 @@ pub fn scan_directory(path: String) -> Result<Vec<CliTool>> {
                                 custom_env: HashMap::new(),
                                 custom_args: Vec::new(),
                                 is_agent,
+                                alias: None,
                             };
                             config.cli_tools.push(new_tool.clone());
                             new_tool
@@ -1116,6 +1185,40 @@ pub fn update_cli_args(cli_id: String, args: Vec<String>) -> Result<()> {
     Ok(())
 }
 
+pub fn update_cli_alias(cli_id: String, alias: Option<String>) -> Result<()> {
+    let mut config = load_config()?;
+    let tool_index = config
+        .cli_tools
+        .iter()
+        .position(|t| t.id == cli_id)
+        .ok_or_else(|| StorageError::CliToolNotFound(cli_id.clone()))?;
+
+    let normalized_alias = alias
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty());
+    if let Some(ref alias_name) = normalized_alias {
+        if ["list", "search", "mock-run", "help", "version"].contains(&alias_name.as_str()) {
+            return Err(StorageError::Validation(format!(
+                "Alias '{}' conflicts with built-in commands",
+                alias_name
+            )));
+        }
+        if config.cli_tools.iter().any(|t| {
+            t.id != cli_id
+                && (t.alias.as_ref() == Some(alias_name) || t.name == *alias_name)
+        }) {
+            return Err(StorageError::Validation(format!(
+                "Alias '{}' already exists",
+                alias_name
+            )));
+        }
+    }
+
+    config.cli_tools[tool_index].alias = normalized_alias;
+    save_config(&config)?;
+    Ok(())
+}
+
 pub fn create_template(
     cli_id: String,
     name: String,
@@ -1123,7 +1226,6 @@ pub fn create_template(
     env: HashMap<String, String>,
     env_var_ids: Vec<String>,
     pwd: Option<String>,
-    cmd_override: Option<String>,
     env_mode: Option<String>,
 ) -> Result<Template> {
     if name.is_empty() {
@@ -1148,28 +1250,6 @@ pub fn create_template(
         )));
     }
 
-    let normalized_override = cmd_override
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty());
-    if let Some(ref override_name) = normalized_override {
-        if config
-            .templates
-            .iter()
-            .any(|t| t.cmd_override.as_ref() == Some(override_name))
-        {
-            return Err(StorageError::Validation(format!(
-                "Command override '{}' already exists",
-                override_name
-            )));
-        }
-        if ["list", "search", "mock-run", "help", "version"].contains(&override_name.as_str()) {
-            return Err(StorageError::Validation(format!(
-                "Command override '{}' conflicts with built-in commands",
-                override_name
-            )));
-        }
-    }
-
     let pwd_path = pwd.map(PathBuf::from);
     if let Some(ref p) = pwd_path {
         if !p.as_os_str().is_empty() {
@@ -1192,7 +1272,6 @@ pub fn create_template(
         env_var_ids,
         pwd: pwd_path,
         last_run: None,
-        cmd_override: normalized_override,
         env_mode,
     };
 
@@ -1224,7 +1303,6 @@ pub fn update_template(
     env: HashMap<String, String>,
     env_var_ids: Vec<String>,
     pwd: Option<String>,
-    cmd_override: Option<String>,
     env_mode: Option<String>,
 ) -> Result<Template> {
     let mut config = load_config()?;
@@ -1238,28 +1316,6 @@ pub fn update_template(
         return Err(StorageError::Validation(
             "Template name cannot be empty".to_string(),
         ));
-    }
-
-    let normalized_override = cmd_override
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty());
-    if let Some(ref override_name) = normalized_override {
-        if config
-            .templates
-            .iter()
-            .any(|t| t.id != template_id && t.cmd_override.as_ref() == Some(override_name))
-        {
-            return Err(StorageError::Validation(format!(
-                "Command override '{}' already exists",
-                override_name
-            )));
-        }
-        if ["list", "search", "mock-run", "help", "version"].contains(&override_name.as_str()) {
-            return Err(StorageError::Validation(format!(
-                "Command override '{}' conflicts with built-in commands",
-                override_name
-            )));
-        }
     }
 
     let pwd_path = pwd.map(PathBuf::from);
@@ -1280,7 +1336,6 @@ pub fn update_template(
     config.templates[template_idx].env = env;
     config.templates[template_idx].env_var_ids = env_var_ids;
     config.templates[template_idx].pwd = pwd_path;
-    config.templates[template_idx].cmd_override = normalized_override;
     config.templates[template_idx].env_mode = env_mode;
 
     let updated = config.templates[template_idx].clone();

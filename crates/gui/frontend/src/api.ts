@@ -23,6 +23,9 @@ export const importCliTool = (path: string): Promise<CliTool> =>
 
 export const scanPathEnv = (): Promise<CliTool[]> => invoke("scan_path_env");
 
+export const scanPathEnvAutoRegister = (): Promise<CliTool[]> =>
+	invoke("scan_path_env_auto_register");
+
 export const scanDirectory = (path: string): Promise<CliTool[]> =>
 	invoke("scan_directory", { path });
 
@@ -31,9 +34,6 @@ export const deleteCliTool = (cliId: string): Promise<void> =>
 
 export const toggleCliToolAgent = (cliId: string): Promise<CliTool> =>
 	invoke("toggle_cli_tool_agent", { cliId });
-
-export const deleteAiAgent = (cliId: string): Promise<void> =>
-	invoke("delete_ai_agent", { cliId });
 
 export const reorderCliTools = (ids: string[]): Promise<void> =>
 	invoke("reorder_cli_tools", { ids });
@@ -45,6 +45,11 @@ export const updateCliEnv = (
 
 export const updateCliArgs = (cliId: string, args: string[]): Promise<void> =>
 	invoke("update_cli_args", { cliId, args });
+
+export const updateCliAlias = (
+	cliId: string,
+	alias: string | null,
+): Promise<void> => invoke("update_cli_alias", { cliId, alias });
 
 // ─── Categories ───────────────────────────────────────────
 export const createCategory = (name: string, desc: string): Promise<Category> =>
@@ -99,7 +104,6 @@ export const createTemplate = (
 	env: Record<string, string>,
 	envVarIds: string[],
 	pwd?: string,
-	cmdOverride?: string,
 	envMode?: "inherit" | "isolated",
 ): Promise<Template> =>
 	invoke("create_template", {
@@ -109,7 +113,6 @@ export const createTemplate = (
 		env,
 		envVarIds,
 		pwd,
-		cmdOverride,
 		envMode,
 	});
 
@@ -120,7 +123,6 @@ export const updateTemplate = (
 	env: Record<string, string>,
 	envVarIds: string[],
 	pwd?: string,
-	cmdOverride?: string,
 	envMode?: "inherit" | "isolated",
 ): Promise<Template> =>
 	invoke("update_template", {
@@ -130,7 +132,6 @@ export const updateTemplate = (
 		env,
 		envVarIds,
 		pwd,
-		cmdOverride,
 		envMode,
 	});
 

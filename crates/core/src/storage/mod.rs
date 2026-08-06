@@ -20,11 +20,11 @@ pub use manager::{
     import_cli_tool, import_global_doc_to_project,
     import_global_skill_to_project, kill_cli_instance, parse_local_skill_dir, read_agent_logs,
     reorder_cli_tools, reorder_projects, reorder_templates, run_cli_template, scan_and_classify_agents, create_agent_templates, scan_directory, toggle_cli_tool_agent,
-    scan_path_env, scan_project_agent_docs, set_agent_skill_map, set_autostart_enabled,
-    set_font_family, set_font_size, set_language, set_onboarded_status, set_skipped_version,
-    set_theme, smart_classify, spawn_project_agent, sync_running_processes, toggle_project_skill,
+    scan_path_env, scan_path_env_auto_register, scan_project_agent_docs, set_agent_skill_map,
+    set_autostart_enabled, set_font_family, set_font_size, set_language, set_onboarded_status,
+    set_skipped_version, set_theme, smart_classify, spawn_project_agent, sync_running_processes, toggle_project_skill,
     update_category, update_cli_args, update_cli_env, update_global_doc, update_global_env_var,
-    update_global_skill, update_template, StorageManager, ScanResult,
+    update_global_skill, update_cli_alias, update_template, StorageManager, ScanResult,
 };
 pub use models::{
     AgentDoc, AgentInstance, AppConfig, Category, CliTool, GlobalDocTemplate, GlobalEnvVar,

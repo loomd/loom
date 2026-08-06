@@ -126,12 +126,14 @@ const zhDict: Dictionary = {
 	"env.group.selectOne": "单选，互斥",
 	"env.group.clear": "取消选择",
 	"env.btn.addValue": "添加候选值",
+	"env.group.expand": "展开候选值",
+	"env.group.collapse": "收起候选值",
 	"env.modal.keyLocked": "向已有变量添加新候选值时，键名不可修改",
 	"env.modal.descPlaceholder": "例如：生产环境 / 开发环境",
 	"env.empty.noSearchResult": "没有找到匹配的环境变量",
 
 	// TemplatesPage
-	"temp.title": "运行参数模板",
+	"temp.title": "运行模板",
 	"temp.desc":
 		"创建并保存配置模板，以便使用预定义的参数、环境变量覆盖和工作目录快速运行 CLI 工具。",
 	"temp.btn.new": "新建模板",
@@ -170,13 +172,12 @@ const zhDict: Dictionary = {
 	"temp.modal.btn.save": "保存",
 	"temp.modal.btn.creating": "创建中…",
 	"temp.modal.btn.saving": "保存中…",
-	"temp.modal.cmdOverride": "指令覆盖（可选）",
-	"temp.modal.cmdOverridePlaceholder":
-		"例如：gemini1（设置后可用 loom gemini1 运行）",
 	"temp.modal.general": "常规配置",
 	"temp.modal.argsTab": "执行参数与工作目录",
 	"temp.modal.envTab": "环境变量",
-	"temp.card.cmdOverride": "指令覆盖",
+	"db.tool.alias": "自定义指令名（Alias）",
+	"db.tool.aliasPlaceholder":
+		"例如：gemini1（设置后可用 loom gemini1 直接运行此工具）",
 	"temp.toast.fieldsRequired": "所有字段均为必填项",
 	"temp.toast.created": "模板创建成功",
 	"temp.toast.createFailed": "创建模板失败",
@@ -276,7 +277,7 @@ const zhDict: Dictionary = {
 	"settings.version.checkInterval.1h": "每小时",
 	"nav.settings": "系统设置",
 	"nav.settings.short": "设置",
-	"settings.tab.appearance": "外观偏好",
+	"settings.tab.appearance": "配置选项",
 	"settings.tab.tools": "Agent 工具",
 	"settings.tab.env": "环境变量",
 	"settings.tab.libs": "模版库管理",
@@ -602,6 +603,8 @@ const enDict: Dictionary = {
 	"env.group.selectOne": "pick one",
 	"env.group.clear": "clear",
 	"env.btn.addValue": "Add Value",
+	"env.group.expand": "Expand values",
+	"env.group.collapse": "Collapse values",
 	"env.modal.keyLocked":
 		"Key is locked when adding a value to an existing variable",
 	"env.modal.descPlaceholder": "e.g. Production / Development",
@@ -650,13 +653,12 @@ const enDict: Dictionary = {
 	"temp.modal.btn.save": "Save",
 	"temp.modal.btn.creating": "Creating…",
 	"temp.modal.btn.saving": "Saving…",
-	"temp.modal.cmdOverride": "Command Override (optional)",
-	"temp.modal.cmdOverridePlaceholder":
-		"e.g. gemini1 (allows running via loom gemini1)",
 	"temp.modal.general": "General Config",
 	"temp.modal.argsTab": "Arguments & Working Directory",
 	"temp.modal.envTab": "Environment Variables",
-	"temp.card.cmdOverride": "Command Override",
+	"db.tool.alias": "Custom Alias",
+	"db.tool.aliasPlaceholder":
+		"e.g. gemini1 (allows running this tool via loom gemini1)",
 	"temp.toast.fieldsRequired": "All fields are required",
 	"temp.toast.created": "Template created",
 	"temp.toast.createFailed": "Failed to create template",

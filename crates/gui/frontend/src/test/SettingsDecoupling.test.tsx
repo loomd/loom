@@ -291,7 +291,7 @@ describe("SettingsPage", () => {
     await act(async () => {
       renderWithProviders(<SettingsPage {...defaultProps} />);
     });
-    expect(screen.getByText((c) => c.includes("外观偏好"))).toBeInTheDocument();
+    expect(screen.getByText((c) => c.includes("配置选项"))).toBeInTheDocument();
     expect(screen.getByText((c) => c.includes("Agent 工具"))).toBeInTheDocument();
     expect(screen.getByText((c) => c.includes("环境变量"))).toBeInTheDocument();
     expect(screen.getByText((c) => c.includes("模版库管理"))).toBeInTheDocument();

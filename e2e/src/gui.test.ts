@@ -722,9 +722,14 @@ describe('loom GUI Tauri Commands E2E tests', () => {
 
   // F6: Auto-Scanner & Manual Importer
   test('test_scanner_empty_path', async () => {
-    // Run PATH scan with an empty PATH variable
+    // Empty PATH env: on Windows the scanner still merges registry PATH entries,
+    // so results are non-empty; elsewhere an empty PATH yields nothing.
     const result = await callCmd('scan_path_env', {}, { PATH: '' });
-    expect(result).toEqual([]);
+    if (process.platform === 'win32') {
+      expect(result.length).toBeGreaterThan(0);
+    } else {
+      expect(result).toEqual([]);
+    }
   });
 
   test('test_importer_directory_no_executables', async () => {
@@ -1225,8 +1230,8 @@ describe('loom GUI Tauri Commands E2E tests', () => {
     expect(lang).toBe('en');
   });
 
-  // F8: Command Override GUI API Tests
-  test('test_gui_cmd_override_crud', async () => {
+  // F8: Tool Alias GUI API Tests
+  test('test_gui_alias_crud', async () => {
     writeMockConfig({
       cli_tools: [
         { id: 'cli-1', name: 'git', path: MOCK_CLI_PATH, version: '2.40.0', category_id: null, custom_env: {} }
@@ -1235,81 +1240,51 @@ describe('loom GUI Tauri Commands E2E tests', () => {
       templates: []
     });
 
-    // 1. Create template with command override
-    const temp = await callCmd('create_template', {
-      cli_id: 'cli-1',
-      name: 'Status Tpl',
-      args: ['status'],
-      env: {},
-      pwd: '',
-      cmd_override: 'gitstatus'
-    });
-    expect(temp.cmd_override).toBe('gitstatus');
+    // 1. Set alias on a tool
+    await callCmd('update_cli_alias', { cli_id: 'cli-1', alias: 'gitstatus' });
 
-    // Verify written config has the command override
+    // Verify written config has the alias
     let configData = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'));
-    expect(configData.templates[0].cmd_override).toBe('gitstatus');
+    expect(configData.cli_tools[0].alias).toBe('gitstatus');
 
-    // 2. Update template command override
-    const updated = await callCmd('update_template', {
-      template_id: temp.id,
-      name: 'Status Tpl Updated',
-      args: ['status', '-s'],
-      env: {},
-      pwd: '',
-      cmd_override: 'gits'
-    });
-    expect(updated.cmd_override).toBe('gits');
-
+    // 2. Update alias
+    await callCmd('update_cli_alias', { cli_id: 'cli-1', alias: 'gits' });
     configData = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'));
-    expect(configData.templates[0].cmd_override).toBe('gits');
-    expect(configData.templates[0].name).toBe('Status Tpl Updated');
+    expect(configData.cli_tools[0].alias).toBe('gits');
+
+    // 3. Clear alias (null/empty removes it)
+    await callCmd('update_cli_alias', { cli_id: 'cli-1', alias: null });
+    configData = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'));
+    expect(configData.cli_tools[0].alias).toBeUndefined();
   });
 
-  test('test_gui_cmd_override_validation_duplicate', async () => {
+  test('test_gui_alias_validation_duplicate', async () => {
     writeMockConfig({
       cli_tools: [
-        { id: 'cli-1', name: 'git', path: MOCK_CLI_PATH, version: '2.40.0', category_id: null, custom_env: {} }
+        { id: 'cli-1', name: 'git', path: MOCK_CLI_PATH, version: '2.40.0', category_id: null, custom_env: {}, alias: 'gitstatus' },
+        { id: 'cli-2', name: 'node', path: MOCK_CLI_PATH, version: '1.0.0', category_id: null, custom_env: {} }
       ],
       categories: [],
-      templates: [
-        { id: 't-1', cli_id: 'cli-1', name: 'Status', args: ['status'], env: {}, pwd: null, cmd_override: 'gitstatus' }
-      ]
+      templates: []
     });
 
-    // Create a new template with the same override should fail
-    await expect(callCmd('create_template', {
-      cli_id: 'cli-1',
-      name: 'Status 2',
-      args: ['status'],
-      env: {},
-      pwd: '',
-      cmd_override: 'gitstatus'
+    // Set an alias already used by another tool should fail
+    await expect(callCmd('update_cli_alias', {
+      cli_id: 'cli-2',
+      alias: 'gitstatus'
     })).rejects.toThrow();
 
-    // Create another template first, then update it to duplicate override should fail
-    await callCmd('create_template', {
-      cli_id: 'cli-1',
-      name: 'Status 3',
-      args: ['status'],
-      env: {},
-      pwd: '',
-      cmd_override: 'gitstatus-other'
-    });
-    const temps = await callCmd('get_templates');
-    const t3 = temps.find((t: any) => t.name === 'Status 3');
-
-    await expect(callCmd('update_template', {
-      template_id: t3.id,
-      name: 'Status 3',
-      args: ['status'],
-      env: {},
-      pwd: '',
-      cmd_override: 'gitstatus'
+    // Set an alias equal to another tool's name should fail
+    await expect(callCmd('update_cli_alias', {
+      cli_id: 'cli-2',
+      alias: 'git'
     })).rejects.toThrow();
+
+    // Set a unique alias should succeed
+    await callCmd('update_cli_alias', { cli_id: 'cli-2', alias: 'nodectl' });
   });
 
-  test('test_gui_cmd_override_validation_builtin_conflicts', async () => {
+  test('test_gui_alias_validation_builtin_conflicts', async () => {
     writeMockConfig({
       cli_tools: [
         { id: 'cli-1', name: 'git', path: MOCK_CLI_PATH, version: '2.40.0', category_id: null, custom_env: {} }
@@ -1320,13 +1295,9 @@ describe('loom GUI Tauri Commands E2E tests', () => {
 
     const builtins = ['list', 'search', 'mock-run', 'help', 'version'];
     for (const b of builtins) {
-      await expect(callCmd('create_template', {
+      await expect(callCmd('update_cli_alias', {
         cli_id: 'cli-1',
-        name: `Tpl ${b}`,
-        args: ['status'],
-        env: {},
-        pwd: '',
-        cmd_override: b
+        alias: b
       })).rejects.toThrow();
     }
   });
@@ -1401,7 +1372,6 @@ describe('loom GUI Tauri Commands E2E tests', () => {
       env: { LOCAL_KEY: 'local_val' },
       env_var_ids: [gv.id],
       pwd: '',
-      cmd_override: 'gitstatus'
     });
 
     expect(temp.env_var_ids).toEqual([gv.id]);
@@ -1417,7 +1387,6 @@ describe('loom GUI Tauri Commands E2E tests', () => {
       env: { LOCAL_KEY: 'local_val_new' },
       env_var_ids: [],
       pwd: '',
-      cmd_override: 'gitstatus'
     });
     expect(updated.env_var_ids).toEqual([]);
 

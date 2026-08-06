@@ -42,6 +42,7 @@ fn test_serialization_fidelity() {
         custom_env,
         custom_args: Vec::new(),
         is_agent: false,
+        alias: None,
     };
 
     let category = Category {
@@ -62,7 +63,6 @@ fn test_serialization_fidelity() {
         env_var_ids: Vec::new(),
         pwd: Some(PathBuf::from("/projects/my-app")),
         last_run: Some("1687258210".to_string()),
-        cmd_override: None,
         env_mode: None,
     };
 
@@ -136,6 +136,7 @@ fn test_atomic_save_load_roundtrip() {
             custom_env: HashMap::new(),
             custom_args: Vec::new(),
             is_agent: false,
+            alias: None,
         };
         config.cli_tools.push(new_tool);
 
@@ -177,6 +178,7 @@ fn test_crash_safety_on_failed_write() {
             custom_env: HashMap::new(),
             custom_args: Vec::new(),
             is_agent: false,
+            alias: None,
         });
         save_config(&original_config).expect("failed to save original config");
 
