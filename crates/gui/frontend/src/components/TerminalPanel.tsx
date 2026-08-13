@@ -28,6 +28,7 @@ export function TerminalPanel({ terminals, activeTabId, layoutMode, showGrid, is
         command={tab.command}
         args={tab.args}
         env={tab.env}
+        initialCommand={tab.initialCommand}
         isVisible={isVisible && visible}
         theme={theme}
       />

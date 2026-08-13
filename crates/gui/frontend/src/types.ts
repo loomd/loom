@@ -133,3 +133,23 @@ export interface AgentStateInfo {
   state: AgentState;
   session_id: string;
 }
+
+export interface SingleAgentDiscovery {
+  name: string;
+  installed: boolean;
+  version?: string;
+  executable_path?: string;
+  install_command: string;
+  download_url: string;
+}
+
+export interface AgentDiscoveryStatus {
+  agents: SingleAgentDiscovery[];
+  npm_installed: boolean;
+  npm_path?: string;
+}
+
+export interface FetchedModel {
+  id: string;
+  name: string;
+}

@@ -8,6 +8,9 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 uuid = { workspace = true }
 directories = { workspace = true }
+dirs = { workspace = true }
+which = { workspace = true }
+reqwest = { workspace = true }
 thiserror = { workspace = true }
 
 [target.'cfg(windows)'.dependencies]

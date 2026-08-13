@@ -128,6 +128,10 @@ const closeActiveByShortcut = useCallback(() => {
 		if (!isVisible) return;
 		const handler = (e: Event) => {
 			const detail = (e as CustomEvent).detail;
+			if (detail && typeof detail === 'object' && !Array.isArray(detail) && detail.cmd) {
+				handleAddRawTerminal(false, detail.cmd);
+				return;
+			}
 			if (detail && typeof detail === 'object' && !Array.isArray(detail) && detail.id) {
 				data.handleRunTemplate(detail);
 				return;
@@ -153,11 +157,13 @@ const closeActiveByShortcut = useCallback(() => {
 		};
 		window.addEventListener("loom-shortcut", handler);
 		window.addEventListener("loom-run-template", handler);
+		window.addEventListener("loom-open-terminal-cmd", handler);
 		return () => {
 			window.removeEventListener("loom-shortcut", handler);
 			window.removeEventListener("loom-run-template", handler);
+			window.removeEventListener("loom-open-terminal-cmd", handler);
 		};
-	}, [tabs, activeTabId, setActiveTabId, setLayoutMode, removeTabById, data, isVisible, showGrid, layoutMode, project.id, closeActiveByShortcut]);
+	}, [tabs, activeTabId, setActiveTabId, setLayoutMode, removeTabById, data, isVisible, showGrid, layoutMode, project.id, closeActiveByShortcut, handleAddRawTerminal]);
 
 	return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>

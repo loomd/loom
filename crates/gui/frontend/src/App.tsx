@@ -21,9 +21,10 @@ import { useOnboarding } from "./hooks/useOnboarding";
 import { useProjectCompositeStates } from "./hooks/useProjectCompositeStates";
 import { markStartup } from "./startupTiming";
 import { getFloatingSidebarEnabled, setFloatingSidebarEnabled as apiSetFloatingSidebarEnabled, getFloatingSidebarPosition, setFloatingSidebarPosition as apiSetFloatingSidebarPosition, getSidebarWidth, setSidebarWidth as setSidebarWidthBackend, getBottomPanelMode, setBottomPanelMode as apiSetBottomPanelMode } from "./api";
+import { AgentManagementPage } from "./pages/AgentManagementPage";
 import type { Template } from "./types";
 
-type Page = "workspace" | "settings";
+type Page = "workspace" | "settings" | "agents";
 
 function EmptyState({ onAdd, t }: { onAdd: () => void; t: (key: string) => string }) {
 	return (
@@ -296,6 +297,7 @@ function App() {
 						compositeStates={compositeStates}
 						onProjectSelect={navigateToPage}
 						onSettingsClick={() => setPage("settings")}
+						onAgentsClick={() => setPage("agents")}
 						onAddClick={() => p.setShowModal(true)}
 						onDragStart={p.handleDragStart} onDragOver={p.handleDragOver}
 						onDragLeave={p.handleDragLeave} onDrop={p.handleDrop} onDragEnd={p.handleDragEnd}
@@ -315,6 +317,18 @@ function App() {
 						<div style={{ display: page === "settings" ? "flex" : "none", flexDirection: "column", flex: 1, minHeight: 0, overflow: "hidden" }}>
 							<SettingsPage theme={theme.theme} onThemeChange={theme.handleThemeChange} projectColumnAlign={theme.projectColumnAlign} onProjectColumnAlignChange={theme.handleProjectColumnAlignChange} fontFamily={theme.fontFamily} fontSize={theme.fontSize} onFontFamilyChange={theme.handleFontFamilyChange} onFontSizeChange={theme.handleFontSizeChange} updateInfo={updater.updateInfo} onCheckUpdate={updater.performUpdateCheck} onInstallUpdate={updater.handleInstallUpdate} onSkipVersion={updater.handleSkipVersion} floatingSidebarEnabled={floatingSidebarEnabled} onFloatingSidebarEnabledChange={handleFloatingSidebarEnabledChange} floatingSidebarPosition={floatingSidebarPosition} onFloatingSidebarPositionChange={handleFloatingSidebarPositionChange} sidebarCollapseEnabled={sidebarCollapseEnabled} onSidebarCollapseEnabledChange={handleSidebarCollapseEnabledChange} bottomPanelMode={bottomPanelMode} onBottomPanelModeChange={handleBottomPanelModeChange} onboarding={onboarding} />
 						</div>
+						<div style={{ display: page === "agents" ? "flex" : "none", flexDirection: "column", flex: 1, minHeight: 0, overflow: "auto" }}>
+							<AgentManagementPage onOpenTerminal={(cmd) => {
+								if (p.selectedProjectId) {
+									setPage("workspace");
+									setTimeout(() => {
+										window.dispatchEvent(new CustomEvent("loom-open-terminal-cmd", { detail: { cmd } }));
+									}, 100);
+								} else {
+									p.setShowModal(true);
+								}
+							}} />
+						</div>
 					</>
 				}
 				rightSidebar={
@@ -329,7 +343,7 @@ function App() {
 				<UpdateToast updateInfo={updater.updateInfo} downloadProgress={updater.downloadProgress} t={t} onClose={() => { updater.setShowUpdateToast(false); updater.setDownloadProgress({ status: "idle", percent: 0 }); }} onSkip={updater.handleSkipVersion} onInstall={updater.handleInstallUpdate} />
 			)}
 			{p.showModal && (
-				<NewProjectModal t={t} newProjName={p.newProjName} newProjPath={p.newProjPath} creating={p.creating} onNameChange={p.setNewProjName} onPathChange={p.setNewProjPath} onBrowse={p.handleBrowseFolder} onRegister={() => p.handleRegisterProject(setPage)} onCancel={() => p.setShowModal(false)} />
+				<NewProjectModal t={t} newProjName={p.newProjName} newProjPath={p.newProjPath} creating={p.creating} onNameChange={p.setNewProjName} onPathChange={p.setNewProjPath} onBrowse={p.handleBrowseFolder} onRegister={() => p.handleRegisterProject(setPage)} onCancel={() => p.setShowModal(false)} onGoAgents={() => setPage("agents")} />
 			)}
 			{onboarding.state.showWizard && (
 				<OnboardingWizard onboarding={onboarding} />

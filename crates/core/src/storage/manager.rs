@@ -796,7 +796,13 @@ pub fn import_cli_tool(path: String) -> Result<CliTool> {
 
     let mut config = load_config()?;
     let path_buf = PathBuf::from(&path);
-    if let Some(existing) = config.cli_tools.iter().find(|t| t.path == path_buf) {
+    if let Some(existing) = config.cli_tools.iter_mut().find(|t| t.path == path_buf) {
+        if !existing.is_agent && (existing.name.to_lowercase().contains("opencode") || existing.name.to_lowercase().contains("claude")) {
+            existing.is_agent = true;
+            let cloned = existing.clone();
+            save_config(&config)?;
+            return Ok(cloned);
+        }
         return Ok(existing.clone());
     }
 
@@ -806,7 +812,7 @@ pub fn import_cli_tool(path: String) -> Result<CliTool> {
         .to_string_lossy()
         .to_string();
     let is_agent = is_likely_agent(&name);
-    let new_tool = CliTool {
+    let mut new_tool = CliTool {
         id: uuid::Uuid::new_v4().to_string(),
         name,
         path: path_buf,
@@ -817,6 +823,9 @@ pub fn import_cli_tool(path: String) -> Result<CliTool> {
         is_agent,
         alias: None,
     };
+    if !new_tool.is_agent && (new_tool.name.to_lowercase().contains("opencode") || new_tool.name.to_lowercase().contains("claude")) {
+        new_tool.is_agent = true;
+    }
     config.cli_tools.push(new_tool.clone());
     save_config(&config)?;
     Ok(new_tool)

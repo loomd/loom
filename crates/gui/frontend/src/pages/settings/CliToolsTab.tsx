@@ -111,7 +111,11 @@ export default function CliToolsTab() {
 		const timer = setTimeout(() => {
 			loadToolsAndTemplates();
 		}, 0);
-		return () => clearTimeout(timer);
+		window.addEventListener('loom-refresh-data', loadToolsAndTemplates);
+		return () => {
+			clearTimeout(timer);
+			window.removeEventListener('loom-refresh-data', loadToolsAndTemplates);
+		};
 	}, [loadToolsAndTemplates]);
 
 	useEffect(() => {

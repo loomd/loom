@@ -13,6 +13,8 @@ import type {
 	ProjectSkill,
 	AgentDoc,
 	ScanResult,
+	AgentDiscoveryStatus,
+	FetchedModel,
 } from "./types";
 
 // ─── CLI Tools ────────────────────────────────────────────
@@ -424,3 +426,30 @@ export const pollAgentState = (
 	workspaceDir: string,
 	ptySessionId?: string,
 ): Promise<AgentStateInfo | null> => invoke("poll_agent_state", { workspaceDir, ptySessionId: ptySessionId ?? null });
+
+// ─── Agent Discovery & Skill Injection ─────────────────────
+export const triggerInjectLoomSkills = (): Promise<number> =>
+	invoke("trigger_inject_loom_skills");
+
+export const getInjectedSkillPaths = (): Promise<string[]> =>
+	invoke("get_injected_skill_paths");
+
+export const getLoomSkillVersion = (): Promise<string> =>
+	invoke("get_loom_skill_version");
+
+export const getAgentDiscoveryStatus = (): Promise<AgentDiscoveryStatus> =>
+	invoke("get_agent_discovery_status");
+
+export const fetchProviderModels = (
+	baseUrl: string,
+	apiKey: string,
+): Promise<FetchedModel[]> =>
+	invoke("fetch_provider_models", { baseUrl, apiKey });
+
+export const configureOpencodeProvider = (
+	providerId: string,
+	baseUrl: string,
+	apiKey: string,
+	selectedModels: string[],
+): Promise<void> =>
+	invoke("configure_opencode_provider", { providerId, baseUrl, apiKey, selectedModels });

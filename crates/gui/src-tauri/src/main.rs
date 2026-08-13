@@ -3,6 +3,8 @@
 const MIN_WINDOW_WIDTH: u32 = 800;
 const MIN_WINDOW_HEIGHT: u32 = 560;
 
+use loom_core::agent_config::{discover_agents, fetch_models, write_opencode_config, DiscoveryOverview, FetchedModel};
+use loom_core::skills::{get_existing_skill_paths, inject_loom_skills, LOOM_SKILL_VERSION};
 use loom_core::storage::{self as cstore, AgentDoc, AgentInstance, Category, CliTool, GlobalDocTemplate, GlobalEnvVar, GlobalSkillTemplate, Project, ProjectSkill, ScanResult, Template};
 use std::collections::HashMap;
 use std::sync::OnceLock;
@@ -1365,6 +1367,41 @@ fn execute_test_command(cmd: &str, args_json: &str) -> Result<String, String> {
             let res = cstore::create_agent_templates(agents).map_err(|e| e.to_string())?;
             serde_json::to_string(&res).map_err(|e| e.to_string())
         }
+        "fetch_provider_models" => {
+            let base_url = args["base_url"]
+                .as_str()
+                .or_else(|| args["baseUrl"].as_str())
+                .ok_or_else(|| "Missing argument 'baseUrl'".to_string())?;
+            let api_key = args["api_key"]
+                .as_str()
+                .or_else(|| args["apiKey"].as_str())
+                .unwrap_or("");
+            let res = fetch_models(base_url, api_key).map_err(|e| e.to_string())?;
+            serde_json::to_string(&res).map_err(|e| e.to_string())
+        }
+        "configure_opencode_provider" => {
+            let provider_id = args["provider_id"]
+                .as_str()
+                .or_else(|| args["providerId"].as_str())
+                .ok_or_else(|| "Missing argument 'providerId'".to_string())?;
+            let base_url = args["base_url"]
+                .as_str()
+                .or_else(|| args["baseUrl"].as_str())
+                .ok_or_else(|| "Missing argument 'baseUrl'".to_string())?;
+            let api_key = args["api_key"]
+                .as_str()
+                .or_else(|| args["apiKey"].as_str())
+                .unwrap_or("");
+            let selected_models: Vec<String> = if let Some(arr) = args.get("selectedModels").or_else(|| args.get("selected_models")).and_then(|v| v.as_array()) {
+                arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect()
+            } else if let Some(s) = args.get("selectedModel").or_else(|| args.get("selected_model")).and_then(|v| v.as_str()) {
+                vec![s.to_string()]
+            } else {
+                vec![]
+            };
+            let res = write_opencode_config(provider_id, base_url, api_key, &selected_models).map_err(|e| e.to_string())?;
+            serde_json::to_string(&res).map_err(|e| e.to_string())
+        }
         _ => Err(format!("Unknown command '{}'", cmd)),
     }
 }
@@ -1460,6 +1497,38 @@ fn get_update_check_interval() -> Result<String, String> {
 #[tauri::command]
 fn set_update_check_interval(interval: String) -> Result<(), String> {
     cstore::set_update_check_interval(interval).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn trigger_inject_loom_skills() -> Result<usize, String> {
+    inject_loom_skills()
+}
+
+#[tauri::command]
+fn get_injected_skill_paths() -> Result<Vec<String>, String> {
+    Ok(get_existing_skill_paths())
+}
+
+#[tauri::command]
+fn get_loom_skill_version() -> Result<String, String> {
+    Ok(LOOM_SKILL_VERSION.to_string())
+}
+
+#[tauri::command]
+fn get_agent_discovery_status() -> Result<DiscoveryOverview, String> {
+    Ok(discover_agents())
+}
+
+#[tauri::command]
+#[allow(non_snake_case)]
+fn fetch_provider_models(baseUrl: String, apiKey: String) -> Result<Vec<FetchedModel>, String> {
+    fetch_models(&baseUrl, &apiKey).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+#[allow(non_snake_case)]
+fn configure_opencode_provider(providerId: String, baseUrl: String, apiKey: String, selectedModels: Vec<String>) -> Result<String, String> {
+    write_opencode_config(&providerId, &baseUrl, &apiKey, &selectedModels).map_err(|e| e.to_string())
 }
 
 fn main() {
@@ -1583,8 +1652,9 @@ fn main() {
                 let _ = app.global_shortcut().register("Alt+Space");
             }
 
-std::thread::spawn(|| {
+            std::thread::spawn(|| {
                 let _ = cstore::sync_running_processes();
+                let _ = inject_loom_skills();
             });
 
             // Restore autostart setting from config after version update
@@ -1780,7 +1850,13 @@ std::thread::spawn(|| {
             get_agent_skill_map,
             set_agent_skill_map,
             poll_agent_state,
-            reset_agent_idle
+            reset_agent_idle,
+            trigger_inject_loom_skills,
+            get_injected_skill_paths,
+            get_loom_skill_version,
+            get_agent_discovery_status,
+            fetch_provider_models,
+            configure_opencode_provider
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

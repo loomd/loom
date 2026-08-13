@@ -10,11 +10,12 @@ interface Props {
 	onBrowse: () => void;
 	onRegister: () => void;
 	onCancel: () => void;
+	onGoAgents?: () => void;
 }
 
 export default function NewProjectModal({
 	t, newProjName, newProjPath, creating,
-	onNameChange, onPathChange, onBrowse, onRegister, onCancel,
+	onNameChange, onPathChange, onBrowse, onRegister, onCancel, onGoAgents,
 }: Props) {
 	return (
 		<div className="modal-backdrop" style={{
@@ -29,6 +30,28 @@ export default function NewProjectModal({
 				flexDirection: "column", gap: "16px",
 			}}>
 				<h3 style={{ margin: 0, fontSize: "1.2rem", color: "var(--text-primary)" }}>{t("proj.modal.newTitle")}</h3>
+				
+				{onGoAgents && (
+					<div 
+						onClick={() => { onCancel(); onGoAgents(); }}
+						style={{
+							backgroundColor: "rgba(59, 130, 246, 0.1)",
+							border: "1px solid var(--accent, #3b82f6)",
+							borderRadius: "var(--radius-sm)",
+							padding: "10px 12px",
+							cursor: "pointer",
+							display: "flex",
+							alignItems: "center",
+							gap: "10px",
+						}}
+					>
+						<div>
+							<div style={{ fontSize: "0.85rem", fontWeight: 600, color: "var(--text-primary)" }}>配置 Agent 全自动管理工具</div>
+							<div style={{ fontSize: "0.85rem", fontWeight: 600, color: "var(--text-primary)" }}>Agent 全自动配置引导</div>
+						</div>
+						<span style={{ fontSize: "0.8rem", color: "var(--accent, #3b82f6)" }}>前往配置 →</span>
+					</div>
+				)}
 				<div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
 					<label style={{ fontSize: "0.85rem", color: "var(--text-secondary)" }}>{t("proj.modal.name")}</label>
 					<input type="text" placeholder={t("proj.modal.namePlaceholder")} value={newProjName}

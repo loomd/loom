@@ -39,7 +39,11 @@ export function useProjects(
 		const timer = setTimeout(() => {
 			fetchProjects();
 		}, 0);
-		return () => clearTimeout(timer);
+		window.addEventListener('loom-refresh-data', fetchProjects);
+		return () => {
+			clearTimeout(timer);
+			window.removeEventListener('loom-refresh-data', fetchProjects);
+		};
 	}, [fetchProjects]);
 
 	const handleDragStart = (e: React.DragEvent, index: number) => {

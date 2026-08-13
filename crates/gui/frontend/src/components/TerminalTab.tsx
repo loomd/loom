@@ -13,6 +13,7 @@ interface TerminalTabProps {
   command?: string;
   args?: string[];
   env?: Record<string, string>;
+  initialCommand?: string;
   isVisible: boolean;
   theme?: 'dark' | 'day' | 'gray';
 }
@@ -88,7 +89,7 @@ const getTerminalTheme = (theme?: 'dark' | 'day' | 'gray') => {
   }
 };
 
-export function TerminalTab({ sessionId, cwd, command, args, env, isVisible, theme }: TerminalTabProps) {
+export function TerminalTab({ sessionId, cwd, command, args, env, initialCommand, isVisible, theme }: TerminalTabProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const outerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
@@ -387,6 +388,16 @@ export function TerminalTab({ sessionId, cwd, command, args, env, isVisible, the
             }).catch(e => console.warn("Initial pty_resize failed:", e));
           } catch (e) {
             console.warn("Initial fit failed:", e);
+          }
+
+          if (initialCommand) {
+            setTimeout(() => {
+              const encoder = new TextEncoder();
+              const bytes = encoder.encode(`${initialCommand}\r`);
+              invoke('pty_write', { sessionId, data: Array.from(bytes) }).catch(err => {
+                console.error("PTY Write initial command error:", err);
+              });
+            }, 500);
           }
         } catch (err) {
           if (!termRef.current) return () => {};

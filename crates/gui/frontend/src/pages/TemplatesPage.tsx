@@ -369,6 +369,8 @@ export default function TemplatesPage({ tools, onInstanceLaunched }: Props) {
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     load();
+    window.addEventListener('loom-refresh-data', load);
+    return () => window.removeEventListener('loom-refresh-data', load);
   }, [load]);
 
   const handleDelete = async (id: string, name: string) => {

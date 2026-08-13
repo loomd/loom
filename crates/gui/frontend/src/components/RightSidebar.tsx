@@ -9,8 +9,8 @@ interface RightSidebarProps {
   onProjectSelect: (projectId: string) => void;
   enabled: boolean;
   position: "left" | "right";
-  page: "workspace" | "settings";
-  onNavigate: (page: "workspace" | "settings") => void;
+  page: "workspace" | "settings" | "agents";
+  onNavigate: (page: "workspace" | "settings" | "agents") => void;
   onRegisterProject?: () => void;
   compositeStates: Record<string, CompositeState>;
 }

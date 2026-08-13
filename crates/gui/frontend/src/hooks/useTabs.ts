@@ -13,6 +13,7 @@ export interface ConsoleTab {
   env?: Record<string, string>;
   filePath?: string;
   isDirty?: boolean;
+  initialCommand?: string;
 }
 
 export type GridLayout = '2x1' | '1x2' | '3x1' | '1x3' | '2x2' | '2x3' | '3x2' | '3x3';
@@ -41,13 +42,14 @@ export function useTabs(projectRoot: string) {
   const terminals = tabs.filter(t => t.type === 'terminal');
   const showGrid = layoutMode !== null;
 
-  const handleAddRawTerminal = useCallback((keepGrid = false) => {
+  const handleAddRawTerminal = useCallback((keepGrid = false, initialCmd?: string) => {
     const sessionId = crypto.randomUUID();
     const newTab: ConsoleTab = {
       id: sessionId,
-      title: `Terminal ${terminals.length + 1}`,
+      title: initialCmd ? `Terminal (${initialCmd.split(' ')[0]})` : `Terminal ${terminals.length + 1}`,
       type: 'terminal',
-      cwd: projectRoot
+      cwd: projectRoot,
+      initialCommand: initialCmd
     };
     if (!keepGrid) setLayoutMode(null);
     setTabs(prev => [...prev, newTab]);
