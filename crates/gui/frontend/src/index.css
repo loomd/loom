@@ -1861,4 +1861,17 @@ body.theme-day select.input option {
   animation: rainbow-wave-flow 3s linear infinite, wave-text-float 2.5s ease-in-out infinite;
 }
 
+.guide-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+  align-items: start;
+}
+
+@media (max-width: 900px) {
+  .guide-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 
