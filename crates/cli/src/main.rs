@@ -1,538 +1,409 @@
 use std::collections::HashMap;
 use std::env;
-use std::process;
+use std::error::Error;
 use std::path::PathBuf;
+use std::process;
+
+use clap::{Parser, Subcommand, Args, CommandFactory};
 use loom_core::storage::{
     create_template, delete_template_by_name, get_cli_tools, get_templates,
-    get_templates_for_cli, resolve_cli_id,
+    get_templates_for_cli, resolve_cli_id, CliTool, StorageError,
 };
 
-fn print_help() {
-    println!("loom - 多项目统一管理，多agent并行开发");
-    println!("Usage:");
-    println!("  loom [options] <command> [args]");
-    println!();
-    println!("Options:");
-    println!("  -h, --help      Show this help menu");
-    println!("  -v, --version   Show version info");
-    println!();
-    println!("Commands:");
-    println!("  list            List all registered CLI tools");
-    println!("  search <query>  Search for registered CLI tools by query");
-    println!("  template        Manage run templates for CLI tools (list/add/delete)");
-    println!();
-    println!("You can also run a CLI tool directly by its name or alias:");
-    println!("  loom <name-or-alias> [extra args...]");
+#[derive(Parser)]
+#[command(name = "loom", version, about = "多项目统一管理，多agent并行开发", propagate_version = true)]
+struct Cli {
+    #[command(subcommand)]
+    command: Option<AppCommand>,
 }
 
-fn print_version() {
-    println!("loom {}", env!("CARGO_PKG_VERSION"));
+#[derive(Subcommand)]
+enum AppCommand {
+    /// 列出所有已注册的 CLI 工具
+    List(ListArgs),
+    /// 按名称或路径搜索已注册的 CLI 工具
+    Search(SearchArgs),
+    /// 管理 CLI 工具的运行模板
+    Template(TemplateArgs),
+    #[cfg(debug_assertions)]
+    #[command(hide = true)]
+    MockRun(MockRunArgs),
 }
 
-/// Try to run a command by looking up alias in cli_tools, then name in cli_tools.
-/// Returns Ok(exit_code) if found and executed, or Err if not found.
-fn try_run_override(subcmd: &str, extra_args: &[String]) -> Result<i32, String> {
-    let tools = get_cli_tools().map_err(|e| e.to_string())?;
-
-    // First: look for a CLI tool whose alias matches
-    if let Some(tool) = tools.iter().find(|t| t.alias.as_deref() == Some(subcmd)) {
-        let tool_path: PathBuf = tool.path.clone();
-        let mut cmd = process::Command::new(&tool_path);
-
-        // Add tool default args, then extra args passed on command line
-        cmd.args(&tool.custom_args);
-        cmd.args(extra_args);
-
-        // Inject the tool's custom env vars
-        for (k, v) in &tool.custom_env {
-            cmd.env(k, v);
-        }
-
-        cmd.stdin(process::Stdio::inherit());
-        cmd.stdout(process::Stdio::inherit());
-        cmd.stderr(process::Stdio::inherit());
-
-        let status = cmd.status().map_err(|e| format!("Failed to execute '{}': {}", tool_path.display(), e))?;
-        return Ok(status.code().unwrap_or(1));
-    }
-
-    // Second: look for a CLI tool whose name matches
-    if let Some(tool) = tools.iter().find(|t| t.name == subcmd) {
-        let tool_path: PathBuf = tool.path.clone();
-        let mut cmd = process::Command::new(&tool_path);
-
-        // Pass all extra args
-        cmd.args(extra_args);
-
-        // Inject the tool's custom env vars
-        for (k, v) in &tool.custom_env {
-            cmd.env(k, v);
-        }
-
-        cmd.stdin(process::Stdio::inherit());
-        cmd.stdout(process::Stdio::inherit());
-        cmd.stderr(process::Stdio::inherit());
-
-        let status = cmd.status().map_err(|e| format!("Failed to execute '{}': {}", tool_path.display(), e))?;
-        return Ok(status.code().unwrap_or(1));
-    }
-
-    Err(format!("Unknown command '{}'", subcmd))
+#[derive(Args)]
+struct ListArgs {
+    #[arg(long, help = "输出 JSON 格式")]
+    json: bool,
+    #[arg(long, value_name = "table|json", help = "指定输出格式")]
+    format: Option<String>,
 }
 
-fn print_template_help() {
-    println!("Manage run templates for CLI tools (agents)");
-    println!("Usage:");
-    println!("  loom template list [--agent <name>] [--json]");
-    println!("  loom template add --agent <name> --name <name> [--arg <arg>]... [--env KEY=VALUE]... [--pwd <dir>] [--env-mode <inherit|isolated>]");
-    println!("  loom template delete --agent <name> --name <name>");
+#[derive(Args)]
+struct SearchArgs {
+    /// 搜索关键词
+    query: String,
+    #[arg(long, help = "输出 JSON 格式")]
+    json: bool,
 }
 
-fn cmd_template(args: &[String]) -> i32 {
-    match args.first().map(|s| s.as_str()) {
-        Some("list") => template_list(&args[1..]),
-        Some("add") => template_add(&args[1..]),
-        Some("delete") => template_delete(&args[1..]),
-        Some("help") | Some("-h") | Some("--help") => {
-            print_template_help();
-            0
-        }
-        Some(other) => {
-            eprintln!("Error: unknown template subcommand '{}'", other);
-            print_template_help();
-            1
-        }
-        None => {
-            print_template_help();
-            0
-        }
-    }
+#[derive(Args)]
+struct TemplateArgs {
+    #[command(subcommand)]
+    command: Option<TemplateCommand>,
 }
 
-fn template_list(args: &[String]) -> i32 {
-    let mut agent: Option<String> = None;
-    let mut format_json = false;
-    let mut i = 0;
-    while i < args.len() {
-        match args[i].as_str() {
-            "--agent" => {
-                if i + 1 >= args.len() {
-                    eprintln!("Error: --agent requires a value");
-                    return 1;
-                }
-                agent = Some(args[i + 1].clone());
-                i += 2;
+#[derive(Subcommand)]
+enum TemplateCommand {
+    /// 列出模板
+    List(TemplateListArgs),
+    /// 创建新模板
+    Add(TemplateAddArgs),
+    /// 删除模板
+    Delete(TemplateDeleteArgs),
+}
+
+#[derive(Args)]
+struct TemplateListArgs {
+    #[arg(long, help = "按 agent 名称或 ID 过滤")]
+    agent: Option<String>,
+    #[arg(long, help = "输出 JSON 格式")]
+    json: bool,
+}
+
+#[derive(Args)]
+struct TemplateAddArgs {
+    #[arg(long, required = true, help = "Agent 名称或 ID")]
+    agent: String,
+    #[arg(long, required = true, help = "模板名称")]
+    name: String,
+    #[arg(long, action = clap::ArgAction::Append, num_args = 1, help = "命令行参数（可多次）")]
+    arg: Vec<String>,
+    #[arg(long, action = clap::ArgAction::Append, value_name = "KEY=VALUE", help = "环境变量（可多次）")]
+    env: Vec<String>,
+    #[arg(long, help = "工作目录")]
+    pwd: Option<String>,
+    #[arg(long, value_name = "inherit|isolated", help = "环境变量模式")]
+    env_mode: Option<String>,
+}
+
+#[derive(Args)]
+struct TemplateDeleteArgs {
+    #[arg(long, required = true, help = "Agent 名称或 ID")]
+    agent: String,
+    #[arg(long, required = true, help = "模板名称")]
+    name: String,
+}
+
+#[derive(Args)]
+#[cfg(debug_assertions)]
+struct MockRunArgs {
+    #[arg(last = true, num_args = 0.., allow_hyphen_values = true)]
+    args: Vec<String>,
+}
+
+#[derive(Debug)]
+enum CliError {
+    Storage(StorageError),
+    Io(std::io::Error),
+    UnknownTool(String),
+    ToolExecFailed(String),
+    InvalidInput(String),
+}
+
+impl std::fmt::Display for CliError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            CliError::Storage(e) => write!(f, "{}", e),
+            CliError::Io(e) => write!(f, "IO error: {}", e),
+            CliError::UnknownTool(name) => {
+                write!(f, "Unknown command '{}'. Try `loom list` or `loom --help`.", name)
             }
-            "--json" => {
-                format_json = true;
-                i += 1;
-            }
-            _ => {
-                eprintln!("Error: excessive or unknown argument '{}'", args[i]);
-                return 1;
-            }
+            CliError::ToolExecFailed(msg) => write!(f, "{}", msg),
+            CliError::InvalidInput(msg) => write!(f, "Invalid input: {}", msg),
         }
     }
+}
 
-    let templates = match agent {
-        Some(a) => match resolve_cli_id(&a).and_then(|id| get_templates_for_cli(&id)) {
-            Ok(t) => t,
-            Err(e) => {
-                eprintln!("Error: {}", e);
-                return 1;
-            }
-        },
-        None => match get_templates() {
-            Ok(t) => t,
-            Err(e) => {
-                eprintln!("Error: {}", e);
-                return 1;
-            }
-        },
-    };
+impl Error for CliError {}
+impl From<StorageError> for CliError {
+    fn from(e: StorageError) -> Self {
+        CliError::Storage(e)
+    }
+}
+impl From<std::io::Error> for CliError {
+    fn from(e: std::io::Error) -> Self {
+        CliError::Io(e)
+    }
+}
 
+fn print_tool_table(tools: &[&CliTool]) {
+    println!("{:<20} {:<50} {:<10} {:<15}", "Name", "Path", "Version", "Category");
+    println!("{}", "-".repeat(100));
+    for t in tools {
+        let cat = t.category_id.as_deref().unwrap_or("None");
+        println!("{:<20} {:<50} {:<10} {:<15}", t.name, t.path.display(), t.version, cat);
+    }
+}
+
+fn print_help_text() {
+    println!("{}", Cli::command().render_help());
+}
+
+fn list_tools(args: &ListArgs) -> Result<(), CliError> {
+    let format_json = args.json || args.format.as_deref() == Some("json");
+    if let Some(f) = &args.format {
+        if f != "json" && f != "table" {
+            return Err(CliError::InvalidInput(format!(
+                "invalid format '{}'. Use 'table' or 'json'",
+                f
+            )));
+        }
+    }
+    let tools = get_cli_tools()?;
     if format_json {
+        println!("{}", serde_json::to_string_pretty(&tools).unwrap());
+    } else {
+        let refs: Vec<&CliTool> = tools.iter().collect();
+        print_tool_table(&refs);
+    }
+    Ok(())
+}
+
+fn search_tools(args: &SearchArgs) -> Result<(), CliError> {
+    let tools = get_cli_tools()?;
+    let query_lower = args.query.to_lowercase();
+    let matches: Vec<&CliTool> = tools
+        .iter()
+        .filter(|t| {
+            t.name.to_lowercase().contains(&query_lower)
+                || t.path.to_string_lossy().to_lowercase().contains(&query_lower)
+        })
+        .collect();
+    if args.json {
+        println!("{}", serde_json::to_string_pretty(&matches).unwrap());
+    } else {
+        print_tool_table(&matches);
+    }
+    Ok(())
+}
+
+fn cmd_template(args: &TemplateArgs) -> Result<(), CliError> {
+    match &args.command {
+        Some(TemplateCommand::List(a)) => template_list(a),
+        Some(TemplateCommand::Add(a)) => template_add(a),
+        Some(TemplateCommand::Delete(a)) => template_delete(a),
+        None => {
+            eprintln!("Error: subcommand required (list/add/delete)");
+            eprintln!("Try 'loom template --help' for more information.");
+            Ok(())
+        }
+    }
+}
+
+fn template_list(args: &TemplateListArgs) -> Result<(), CliError> {
+    let templates = match &args.agent {
+        Some(a) => get_templates_for_cli(&resolve_cli_id(a)?)?,
+        None => get_templates()?,
+    };
+    if args.json {
         println!("{}", serde_json::to_string_pretty(&templates).unwrap());
     } else {
         println!("{:<24} {:<30} {:<16} {:<20}", "ID", "Name", "CLI ID", "Args");
         println!("{}", "-".repeat(92));
         for t in templates {
-            println!("{:<24} {:<30} {:<16} {:<20}", t.id, t.name, t.cli_id, t.args.join(" "));
+            println!(
+                "{:<24} {:<30} {:<16} {:<20}",
+                t.id, t.name, t.cli_id, t.args.join(" ")
+            );
         }
     }
-    0
+    Ok(())
 }
 
-fn template_add(args: &[String]) -> i32 {
-    let mut agent: Option<String> = None;
-    let mut name: Option<String> = None;
-    let mut cli_args: Vec<String> = Vec::new();
+fn template_add(args: &TemplateAddArgs) -> Result<(), CliError> {
+    let cli_id = resolve_cli_id(&args.agent)?;
     let mut env: HashMap<String, String> = HashMap::new();
-    let mut pwd: Option<String> = None;
-    let mut env_mode: Option<String> = None;
-
-    let mut i = 0;
-    while i < args.len() {
-        match args[i].as_str() {
-            "--agent" => {
-                if i + 1 >= args.len() {
-                    eprintln!("Error: --agent requires a value");
-                    return 1;
-                }
-                agent = Some(args[i + 1].clone());
-                i += 2;
+    for kv in &args.env {
+        match kv.split_once('=') {
+            Some((k, v)) => {
+                env.insert(k.to_string(), v.to_string());
             }
-            "--name" => {
-                if i + 1 >= args.len() {
-                    eprintln!("Error: --name requires a value");
-                    return 1;
-                }
-                name = Some(args[i + 1].clone());
-                i += 2;
-            }
-            "--arg" => {
-                if i + 1 >= args.len() {
-                    eprintln!("Error: --arg requires a value");
-                    return 1;
-                }
-                cli_args.push(args[i + 1].clone());
-                i += 2;
-            }
-            "--env" => {
-                if i + 1 >= args.len() {
-                    eprintln!("Error: --env requires KEY=VALUE");
-                    return 1;
-                }
-                let kv = &args[i + 1];
-                match kv.split_once('=') {
-                    Some((k, v)) => {
-                        env.insert(k.to_string(), v.to_string());
-                    }
-                    None => {
-                        eprintln!("Error: --env expects KEY=VALUE, got '{}'", kv);
-                        return 1;
-                    }
-                }
-                i += 2;
-            }
-            "--pwd" => {
-                if i + 1 >= args.len() {
-                    eprintln!("Error: --pwd requires a value");
-                    return 1;
-                }
-                pwd = Some(args[i + 1].clone());
-                i += 2;
-            }
-            "--env-mode" => {
-                if i + 1 >= args.len() {
-                    eprintln!("Error: --env-mode requires a value");
-                    return 1;
-                }
-                env_mode = Some(args[i + 1].clone());
-                i += 2;
-            }
-            _ => {
-                eprintln!("Error: excessive or unknown argument '{}'", args[i]);
-                return 1;
+            None => {
+                return Err(CliError::InvalidInput(format!(
+                    "--env expects KEY=VALUE, got '{}'",
+                    kv
+                )));
             }
         }
     }
-
-    let (agent, name) = match (agent, name) {
-        (Some(a), Some(n)) => (a, n),
-        _ => {
-            eprintln!("Error: both --agent and --name are required");
-            print_template_help();
-            return 1;
-        }
-    };
-
-    let cli_id = match resolve_cli_id(&agent) {
-        Ok(id) => id,
-        Err(e) => {
-            eprintln!("Error: {}", e);
-            return 1;
-        }
-    };
-
-    match create_template(cli_id, name, cli_args, env, vec![], pwd, env_mode) {
-        Ok(tpl) => {
-            println!("Template created: {} (id={})", tpl.name, tpl.id);
-            println!("{}", serde_json::to_string_pretty(&tpl).unwrap());
-            0
-        }
-        Err(e) => {
-            eprintln!("Error: {}", e);
-            1
-        }
-    }
+    let tpl = create_template(
+        cli_id,
+        args.name.clone(),
+        args.arg.clone(),
+        env,
+        vec![],
+        args.pwd.clone(),
+        args.env_mode.clone(),
+    )?;
+    println!("Template created: {} (id={})", tpl.name, tpl.id);
+    println!("{}", serde_json::to_string_pretty(&tpl).unwrap());
+    Ok(())
 }
 
-fn template_delete(args: &[String]) -> i32 {
-    let mut agent: Option<String> = None;
-    let mut name: Option<String> = None;
+fn template_delete(args: &TemplateDeleteArgs) -> Result<(), CliError> {
+    let cli_id = resolve_cli_id(&args.agent)?;
+    delete_template_by_name(&cli_id, &args.name)?;
+    println!(
+        "Template '{}' deleted for agent '{}'",
+        args.name, args.agent
+    );
+    Ok(())
+}
+
+fn exec_tool(
+    tool: &CliTool,
+    default_args: &[String],
+    extra_args: &[String],
+) -> Result<i32, CliError> {
+    let mut cmd = process::Command::new(&tool.path);
+    cmd.args(default_args);
+    cmd.args(extra_args);
+    for (k, v) in &tool.custom_env {
+        cmd.env(k, v);
+    }
+    cmd.stdin(process::Stdio::inherit());
+    cmd.stdout(process::Stdio::inherit());
+    cmd.stderr(process::Stdio::inherit());
+    let status = cmd
+        .status()
+        .map_err(|e| CliError::ToolExecFailed(format!("Failed to execute '{}': {}", tool.path.display(), e)))?;
+    Ok(status.code().unwrap_or(1))
+}
+
+fn try_run_tool(name: &str, extra_args: &[String]) -> Result<i32, CliError> {
+    let tools = get_cli_tools()?;
+    if let Some(tool) = tools.iter().find(|t| t.alias.as_deref() == Some(name)) {
+        return exec_tool(tool, &tool.custom_args, extra_args);
+    }
+    if let Some(tool) = tools.iter().find(|t| t.name == name) {
+        return exec_tool(tool, &[], extra_args);
+    }
+    Err(CliError::UnknownTool(name.to_string()))
+}
+
+#[cfg(debug_assertions)]
+fn cmd_mock_run(args: &MockRunArgs) -> Result<i32, CliError> {
     let mut i = 0;
-    while i < args.len() {
-        match args[i].as_str() {
-            "--agent" => {
-                if i + 1 >= args.len() {
-                    eprintln!("Error: --agent requires a value");
-                    return 1;
+    while i < args.args.len() {
+        match args.args[i].as_str() {
+            "--print-env" => {
+                if i + 1 >= args.args.len() {
+                    return Err(CliError::InvalidInput("--print-env requires a name".into()));
                 }
-                agent = Some(args[i + 1].clone());
+                let val = env::var(&args.args[i + 1]).unwrap_or_default();
+                println!("{}", val);
                 i += 2;
             }
-            "--name" => {
-                if i + 1 >= args.len() {
-                    eprintln!("Error: --name requires a value");
-                    return 1;
+            "--stdout" => {
+                if i + 1 >= args.args.len() {
+                    return Err(CliError::InvalidInput("--stdout requires text".into()));
                 }
-                name = Some(args[i + 1].clone());
+                println!("{}", args.args[i + 1]);
                 i += 2;
+            }
+            "--stderr" => {
+                if i + 1 >= args.args.len() {
+                    return Err(CliError::InvalidInput("--stderr requires text".into()));
+                }
+                eprintln!("{}", args.args[i + 1]);
+                i += 2;
+            }
+            "--stdout-loop" => {
+                if i + 1 >= args.args.len() {
+                    return Err(CliError::InvalidInput("--stdout-loop requires a count".into()));
+                }
+                let count: usize = args.args[i + 1].parse().unwrap_or(0);
+                for line_num in 0..count {
+                    println!("Line {}", line_num);
+                    std::thread::sleep(std::time::Duration::from_millis(10));
+                }
+                i += 2;
+            }
+            "--sleep" => {
+                if i + 1 >= args.args.len() {
+                    return Err(CliError::InvalidInput("--sleep requires milliseconds".into()));
+                }
+                let ms: u64 = args.args[i + 1].parse().unwrap_or(0);
+                std::thread::sleep(std::time::Duration::from_millis(ms));
+                i += 2;
+            }
+            "--exit" => {
+                if i + 1 >= args.args.len() {
+                    return Err(CliError::InvalidInput("--exit requires a code".into()));
+                }
+                let code: i32 = args.args[i + 1].parse().unwrap_or(0);
+                return Ok(code);
+            }
+            "--spawn-child" => {
+                let self_exe = env::current_exe().unwrap_or_else(|_| PathBuf::from("loom"));
+                let mut cmd = process::Command::new(self_exe);
+                cmd.arg("mock-run");
+                for a in &args.args[i + 1..] {
+                    cmd.arg(a);
+                }
+                let mut child = cmd.spawn().map_err(|e| {
+                    CliError::ToolExecFailed(format!("failed to spawn child: {}", e))
+                })?;
+                let _ = child.wait();
+                return Ok(0);
             }
             _ => {
-                eprintln!("Error: excessive or unknown argument '{}'", args[i]);
-                return 1;
+                return Err(CliError::InvalidInput(format!(
+                    "unknown mock-run option '{}'",
+                    args.args[i]
+                )));
             }
         }
     }
-
-    let (agent, name) = match (agent, name) {
-        (Some(a), Some(n)) => (a, n),
-        _ => {
-            eprintln!("Error: both --agent and --name are required");
-            print_template_help();
-            return 1;
-        }
-    };
-
-    let cli_id = match resolve_cli_id(&agent) {
-        Ok(id) => id,
-        Err(e) => {
-            eprintln!("Error: {}", e);
-            return 1;
-        }
-    };
-
-    match delete_template_by_name(&cli_id, &name) {
-        Ok(()) => {
-            println!("Template '{}' deleted for agent '{}'", name, agent);
-            0
-        }
-        Err(e) => {
-            eprintln!("Error: {}", e);
-            1
-        }
-    }
+    Ok(0)
 }
 
 fn main() {
     let args: Vec<String> = env::args().collect();
-
     if args.len() < 2 {
-        print_help();
+        print_help_text();
         process::exit(0);
     }
-
-    let first_arg = &args[1];
-
-    match first_arg.as_str() {
-        "-h" | "--help" | "help" => {
-            print_help();
-            process::exit(0);
-        }
-        "-v" | "--version" | "version" => {
-            print_version();
-            process::exit(0);
-        }
-        "list" => {
-            let mut format_json = false;
-            let mut i = 2;
-            while i < args.len() {
-                match args[i].as_str() {
-                    "--json" => {
-                        format_json = true;
-                        i += 1;
-                    }
-                    "--format" => {
-                        if i + 1 >= args.len() {
-                            eprintln!("Error: --format requires a value");
-                            process::exit(1);
-                        }
-                        let val = &args[i + 1];
-                        if val == "json" {
-                            format_json = true;
-                        } else if val == "table" {
-                            format_json = false;
-                        } else {
-                            eprintln!("Error: invalid format '{}'", val);
-                            process::exit(1);
-                        }
-                        i += 2;
-                    }
-                    _ => {
-                        eprintln!("Error: excessive or unknown argument '{}'", args[i]);
-                        process::exit(1);
-                    }
-                }
-            }
-
-            let tools = match get_cli_tools() {
-                Ok(t) => t,
-                Err(e) => {
-                    eprintln!("Error loading configuration: {}", e);
-                    process::exit(1);
+    match Cli::try_parse_from(&args) {
+        Ok(cli) => {
+            let result: Result<(), CliError> = match cli.command {
+                Some(AppCommand::List(a)) => list_tools(&a),
+                Some(AppCommand::Search(a)) => search_tools(&a),
+                Some(AppCommand::Template(a)) => cmd_template(&a),
+                #[cfg(debug_assertions)]
+                Some(AppCommand::MockRun(a)) => cmd_mock_run(&a).map(|_| ()),
+                None => {
+                    print_help_text();
+                    process::exit(0);
                 }
             };
-
-            if format_json {
-                let json_str = serde_json::to_string_pretty(&tools).unwrap();
-                println!("{}", json_str);
-            } else {
-                println!("{:<20} {:<50} {:<10} {:<15}", "Name", "Path", "Version", "Category");
-                println!("{}", "-".repeat(100));
-                for t in tools {
-                    let cat = t.category_id.unwrap_or_else(|| "None".to_string());
-                    println!("{:<20} {:<50} {:<10} {:<15}", t.name, t.path.display(), t.version, cat);
-                }
-            }
-        }
-        "search" => {
-            if args.len() < 3 {
-                eprintln!("Error: search query is required");
+            if let Err(e) = result {
+                eprintln!("Error: {}", e);
                 process::exit(1);
             }
-
-            let query = &args[2];
-            if query == "--json" || query.starts_with('-') {
-                eprintln!("Error: search query is required");
-                process::exit(1);
-            }
-
-            let mut format_json = false;
-            if args.len() > 3 {
-                if args[3] == "--json" {
-                    format_json = true;
-                } else {
-                    eprintln!("Error: unknown argument '{}'", args[3]);
-                    process::exit(1);
-                }
-            }
-
-            let tools = match get_cli_tools() {
-                Ok(t) => t,
-                Err(e) => {
-                    eprintln!("Error loading configuration: {}", e);
-                    process::exit(1);
-                }
-            };
-
-            let query_lower = query.to_lowercase();
-            let matches: Vec<_> = tools.into_iter()
-                .filter(|t| t.name.to_lowercase().contains(&query_lower) || t.path.to_string_lossy().to_lowercase().contains(&query_lower))
-                .collect();
-
-            if format_json {
-                let json_str = serde_json::to_string_pretty(&matches).unwrap();
-                println!("{}", json_str);
-            } else {
-                println!("{:<20} {:<50} {:<10} {:<15}", "Name", "Path", "Version", "Category");
-                println!("{}", "-".repeat(100));
-                for t in matches {
-                    let cat = t.category_id.unwrap_or_else(|| "None".to_string());
-                    println!("{:<20} {:<50} {:<10} {:<15}", t.name, t.path.display(), t.version, cat);
-                }
-            }
         }
-        "template" => {
-            process::exit(cmd_template(&args[2..]));
-        }
-        "mock-run" => {
-            let mut i = 2;
-            while i < args.len() {
-                match args[i].as_str() {
-                    "--print-env" => {
-                        if i + 1 >= args.len() {
-                            eprintln!("Error: --print-env requires a name");
-                            process::exit(1);
-                        }
-                        let name = &args[i + 1];
-                        let val = env::var(name).unwrap_or_else(|_| "".to_string());
-                        println!("{}", val);
-                        i += 2;
-                    }
-                    "--stdout" => {
-                        if i + 1 >= args.len() {
-                            eprintln!("Error: --stdout requires text");
-                            process::exit(1);
-                        }
-                        println!("{}", args[i + 1]);
-                        i += 2;
-                    }
-                    "--stderr" => {
-                        if i + 1 >= args.len() {
-                            eprintln!("Error: --stderr requires text");
-                            process::exit(1);
-                        }
-                        eprintln!("{}", args[i + 1]);
-                        i += 2;
-                    }
-                    "--stdout-loop" => {
-                        if i + 1 >= args.len() {
-                            eprintln!("Error: --stdout-loop requires a count");
-                            process::exit(1);
-                        }
-                        let count: usize = args[i + 1].parse().unwrap_or(0);
-                        for line_num in 0..count {
-                            println!("Line {}", line_num);
-                            std::thread::sleep(std::time::Duration::from_millis(10));
-                        }
-                        i += 2;
-                    }
-                    "--sleep" => {
-                        if i + 1 >= args.len() {
-                            eprintln!("Error: --sleep requires milliseconds");
-                            process::exit(1);
-                        }
-                        let ms: u64 = args[i + 1].parse().unwrap_or(0);
-                        std::thread::sleep(std::time::Duration::from_millis(ms));
-                        i += 2;
-                    }
-                    "--exit" => {
-                        if i + 1 >= args.len() {
-                            eprintln!("Error: --exit requires a code");
-                            process::exit(1);
-                        }
-                        let code: i32 = args[i + 1].parse().unwrap_or(0);
-                        process::exit(code);
-                    }
-                    "--spawn-child" => {
-                        let self_exe = env::current_exe().unwrap_or_else(|_| std::path::PathBuf::from("loom"));
-                        let mut cmd = process::Command::new(self_exe);
-                        cmd.arg("mock-run");
-                        for a in &args[i + 1..] {
-                            cmd.arg(a);
-                        }
-                        let mut child = cmd.spawn().expect("failed to spawn child");
-                        let _ = child.wait();
-                        process::exit(0);
-                    }
-                    _ => {
-                        eprintln!("Error: unknown mock-run option '{}'", args[i]);
-                        process::exit(1);
-                    }
-                }
+        Err(e) => {
+            if matches!(e.kind(), clap::error::ErrorKind::DisplayHelp | clap::error::ErrorKind::DisplayVersion) {
+                println!("{}", e.render());
+                process::exit(0);
             }
-            process::exit(0);
-        }
-        subcmd => {
-            // Try to dispatch via alias or direct tool name
-            let extra_args: Vec<String> = args[2..].to_vec();
-            match try_run_override(subcmd, &extra_args) {
-                Ok(exit_code) => process::exit(exit_code),
+            let name = &args[1];
+            let extra: Vec<String> = args[2..].to_vec();
+            match try_run_tool(name, &extra) {
+                Ok(code) => process::exit(code),
                 Err(err) => {
                     eprintln!("Error: {}", err);
-                    print_help();
+                    print_help_text();
                     process::exit(1);
                 }
             }
