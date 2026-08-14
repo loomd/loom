@@ -61,31 +61,6 @@ describe("GeneralSettingsTab", () => {
     onSidebarCollapseEnabledChange: vi.fn(),
     bottomPanelMode: "embedded" as const,
     onBottomPanelModeChange: vi.fn(),
-    onboarding: {
-      state: {
-        showWizard: false,
-        showTour: false,
-        currentStep: 0,
-        isScanning: false,
-        isCompleting: false,
-        hasScanned: false,
-        agents: [],
-        tools: [],
-        allResults: [],
-        selectedAgents: new Set<string>(),
-      },
-      checkOnboarding: vi.fn(async () => false),
-      startScan: vi.fn(async () => {}),
-      reopenWizard: vi.fn(async () => {}),
-      goNext: vi.fn(),
-      goPrev: vi.fn(),
-      selectAgentResult: vi.fn(),
-      toggleAllSelected: vi.fn(),
-      closeWizard: vi.fn(async () => {}),
-      skipWizard: vi.fn(async () => {}),
-      startTour: vi.fn(),
-      closeTour: vi.fn(),
-    },
   };
 
   it("renders theme section", async () => {
@@ -253,31 +228,6 @@ describe("SettingsPage", () => {
     onSidebarCollapseEnabledChange: vi.fn(),
     bottomPanelMode: "embedded" as const,
     onBottomPanelModeChange: vi.fn(),
-    onboarding: {
-      state: {
-        showWizard: false,
-        showTour: false,
-        currentStep: 0,
-        isScanning: false,
-        isCompleting: false,
-        hasScanned: false,
-        agents: [],
-        tools: [],
-        allResults: [],
-        selectedAgents: new Set<string>(),
-      },
-      checkOnboarding: vi.fn(async () => false),
-      startScan: vi.fn(async () => {}),
-      reopenWizard: vi.fn(async () => {}),
-      goNext: vi.fn(),
-      goPrev: vi.fn(),
-      selectAgentResult: vi.fn(),
-      toggleAllSelected: vi.fn(),
-      closeWizard: vi.fn(async () => {}),
-      skipWizard: vi.fn(async () => {}),
-      startTour: vi.fn(),
-      closeTour: vi.fn(),
-    },
   };
 
   it("renders page header with title", async () => {

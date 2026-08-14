@@ -5,8 +5,6 @@ import GeneralSettingsTab from "./settings/GeneralSettingsTab";
 import CliToolsTab from "./settings/CliToolsTab";
 import LibsTab from "./settings/LibsTab";
 import EnvVarsPage from "./EnvVarsPage";
-import type { UseOnboardingReturn } from "../hooks/useOnboarding";
-
 interface Props {
 	theme: "dark" | "day" | "gray";
 	onThemeChange: (newTheme: "dark" | "day" | "gray") => Promise<void>;
@@ -34,7 +32,6 @@ interface Props {
 	onSidebarCollapseEnabledChange: (enabled: boolean) => void;
 	bottomPanelMode: "embedded" | "floating";
 	onBottomPanelModeChange: (mode: "embedded" | "floating") => void;
-	onboarding: UseOnboardingReturn;
 }
 
 type Tab = "general" | "tools" | "env" | "libs";
@@ -60,7 +57,6 @@ export default function SettingsPage({
 		onSidebarCollapseEnabledChange,
 		bottomPanelMode,
 		onBottomPanelModeChange,
-		onboarding,
 	}: Props) {
 	const { t } = useI18n();
 	const [activeSubTab, setActiveSubTab] = useState<Tab>("general");
@@ -165,7 +161,6 @@ export default function SettingsPage({
 						onSidebarCollapseEnabledChange={onSidebarCollapseEnabledChange}
 						bottomPanelMode={bottomPanelMode}
 						onBottomPanelModeChange={onBottomPanelModeChange}
-						onboarding={onboarding}
 					/>
 				)}
 				{activeSubTab === "tools" && <CliToolsTab />}

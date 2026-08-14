@@ -25,7 +25,8 @@ fn embed_loom_cli() {
         println!("cargo:warning=无法解析 target 目录，loom CLI 未内嵌");
         return;
     };
-    let loom_exe = target_dir.join("loom.exe");
+    let profile = env::var("PROFILE").unwrap_or_default();
+    let loom_exe = target_dir.join(&profile).join("loom.exe");
     if !loom_exe.is_file() {
         println!(
             "cargo:warning=loom.exe 不存在（{}），loom CLI 未内嵌。请先执行 cargo build --release --package loom-cli",

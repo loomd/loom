@@ -11,7 +11,7 @@ import AppLayout from "./components/AppLayout";
 import Sidebar from "./components/Sidebar";
 import UpdateToast from "./components/UpdateToast";
 import NewProjectModal from "./components/NewProjectModal";
-import OnboardingWizard from "./components/OnboardingWizard";
+
 import SpawnAgentPanel from "./components/SpawnAgentPanel";
 import BottomPanel from "./components/BottomPanel";
 import { useProjects } from "./hooks/useProjects";
@@ -334,7 +334,7 @@ function App() {
 							)}
 						</div>
 						<div style={{ display: page === "settings" ? "flex" : "none", flexDirection: "column", flex: 1, minHeight: 0, overflow: "hidden" }}>
-							<SettingsPage theme={theme.theme} onThemeChange={theme.handleThemeChange} projectColumnAlign={theme.projectColumnAlign} onProjectColumnAlignChange={theme.handleProjectColumnAlignChange} fontFamily={theme.fontFamily} fontSize={theme.fontSize} onFontFamilyChange={theme.handleFontFamilyChange} onFontSizeChange={theme.handleFontSizeChange} updateInfo={updater.updateInfo} onCheckUpdate={updater.performUpdateCheck} onInstallUpdate={updater.handleInstallUpdate} onSkipVersion={updater.handleSkipVersion} floatingSidebarEnabled={floatingSidebarEnabled} onFloatingSidebarEnabledChange={handleFloatingSidebarEnabledChange} floatingSidebarPosition={floatingSidebarPosition} onFloatingSidebarPositionChange={handleFloatingSidebarPositionChange} sidebarCollapseEnabled={sidebarCollapseEnabled} onSidebarCollapseEnabledChange={handleSidebarCollapseEnabledChange} bottomPanelMode={bottomPanelMode} onBottomPanelModeChange={handleBottomPanelModeChange} onboarding={onboarding} />
+							<SettingsPage theme={theme.theme} onThemeChange={theme.handleThemeChange} projectColumnAlign={theme.projectColumnAlign} onProjectColumnAlignChange={theme.handleProjectColumnAlignChange} fontFamily={theme.fontFamily} fontSize={theme.fontSize} onFontFamilyChange={theme.handleFontFamilyChange} onFontSizeChange={theme.handleFontSizeChange} updateInfo={updater.updateInfo} onCheckUpdate={updater.performUpdateCheck} onInstallUpdate={updater.handleInstallUpdate} onSkipVersion={updater.handleSkipVersion} floatingSidebarEnabled={floatingSidebarEnabled} onFloatingSidebarEnabledChange={handleFloatingSidebarEnabledChange} floatingSidebarPosition={floatingSidebarPosition} onFloatingSidebarPositionChange={handleFloatingSidebarPositionChange} sidebarCollapseEnabled={sidebarCollapseEnabled} onSidebarCollapseEnabledChange={handleSidebarCollapseEnabledChange} bottomPanelMode={bottomPanelMode} onBottomPanelModeChange={handleBottomPanelModeChange} />
 						</div>
 						<div style={{ display: page === "agents" ? "flex" : "none", flexDirection: "column", flex: 1, minHeight: 0, overflow: "auto" }}>
 							<AgentManagementPage active={page === "agents"} onOpenTerminal={(cmd) => {
@@ -364,12 +364,7 @@ function App() {
 			{p.showModal && (
 				<NewProjectModal t={t} newProjName={p.newProjName} newProjPath={p.newProjPath} creating={p.creating} onNameChange={p.setNewProjName} onPathChange={p.setNewProjPath} onBrowse={p.handleBrowseFolder} onRegister={() => p.handleRegisterProject(setPage)} onCancel={() => p.setShowModal(false)} onGoAgents={() => setPage("agents")} />
 			)}
-			{onboarding.state.showWizard && (
-				<OnboardingWizard onboarding={onboarding} />
-			)}
-			{/* {onboarding.state.showTour && (
-				<OnboardingTour onboarding={onboarding} projectCount={p.projects.length} />
-			)} */}
+			
 			{showSpawnPanel && (
 				<SpawnAgentPanel
 					onSpawn={handleSpawnAgent}
