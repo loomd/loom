@@ -2477,6 +2477,8 @@ dependencies = [
  "loom-core",
  "serde",
  "serde_json",
+ "tempfile",
+ "uuid",
 ]
 
 [[package]]
