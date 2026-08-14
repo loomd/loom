@@ -510,13 +510,13 @@ mod tests {
 
         #[test]
         fn list_command_basic() {
-            let cli = Cli::try_parse_from(&["loom", "list"]).unwrap();
+            let cli = Cli::try_parse_from(["loom", "list"]).unwrap();
             assert!(matches!(cli.command, Some(AppCommand::List(_))));
         }
 
         #[test]
         fn list_command_json_flag() {
-            let cli = Cli::try_parse_from(&["loom", "list", "--json"]).unwrap();
+            let cli = Cli::try_parse_from(["loom", "list", "--json"]).unwrap();
             match cli.command {
                 Some(AppCommand::List(a)) => assert!(a.json),
                 _ => panic!("expected List"),
@@ -525,7 +525,7 @@ mod tests {
 
         #[test]
         fn list_command_format_json() {
-            let cli = Cli::try_parse_from(&["loom", "list", "--format", "json"]).unwrap();
+            let cli = Cli::try_parse_from(["loom", "list", "--format", "json"]).unwrap();
             match cli.command {
                 Some(AppCommand::List(a)) => assert_eq!(a.format, Some("json".to_string())),
                 _ => panic!("expected List"),
@@ -534,7 +534,7 @@ mod tests {
 
         #[test]
         fn search_command_with_query() {
-            let cli = Cli::try_parse_from(&["loom", "search", "cargo"]).unwrap();
+            let cli = Cli::try_parse_from(["loom", "search", "cargo"]).unwrap();
             match cli.command {
                 Some(AppCommand::Search(a)) => assert_eq!(a.query, "cargo"),
                 _ => panic!("expected Search"),
@@ -543,7 +543,7 @@ mod tests {
 
         #[test]
         fn search_command_json() {
-            let cli = Cli::try_parse_from(&["loom", "search", "cargo", "--json"]).unwrap();
+            let cli = Cli::try_parse_from(["loom", "search", "cargo", "--json"]).unwrap();
             match cli.command {
                 Some(AppCommand::Search(a)) => {
                     assert_eq!(a.query, "cargo");
@@ -555,7 +555,7 @@ mod tests {
 
         #[test]
         fn template_list_command() {
-            let cli = Cli::try_parse_from(&["loom", "template", "list"]).unwrap();
+            let cli = Cli::try_parse_from(["loom", "template", "list"]).unwrap();
             assert!(matches!(
                 cli.command,
                 Some(AppCommand::Template(TemplateArgs {
@@ -566,7 +566,7 @@ mod tests {
 
         #[test]
         fn template_add_command() {
-            let cli = Cli::try_parse_from(&[
+            let cli = Cli::try_parse_from([
                 "loom", "template", "add", "--agent", "tool1", "--name", "t1",
             ])
             .unwrap();
@@ -583,7 +583,7 @@ mod tests {
 
         #[test]
         fn template_add_with_env() {
-            let cli = Cli::try_parse_from(&[
+            let cli = Cli::try_parse_from([
                 "loom", "template", "add", "--agent", "t", "--name", "n", "--env", "KEY=VAL",
             ])
             .unwrap();
@@ -599,13 +599,13 @@ mod tests {
 
         #[test]
         fn template_add_missing_agent_rejects() {
-            let err = Cli::try_parse_from(&["loom", "template", "add", "--name", "t1"]).unwrap_err();
+            let err = Cli::try_parse_from(["loom", "template", "add", "--name", "t1"]).unwrap_err();
             assert!(err.kind() == clap::error::ErrorKind::MissingRequiredArgument);
         }
 
         #[test]
         fn template_delete_command() {
-            let cli = Cli::try_parse_from(&[
+            let cli = Cli::try_parse_from([
                 "loom", "template", "delete", "--agent", "t", "--name", "n",
             ])
             .unwrap();
@@ -622,19 +622,19 @@ mod tests {
 
         #[test]
         fn unknown_command_is_error() {
-            let err = Cli::try_parse_from(&["loom", "foo"]).unwrap_err();
+            let err = Cli::try_parse_from(["loom", "foo"]).unwrap_err();
             assert_ne!(err.kind(), clap::error::ErrorKind::DisplayHelp);
         }
 
         #[test]
         fn no_args_gives_none() {
-            let cli = Cli::try_parse_from(&["loom"]).unwrap();
+            let cli = Cli::try_parse_from(["loom"]).unwrap();
             assert!(cli.command.is_none());
         }
 
         #[test]
         fn version_flag() {
-            let err = Cli::try_parse_from(&["loom", "--version"]).unwrap_err();
+            let err = Cli::try_parse_from(["loom", "--version"]).unwrap_err();
             assert!(matches!(
                 err.kind(),
                 clap::error::ErrorKind::DisplayVersion
