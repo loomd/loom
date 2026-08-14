@@ -13,5 +13,10 @@
   },
   "dependencies": {
     "astro": "^7.1.1"
+  },
+  "overrides": {
+    "js-yaml": ">=4.5.0",
+    "nanoid": ">=3.3.18",
+    "postcss": ">=8.5.23"
   }
 }
