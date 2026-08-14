@@ -87,7 +87,7 @@ gh run view <RUN_ID> --log-failed
 
 ### 第四步：更新版本配置信息
 
-在本地验证一切正常后，依照当前的语义化版本号，在以下三个核心位置提升版本号（例如从 `v0.3.4` 提升至 `v0.3.5`）：
+在本地验证一切正常后，依照当前的语义化版本号，在以下四个核心位置提升版本号（例如从 `v0.3.4` 提升至 `v0.3.5`）：
 1. 根目录的 **`Cargo.toml`** 中的 `[workspace.package]` 部分：
    ```toml
    version = "0.3.5"
@@ -100,12 +100,16 @@ gh run view <RUN_ID> --log-failed
    ```json
    "version": "0.3.5"
    ```
+4. Frontend Agent 管理页默认 Skill 版本 State **`crates/gui/frontend/src/pages/AgentManagementPage.tsx`**：
+   ```tsx
+   const [skillVersion, setSkillVersion] = useState<string>('0.3.5');
+   ```
 
-4. **`loom` skill 与 `loom` CLI 的版本无需单独修改，随 workspace 版本自动同步**：
-   - skill 版本由 `crates/core/src/skills.rs` 的 `LOOM_SKILL_VERSION = env!("CARGO_PKG_VERSION")` 决定；
-   - CLI 版本同样取自 workspace 版本（`crates/cli` 的 `version.workspace = true`）；
-   - 因此更新第 1 步根目录 `Cargo.toml` 的版本后，skill 与 CLI 版本自动保持一致。
-   - **发版前校验**：确认注入的 `~/.claude/skills/loom/SKILL.md` 中的 `version` 字段与 `loom --version` 输出一致（均为目标版本号）。
+5. **`loom` skill 与 `loom` CLI 的版本自动联动机制说明**：
+   - **`loom` CLI 版本**直接绑定 workspace 版本（`crates/cli/Cargo.toml` 中定义 `version.workspace = true`），只要更新根目录 `Cargo.toml`，`loom --version` 即可自动同步最新版本。
+   - **`loom` skill 后端模版版本**在 `crates/core/src/skills.rs` 中使用 `LOOM_SKILL_VERSION = env!("CARGO_PKG_VERSION")`，在编译阶段自动获取 `Cargo.toml` 的版本，因此生成的 Skill YAML 标头也会自动更新。
+   - **前端静态 Fallback 版本**：`AgentManagementPage.tsx` 中的 `skillVersion` 默认初始值须一并更改，避免未完成后端通信前显示旧版本。
+   - **发版前校验**：确认注入的 `~/.claude/skills/loom/SKILL.md` / `~/.config/opencode/skills/loom/SKILL.md` 中的 `version` 字段与 `loom --version` 输出一致（均为目标版本号）。
 
 ### 第五步：提交版本变更（推 tag 前的强制约束）
 
