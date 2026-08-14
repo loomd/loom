@@ -387,3 +387,71 @@ fn test_cli_tools_reorder() {
         assert_eq!(final_list[2].id, t3.id);
     });
 }
+
+#[test]
+fn test_template_cli_management() {
+    run_test_with_temp_config(|config_path| {
+        use super::manager::{
+            create_template, delete_template_by_name, get_templates_for_cli, import_cli_tool,
+            resolve_cli_id, update_cli_alias,
+        };
+        use std::collections::HashMap;
+
+        let temp_dir_path = config_path.parent().unwrap();
+        let ext = if cfg!(target_os = "windows") {
+            ".exe"
+        } else {
+            ""
+        };
+        let exe_path = temp_dir_path.join(format!("opencode{}", ext));
+        std::fs::write(&exe_path, "").unwrap();
+        let tool = import_cli_tool(exe_path.to_string_lossy().to_string()).unwrap();
+
+        // resolve_cli_id: by name (case-insensitive)
+        assert_eq!(resolve_cli_id("OpenCode").unwrap(), tool.id);
+        // by id
+        assert_eq!(resolve_cli_id(&tool.id).unwrap(), tool.id);
+        // by alias
+        update_cli_alias(tool.id.clone(), Some("oc".to_string())).unwrap();
+        assert_eq!(resolve_cli_id("oc").unwrap(), tool.id);
+        // unknown agent
+        assert!(resolve_cli_id("no-such-agent").is_err());
+
+        // create templates
+        let mut env = HashMap::new();
+        env.insert("KEY".to_string(), "value".to_string());
+        create_template(
+            tool.id.clone(),
+            "model-a".to_string(),
+            vec!["--model".to_string(), "p/a".to_string()],
+            env,
+            vec![],
+            None,
+            Some("inherit".to_string()),
+        )
+        .unwrap();
+        create_template(
+            tool.id.clone(),
+            "model-b".to_string(),
+            vec![],
+            HashMap::new(),
+            vec![],
+            None,
+            None,
+        )
+        .unwrap();
+
+        // get_templates_for_cli filters by cli
+        let tpls = get_templates_for_cli(&tool.id).unwrap();
+        assert_eq!(tpls.len(), 2);
+
+        // delete_template_by_name is case-insensitive
+        delete_template_by_name(&tool.id, "MODEL-A").unwrap();
+        let remaining = get_templates_for_cli(&tool.id).unwrap();
+        assert_eq!(remaining.len(), 1);
+        assert_eq!(remaining[0].name, "model-b");
+
+        // deleting a non-existent template errors
+        assert!(delete_template_by_name(&tool.id, "MODEL-A").is_err());
+    });
+}

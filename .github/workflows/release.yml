@@ -35,6 +35,7 @@ jobs:
 
       - name: Build CLI binary
         run: cargo build --release --package loom-cli
+        # loom.exe 产物由 crates/gui/src-tauri/build.rs 内嵌进 GUI 二进制，发布物为单 exe
 
       - name: Bundle Tauri GUI App (NSIS Installer)
         run: npx @tauri-apps/cli build
@@ -49,13 +50,9 @@ jobs:
         run: |
           $version = "${{ github.ref_name }}".Substring(1)  # strip leading 'v'
           New-Item -ItemType Directory -Force -Path target/release/portable
-          New-Item -ItemType Directory -Force -Path target/release/portable/cli
 
-          # Copy and rename GUI binary to Loom.exe
+          # Copy and rename GUI binary to Loom.exe（loom CLI 已内嵌其中，运行/安装后自动注入）
           Copy-Item -Path target/release/loom-gui.exe -Destination target/release/portable/Loom.exe
-
-          # Copy CLI binary to cli/loom.exe
-          Copy-Item -Path target/release/loom.exe -Destination target/release/portable/cli/loom.exe
 
           # Copy README
           Copy-Item -Path README.md -Destination target/release/portable/README.md

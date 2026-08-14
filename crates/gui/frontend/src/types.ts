@@ -147,6 +147,17 @@ export interface AgentDiscoveryStatus {
   agents: SingleAgentDiscovery[];
   npm_installed: boolean;
   npm_path?: string;
+  node_install_command: string;
+  node_download_url: string;
+}
+
+export interface CliInstallStatus {
+  installed: boolean;
+  version: string;
+  bundled_version: string;
+  bin_dir: string;
+  cli_path: string;
+  is_dev: boolean;
 }
 
 export interface FetchedModel {

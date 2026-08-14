@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::fs;
-use std::process::Command;
+use std::path::PathBuf;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct AgentDiscoveryStatus {
@@ -17,6 +17,8 @@ pub struct DiscoveryOverview {
     pub agents: Vec<AgentDiscoveryStatus>,
     pub npm_installed: bool,
     pub npm_path: Option<String>,
+    pub node_install_command: String,
+    pub node_download_url: String,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -31,12 +33,49 @@ pub struct ModelsResponse {
     pub data: Vec<FetchedModel>,
 }
 
+/// 收集需要搜索可执行文件的目录。
+/// 进程启动时捕获的 `PATH` 可能已过期（例如刚通过 winget 安装 Node.js 后），
+/// 因此 Windows 上额外从注册表实时读取持久化的 PATH，保证能发现新安装的工具。
+fn search_dirs() -> Vec<PathBuf> {
+    let mut dirs: Vec<PathBuf> = Vec::new();
+
+    #[cfg(target_os = "windows")]
+    dirs.extend(
+        crate::storage::manager::registry_path_entries()
+            .into_iter()
+            .map(PathBuf::from),
+    );
+
+    if let Ok(path_val) = std::env::var("PATH") {
+        dirs.extend(std::env::split_paths(&path_val));
+    }
+
+    dirs
+}
+
 fn check_executable(name: &str) -> Option<String> {
-    which::which(name)
-        .or_else(|_| which::which(format!("{}.cmd", name)))
-        .or_else(|_| which::which(format!("{}.exe", name)))
-        .ok()
-        .map(|p| p.to_string_lossy().to_string())
+    // Windows 上优先匹配带可执行扩展名的 shim（npm 生成的 opencode.cmd / opencode.ps1），
+    // 无扩展名的 bash 脚本无法直接运行且通不过 import_cli_tool 的校验，仅作最后回退。
+    #[cfg(target_os = "windows")]
+    let candidates = [
+        format!("{}.exe", name),
+        format!("{}.cmd", name),
+        format!("{}.bat", name),
+        format!("{}.ps1", name),
+        name.to_string(),
+    ];
+    #[cfg(not(target_os = "windows"))]
+    let candidates = [name.to_string()];
+
+    for dir in search_dirs() {
+        for cand in &candidates {
+            let path = dir.join(cand);
+            if path.is_file() {
+                return Some(path.to_string_lossy().to_string());
+            }
+        }
+    }
+    None
 }
 
 pub fn discover_agents() -> DiscoveryOverview {
@@ -47,32 +86,35 @@ pub fn discover_agents() -> DiscoveryOverview {
     let npm_installed = npm_path.is_some();
 
     // 1. OpenCode
+    // 仅探测可执行文件是否存在，绝不执行 `--version` 等子命令：
+    // 1) 违反安全规则（禁止执行 PATH 扫描发现的 CLI 工具）；
+    // 2) 启动外部进程会阻塞 IPC 线程，导致切换页面卡顿。
     let opencode_path = check_executable("opencode");
     let opencode_installed = opencode_path.is_some();
-    let opencode_version = if opencode_installed {
-        Command::new("opencode")
-            .arg("--version")
-            .output()
-            .ok()
-            .and_then(|out| String::from_utf8(out.stdout).ok())
-            .map(|s| s.trim().to_string())
-    } else {
-        None
-    };
 
     agents.push(AgentDiscoveryStatus {
-        name: "OpenCode".to_string(),
+        name: "opencode".to_string(),
         installed: opencode_installed,
-        version: opencode_version,
+        version: None,
         executable_path: opencode_path,
         install_command: "npm install -g opencode-ai".to_string(),
         download_url: "https://opencode.ai/docs/zh-cn".to_string(),
     });
 
+    let node_install_command = if cfg!(target_os = "windows") {
+        "winget install OpenJS.NodeJS".to_string()
+    } else if cfg!(target_os = "macos") {
+        "brew install node".to_string()
+    } else {
+        "curl -fsSL https://deb.nodesource.com/setup | sudo -E bash - && sudo apt-get install -y nodejs".to_string()
+    };
+
     DiscoveryOverview {
         agents,
         npm_installed,
         npm_path,
+        node_install_command,
+        node_download_url: "https://nodejs.org/".to_string(),
     }
 }
 

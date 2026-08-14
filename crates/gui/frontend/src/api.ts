@@ -420,7 +420,7 @@ export const setAgentSkillMap = (
 ): Promise<void> => invoke("set_agent_skill_map", { skillMap });
 
 // ─── Agent Status Monitor ───────────────────────────────────
-import type { AgentStateInfo } from "./types";
+import type { AgentStateInfo, CliInstallStatus } from "./types";
 
 export const pollAgentState = (
 	workspaceDir: string,
@@ -436,6 +436,12 @@ export const getInjectedSkillPaths = (): Promise<string[]> =>
 
 export const getLoomSkillVersion = (): Promise<string> =>
 	invoke("get_loom_skill_version");
+
+export const installLoomCli = (): Promise<CliInstallStatus> =>
+	invoke("install_loom_cli");
+
+export const getLoomCliStatus = (): Promise<CliInstallStatus> =>
+	invoke("get_loom_cli_status");
 
 export const getAgentDiscoveryStatus = (): Promise<AgentDiscoveryStatus> =>
 	invoke("get_agent_discovery_status");

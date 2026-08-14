@@ -4,6 +4,7 @@ const MIN_WINDOW_WIDTH: u32 = 800;
 const MIN_WINDOW_HEIGHT: u32 = 560;
 
 use loom_core::agent_config::{discover_agents, fetch_models, write_opencode_config, DiscoveryOverview, FetchedModel};
+use loom_core::cli_install::{self as cli_install, CliInstallStatus};
 use loom_core::skills::{get_existing_skill_paths, inject_loom_skills, LOOM_SKILL_VERSION};
 use loom_core::storage::{self as cstore, AgentDoc, AgentInstance, Category, CliTool, GlobalDocTemplate, GlobalEnvVar, GlobalSkillTemplate, Project, ProjectSkill, ScanResult, Template};
 use std::collections::HashMap;
@@ -11,6 +12,12 @@ use std::sync::OnceLock;
 
 static PROCESS_START: OnceLock<std::time::Instant> = OnceLock::new();
 static FRONTEND_CONTACT_LOGGED: OnceLock<()> = OnceLock::new();
+
+/// 编译期内嵌的 loom CLI 字节（release 构建由 build.rs 注入；dev 为空数组，运行时注入会优雅降级）
+#[cfg(embed_loom_cli)]
+static LOOM_CLI_BYTES: &[u8] = include_bytes!(env!("LOOM_CLI_EMBED_PATH"));
+#[cfg(not(embed_loom_cli))]
+static LOOM_CLI_BYTES: &[u8] = &[];
 
 fn startup_elapsed_ms() -> u128 {
     PROCESS_START
@@ -29,6 +36,7 @@ use tauri_plugin_autostart::{MacosLauncher, ManagerExt};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
 
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 fn update_ime_position(
     _window: tauri::Window,
     _x: f64,
@@ -1505,6 +1513,16 @@ fn trigger_inject_loom_skills() -> Result<usize, String> {
 }
 
 #[tauri::command]
+fn install_loom_cli() -> Result<CliInstallStatus, String> {
+    cli_install::install_loom_cli(LOOM_CLI_BYTES, env!("CARGO_PKG_VERSION"))
+}
+
+#[tauri::command]
+fn get_loom_cli_status() -> Result<CliInstallStatus, String> {
+    Ok(cli_install::get_loom_cli_status())
+}
+
+#[tauri::command]
 fn get_injected_skill_paths() -> Result<Vec<String>, String> {
     Ok(get_existing_skill_paths())
 }
@@ -1515,8 +1533,11 @@ fn get_loom_skill_version() -> Result<String, String> {
 }
 
 #[tauri::command]
-fn get_agent_discovery_status() -> Result<DiscoveryOverview, String> {
-    Ok(discover_agents())
+async fn get_agent_discovery_status() -> Result<DiscoveryOverview, String> {
+    // PATH 目录遍历为阻塞 IO，放到阻塞线程池执行，避免阻塞 IPC 导致切页卡顿。
+    tauri::async_runtime::spawn_blocking(discover_agents)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -1529,6 +1550,51 @@ fn fetch_provider_models(baseUrl: String, apiKey: String) -> Result<Vec<FetchedM
 #[allow(non_snake_case)]
 fn configure_opencode_provider(providerId: String, baseUrl: String, apiKey: String, selectedModels: Vec<String>) -> Result<String, String> {
     write_opencode_config(&providerId, &baseUrl, &apiKey, &selectedModels).map_err(|e| e.to_string())
+}
+
+/// Watch loom.json for external changes (e.g. the `loom` CLI adding/removing
+/// templates) and emit a `config-changed` event so the frontend can refresh
+/// the derive panel in real time. Uses OS-level file events (notify), no polling.
+fn spawn_config_watcher(app_handle: tauri::AppHandle) {
+    use notify::{RecommendedWatcher, RecursiveMode, Watcher};
+
+    let config_path = cstore::get_config_path();
+    let (dir, file_name) = match (config_path.parent(), config_path.file_name()) {
+        (Some(d), Some(n)) => (d.to_path_buf(), n.to_string_lossy().into_owned()),
+        _ => return,
+    };
+
+    std::thread::spawn(move || {
+        let (tx, rx) = std::sync::mpsc::channel();
+        let mut watcher = match RecommendedWatcher::new(tx, notify::Config::default()) {
+            Ok(w) => w,
+            Err(e) => {
+                eprintln!("[ConfigWatcher] failed to create watcher: {}", e);
+                return;
+            }
+        };
+        if let Err(e) = watcher.watch(&dir, RecursiveMode::NonRecursive) {
+            eprintln!("[ConfigWatcher] failed to watch {:?}: {}", dir, e);
+            return;
+        }
+        println!("[ConfigWatcher] watching {:?} for changes", dir);
+        for ev in rx.into_iter().flatten() {
+            let is_target = ev.paths.iter().any(|p| {
+                p.file_name()
+                    .map(|n| n.to_string_lossy() == file_name.as_str())
+                    .unwrap_or(false)
+            });
+            if !is_target {
+                continue;
+            }
+            // Debounce: atomic writes (tmp -> rename) emit a burst of events.
+            std::thread::sleep(std::time::Duration::from_millis(300));
+            use tauri::Emitter;
+            if let Err(e) = app_handle.emit("config-changed", ()) {
+                eprintln!("[ConfigWatcher] failed to emit config-changed: {}", e);
+            }
+        }
+    });
 }
 
 fn main() {
@@ -1580,12 +1646,16 @@ fn main() {
             .with_handler(|app, _shortcut, event| {
                 if event.state == ShortcutState::Pressed {
                     if let Some(window) = app.get_webview_window("main") {
-                        if window.is_visible().unwrap_or(false) {
+                        let visible = window.is_visible().unwrap_or(false);
+                        println!("[Hotkey] Alt+Space pressed, window visible={}", visible);
+                        if visible {
                             let _ = window.hide();
                         } else {
                             let _ = window.show();
                             let _ = window.set_focus();
                         }
+                    } else {
+                        println!("[Hotkey] Alt+Space pressed but main window not found");
                     }
                 }
             })
@@ -1602,6 +1672,11 @@ fn main() {
         .setup(|app| {
             println!("[Startup] setup begin (window state restore, tray, plugins) t=+{}ms", startup_elapsed_ms());
             if let Some(window) = app.get_webview_window("main") {
+                if let (Ok(pos), Ok(size)) = (window.outer_position(), window.outer_size()) {
+                    println!("[Startup] initial window: pos=({},{}), size=({}x{}), visible={}",
+                        pos.x, pos.y, size.width, size.height,
+                        window.is_visible().unwrap_or(false));
+                }
                 let state_path = get_window_state_path();
                 let has_state = state_path.exists()
                     && std::fs::read_to_string(&state_path)
@@ -1645,6 +1720,13 @@ fn main() {
                     }
                     let _ = window.center();
                 }
+
+                if let (Ok(pos), Ok(size)) = (window.outer_position(), window.outer_size()) {
+                    println!("[Startup] window restored: pos=({},{}), size=({}x{}), maximized={}, fullscreen={}",
+                        pos.x, pos.y, size.width, size.height,
+                        window.is_maximized().unwrap_or(false),
+                        window.is_fullscreen().unwrap_or(false));
+                }
             }
 
             #[cfg(target_os = "windows")]
@@ -1655,7 +1737,21 @@ fn main() {
             std::thread::spawn(|| {
                 let _ = cstore::sync_running_processes();
                 let _ = inject_loom_skills();
+                // dev 环境不注入 CLI（未内嵌字节），仅发布版安装时自动注入并比对版本
+                #[cfg(not(debug_assertions))]
+                match cli_install::install_loom_cli(LOOM_CLI_BYTES, env!("CARGO_PKG_VERSION")) {
+                    Ok(status) => {
+                        println!("[CliInstall] loom CLI 已就绪: version={}, path={}", status.version, status.cli_path);
+                    }
+                    Err(e) => {
+                        eprintln!("[CliInstall] 安装失败: {}", e);
+                    }
+                }
             });
+
+            // Watch loom.json for external changes (e.g. the `loom` CLI adding or
+            // removing templates) so the derive panel refreshes in real time.
+            spawn_config_watcher(app.handle().clone());
 
             // Restore autostart setting from config after version update
             // The OS registry entry may be cleared during app update, but our config preserves the user's preference.
@@ -1690,8 +1786,11 @@ fn main() {
                     }
                     "show" => {
                         if let Some(window) = app.get_webview_window("main") {
+                            println!("[Tray] Show menu clicked");
                             let _ = window.show();
                             let _ = window.set_focus();
+                        } else {
+                            println!("[Tray] Show menu clicked but main window not found");
                         }
                     }
                     "maximize" => {
@@ -1719,8 +1818,11 @@ fn main() {
                     {
                         let app = tray.app_handle();
                         if let Some(window) = app.get_webview_window("main") {
+                            println!("[Tray] Left click: showing window");
                             let _ = window.show();
                             let _ = window.set_focus();
+                        } else {
+                            println!("[Tray] Left click: main window not found");
                         }
                     }
                 })
@@ -1746,6 +1848,10 @@ fn main() {
                 save_window_state(window);
             }
             tauri::WindowEvent::CloseRequested { api, .. } => {
+                if let (Ok(pos), Ok(sz)) = (window.outer_position(), window.outer_size()) {
+                    println!("[WindowEvent] CloseRequested: hiding to tray, pos=({},{}), size=({}x{})",
+                        pos.x, pos.y, sz.width, sz.height);
+                }
                 save_window_state(window);
                 api.prevent_close();
                 let _ = window.hide();
@@ -1852,6 +1958,8 @@ fn main() {
             poll_agent_state,
             reset_agent_idle,
             trigger_inject_loom_skills,
+            install_loom_cli,
+            get_loom_cli_status,
             get_injected_skill_paths,
             get_loom_skill_version,
             get_agent_discovery_status,

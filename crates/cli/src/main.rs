@@ -1,7 +1,11 @@
+use std::collections::HashMap;
 use std::env;
 use std::process;
 use std::path::PathBuf;
-use loom_core::storage::get_cli_tools;
+use loom_core::storage::{
+    create_template, delete_template_by_name, get_cli_tools, get_templates,
+    get_templates_for_cli, resolve_cli_id,
+};
 
 fn print_help() {
     println!("loom - 多项目统一管理，多agent并行开发");
@@ -15,6 +19,7 @@ fn print_help() {
     println!("Commands:");
     println!("  list            List all registered CLI tools");
     println!("  search <query>  Search for registered CLI tools by query");
+    println!("  template        Manage run templates for CLI tools (list/add/delete)");
     println!();
     println!("You can also run a CLI tool directly by its name or alias:");
     println!("  loom <name-or-alias> [extra args...]");
@@ -73,6 +78,252 @@ fn try_run_override(subcmd: &str, extra_args: &[String]) -> Result<i32, String> 
     }
 
     Err(format!("Unknown command '{}'", subcmd))
+}
+
+fn print_template_help() {
+    println!("Manage run templates for CLI tools (agents)");
+    println!("Usage:");
+    println!("  loom template list [--agent <name>] [--json]");
+    println!("  loom template add --agent <name> --name <name> [--arg <arg>]... [--env KEY=VALUE]... [--pwd <dir>] [--env-mode <inherit|isolated>]");
+    println!("  loom template delete --agent <name> --name <name>");
+}
+
+fn cmd_template(args: &[String]) -> i32 {
+    match args.first().map(|s| s.as_str()) {
+        Some("list") => template_list(&args[1..]),
+        Some("add") => template_add(&args[1..]),
+        Some("delete") => template_delete(&args[1..]),
+        Some("help") | Some("-h") | Some("--help") => {
+            print_template_help();
+            0
+        }
+        Some(other) => {
+            eprintln!("Error: unknown template subcommand '{}'", other);
+            print_template_help();
+            1
+        }
+        None => {
+            print_template_help();
+            0
+        }
+    }
+}
+
+fn template_list(args: &[String]) -> i32 {
+    let mut agent: Option<String> = None;
+    let mut format_json = false;
+    let mut i = 0;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--agent" => {
+                if i + 1 >= args.len() {
+                    eprintln!("Error: --agent requires a value");
+                    return 1;
+                }
+                agent = Some(args[i + 1].clone());
+                i += 2;
+            }
+            "--json" => {
+                format_json = true;
+                i += 1;
+            }
+            _ => {
+                eprintln!("Error: excessive or unknown argument '{}'", args[i]);
+                return 1;
+            }
+        }
+    }
+
+    let templates = match agent {
+        Some(a) => match resolve_cli_id(&a).and_then(|id| get_templates_for_cli(&id)) {
+            Ok(t) => t,
+            Err(e) => {
+                eprintln!("Error: {}", e);
+                return 1;
+            }
+        },
+        None => match get_templates() {
+            Ok(t) => t,
+            Err(e) => {
+                eprintln!("Error: {}", e);
+                return 1;
+            }
+        },
+    };
+
+    if format_json {
+        println!("{}", serde_json::to_string_pretty(&templates).unwrap());
+    } else {
+        println!("{:<24} {:<30} {:<16} {:<20}", "ID", "Name", "CLI ID", "Args");
+        println!("{}", "-".repeat(92));
+        for t in templates {
+            println!("{:<24} {:<30} {:<16} {:<20}", t.id, t.name, t.cli_id, t.args.join(" "));
+        }
+    }
+    0
+}
+
+fn template_add(args: &[String]) -> i32 {
+    let mut agent: Option<String> = None;
+    let mut name: Option<String> = None;
+    let mut cli_args: Vec<String> = Vec::new();
+    let mut env: HashMap<String, String> = HashMap::new();
+    let mut pwd: Option<String> = None;
+    let mut env_mode: Option<String> = None;
+
+    let mut i = 0;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--agent" => {
+                if i + 1 >= args.len() {
+                    eprintln!("Error: --agent requires a value");
+                    return 1;
+                }
+                agent = Some(args[i + 1].clone());
+                i += 2;
+            }
+            "--name" => {
+                if i + 1 >= args.len() {
+                    eprintln!("Error: --name requires a value");
+                    return 1;
+                }
+                name = Some(args[i + 1].clone());
+                i += 2;
+            }
+            "--arg" => {
+                if i + 1 >= args.len() {
+                    eprintln!("Error: --arg requires a value");
+                    return 1;
+                }
+                cli_args.push(args[i + 1].clone());
+                i += 2;
+            }
+            "--env" => {
+                if i + 1 >= args.len() {
+                    eprintln!("Error: --env requires KEY=VALUE");
+                    return 1;
+                }
+                let kv = &args[i + 1];
+                match kv.split_once('=') {
+                    Some((k, v)) => {
+                        env.insert(k.to_string(), v.to_string());
+                    }
+                    None => {
+                        eprintln!("Error: --env expects KEY=VALUE, got '{}'", kv);
+                        return 1;
+                    }
+                }
+                i += 2;
+            }
+            "--pwd" => {
+                if i + 1 >= args.len() {
+                    eprintln!("Error: --pwd requires a value");
+                    return 1;
+                }
+                pwd = Some(args[i + 1].clone());
+                i += 2;
+            }
+            "--env-mode" => {
+                if i + 1 >= args.len() {
+                    eprintln!("Error: --env-mode requires a value");
+                    return 1;
+                }
+                env_mode = Some(args[i + 1].clone());
+                i += 2;
+            }
+            _ => {
+                eprintln!("Error: excessive or unknown argument '{}'", args[i]);
+                return 1;
+            }
+        }
+    }
+
+    let (agent, name) = match (agent, name) {
+        (Some(a), Some(n)) => (a, n),
+        _ => {
+            eprintln!("Error: both --agent and --name are required");
+            print_template_help();
+            return 1;
+        }
+    };
+
+    let cli_id = match resolve_cli_id(&agent) {
+        Ok(id) => id,
+        Err(e) => {
+            eprintln!("Error: {}", e);
+            return 1;
+        }
+    };
+
+    match create_template(cli_id, name, cli_args, env, vec![], pwd, env_mode) {
+        Ok(tpl) => {
+            println!("Template created: {} (id={})", tpl.name, tpl.id);
+            println!("{}", serde_json::to_string_pretty(&tpl).unwrap());
+            0
+        }
+        Err(e) => {
+            eprintln!("Error: {}", e);
+            1
+        }
+    }
+}
+
+fn template_delete(args: &[String]) -> i32 {
+    let mut agent: Option<String> = None;
+    let mut name: Option<String> = None;
+    let mut i = 0;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--agent" => {
+                if i + 1 >= args.len() {
+                    eprintln!("Error: --agent requires a value");
+                    return 1;
+                }
+                agent = Some(args[i + 1].clone());
+                i += 2;
+            }
+            "--name" => {
+                if i + 1 >= args.len() {
+                    eprintln!("Error: --name requires a value");
+                    return 1;
+                }
+                name = Some(args[i + 1].clone());
+                i += 2;
+            }
+            _ => {
+                eprintln!("Error: excessive or unknown argument '{}'", args[i]);
+                return 1;
+            }
+        }
+    }
+
+    let (agent, name) = match (agent, name) {
+        (Some(a), Some(n)) => (a, n),
+        _ => {
+            eprintln!("Error: both --agent and --name are required");
+            print_template_help();
+            return 1;
+        }
+    };
+
+    let cli_id = match resolve_cli_id(&agent) {
+        Ok(id) => id,
+        Err(e) => {
+            eprintln!("Error: {}", e);
+            return 1;
+        }
+    };
+
+    match delete_template_by_name(&cli_id, &name) {
+        Ok(()) => {
+            println!("Template '{}' deleted for agent '{}'", name, agent);
+            0
+        }
+        Err(e) => {
+            eprintln!("Error: {}", e);
+            1
+        }
+    }
 }
 
 fn main() {
@@ -192,6 +443,9 @@ fn main() {
                     println!("{:<20} {:<50} {:<10} {:<15}", t.name, t.path.display(), t.version, cat);
                 }
             }
+        }
+        "template" => {
+            process::exit(cmd_template(&args[2..]));
         }
         "mock-run" => {
             let mut i = 2;

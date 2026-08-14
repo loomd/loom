@@ -191,7 +191,29 @@ pub fn build_shell_args(
 
 
 
+// Windows: build the current PATH value by merging the persistent registry PATH
+// (read fresh, so it reflects tools installed after Loom started) with the process
+// PATH, deduplicating while preserving order (registry entries take precedence).
+#[cfg(target_os = "windows")]
+fn fresh_path_value() -> Option<String> {
+    use loom_core::storage::manager::registry_path_entries;
+
+    let mut segments: Vec<String> = registry_path_entries();
+    if let Ok(path_val) = std::env::var("PATH") {
+        segments.extend(std::env::split_paths(&path_val).map(|p| p.to_string_lossy().to_string()));
+    }
+
+    let mut seen = std::collections::HashSet::new();
+    segments.retain(|s| !s.is_empty() && seen.insert(s.clone()));
+    if segments.is_empty() {
+        None
+    } else {
+        Some(segments.join(";"))
+    }
+}
+
 // Core PTY spawn function
+#[allow(clippy::too_many_arguments)]
 pub fn spawn_pty_session(
     app: AppHandle,
     state: &PtyState,
@@ -280,6 +302,18 @@ pub fn spawn_pty_session(
     for (key, val) in std::env::vars() {
         merged_envs.insert(key, val);
     }
+
+    // Windows: override PATH with the freshly-read registry PATH (merged with the
+    // process PATH). Loom's process PATH is captured at startup and goes stale after
+    // installing new tools (e.g. node via winget), while the registry always holds the
+    // current persistent PATH. This lets new terminals use freshly installed tools
+    // without restarting Loom. Template-specific env overrides below still win.
+    #[cfg(target_os = "windows")]
+    if let Some(fresh_path) = fresh_path_value() {
+        cmd_builder.env("PATH", &fresh_path);
+        merged_envs.insert("PATH".to_string(), fresh_path);
+    }
+
     if let Some(ref custom_envs) = env {
         for (key, val) in custom_envs {
             merged_envs.insert(key.clone(), val.clone());
@@ -387,6 +421,7 @@ pub fn spawn_pty_session(
 }
 
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub fn pty_spawn(
     app: AppHandle,
     state: tauri::State<'_, PtyState>,

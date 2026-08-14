@@ -10,10 +10,43 @@ description: 检查项目的 CI 构建情况、分析和修复发生的报错、
 ## 适用场景
 
 当用户提到以下需求时，应执行或参考此 Skill 的流程指导：
-- “发布新版本” / “发版”
-- “修复 CI 构建/发布 workflow 失败”
-- “更新版本号并重新打 Tag 发版”
-- “发布新的 release/更新包”
+- "发布新版本" / "发版"
+- "修复 CI 构建/发布 workflow 失败"
+- "更新版本号并重新打 Tag 发版"
+- "发布新的 release/更新包"
+
+## 前置分流：本地构建 vs 正式发布
+
+**在开始任何步骤之前，必须先判断用户的真实意图：**
+
+| 用户表达 | 行为 |
+|---|---|
+| "构建本地 release" / "本地构建" / "本地打包" / "build local" | 使用 `cargo tauri build` 构建本地 Tauri 打包版本，输出裸 exe 产物路径 |
+| "发版" / "发布新版本" / "更新版本" / "打 tag" / "推送 release" | 完整 CI 修复→提版本→打 tag→推 GitHub 流程 |
+
+### 本地构建
+
+**注意：打包前必须先重新编译 loom CLI**，否则 `cargo tauri build` 会把旧的 CLI 产物内嵌进 GUI（例如缺失 `template` 子命令）。正确顺序：
+
+```bash
+cargo build --release --package loom-cli
+cargo tauri build
+```
+
+构建完成后，必须回传产物的**完整绝对路径**：
+```
+构建完成！
+Release 路径:
+- GUI: D:\...\loom\target\release\loom-gui.exe
+```
+
+**注意：** 本地构建与正式发布的区别：
+- **禁止**修改 `Cargo.toml`、`package.json`、`tauri.conf.json` 中的版本号
+- **禁止** `git commit`、`git push`、`git tag`
+- **禁止**触发 GitHub Actions / CI release workflow
+- **禁止**生成 installer / 打包签名
+
+如果无法区分意图，应询问用户："你指的是本地构建还是正式发布？"
 
 ## 核心流程分步指南
 
@@ -66,6 +99,12 @@ gh run view <RUN_ID> --log-failed
    ```json
    "version": "0.3.5"
    ```
+
+4. **`loom` skill 与 `loom` CLI 的版本无需单独修改，随 workspace 版本自动同步**：
+   - skill 版本由 `crates/core/src/skills.rs` 的 `LOOM_SKILL_VERSION = env!("CARGO_PKG_VERSION")` 决定；
+   - CLI 版本同样取自 workspace 版本（`crates/cli` 的 `version.workspace = true`）；
+   - 因此更新第 1 步根目录 `Cargo.toml` 的版本后，skill 与 CLI 版本自动保持一致。
+   - **发版前校验**：确认注入的 `~/.claude/skills/loom/SKILL.md` 中的 `version` 字段与 `loom --version` 输出一致（均为目标版本号）。
 
 ### 第五步：提交版本变更（推 tag 前的强制约束）
 

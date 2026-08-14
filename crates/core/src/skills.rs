@@ -15,15 +15,25 @@ description: Loom CLI and Workspace management integration for AI Agents
 
 This skill enables AI agents to interact with and manage the Loom environment, tools, templates, and workspace processes using the `loom` CLI.
 
+## Step 0: Verify Loom CLI Availability
+
+Before doing anything else, confirm the `loom` CLI is installed and callable:
+- Run `loom --version`. If the command fails (binary not found, or non-zero exit code), the CLI is unavailable — stop this workflow immediately and report to the user. Do not proceed with any other step.
+
 ## Capabilities & Commands
 
 ### 1. View & Manage Projects
 - List all projects: `loom project list`
 - Add project: `loom project add <name> <root_path>`
 
-### 2. View & Run Templates
-- List available templates: `loom template list`
-- Run a template: `loom template run <template_id>`
+### 2. Manage Run Templates (agents)
+Templates define how to launch an agent/tool in the Loom workspace (parameters, env vars, working dir).
+- List all templates: `loom template list [--json]`
+- List templates for a specific agent: `loom template list --agent <agent-name> [--json]`
+- Add a template: `loom template add --agent <agent-name> --name <template-name> [--arg <arg>]... [--env KEY=VALUE]... [--pwd <dir>] [--env-mode <inherit|isolated>]`
+- Delete a template: `loom template delete --agent <agent-name> --name <template-name>`
+
+`--agent` accepts a registered tool name, alias or id. Newly added templates make a derivable agent appear in the Loom overview (derive) panel in real time.
 
 ### 3. Environment Variables
 - List global env vars: `loom env list`

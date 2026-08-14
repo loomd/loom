@@ -1,19 +1,25 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { getAgentDiscoveryStatus, fetchProviderModels, configureOpencodeProvider, triggerInjectLoomSkills, getInjectedSkillPaths, getLoomSkillVersion, getTemplates, createTemplate, importCliTool, getCliTools, openUrl } from '../api';
-import type { AgentDiscoveryStatus, FetchedModel } from '../types';
+import { getCurrentWindow } from "@tauri-apps/api/window";
+import { getAgentDiscoveryStatus, fetchProviderModels, configureOpencodeProvider, triggerInjectLoomSkills, getInjectedSkillPaths, getLoomSkillVersion, installLoomCli, getLoomCliStatus, getTemplates, createTemplate, importCliTool, getCliTools, openUrl } from '../api';
+import type { AgentDiscoveryStatus, CliInstallStatus, FetchedModel } from '../types';
 import { useToast } from '../ToastContext';
 
 interface AgentManagementPageProps {
   onOpenTerminal?: (cmd: string) => void;
+  /** 页面是否处于激活状态（用于切回页面时重新检测环境） */
+  active?: boolean;
 }
 
-export const AgentManagementPage: React.FC<AgentManagementPageProps> = ({ onOpenTerminal }) => {
+export const AgentManagementPage: React.FC<AgentManagementPageProps> = ({ onOpenTerminal, active }) => {
   const toast = useToast();
 
   const [discovery, setDiscovery] = useState<AgentDiscoveryStatus | null>(null);
+  const [refreshing, setRefreshing] = useState<boolean>(false);
   const [injectingSkill, setInjectingSkill] = useState<boolean>(false);
   const [injectedPaths, setInjectedPaths] = useState<string[]>([]);
   const [skillVersion, setSkillVersion] = useState<string>('0.5.21');
+  const [cliStatus, setCliStatus] = useState<CliInstallStatus | null>(null);
+  const [installingCli, setInstallingCli] = useState<boolean>(false);
 
   // Provider config states
   const [providerId, setProviderId] = useState<string>('loom');
@@ -33,32 +39,60 @@ export const AgentManagementPage: React.FC<AgentManagementPageProps> = ({ onOpen
     }
   }, []);
 
+  const loadDiscovery = useCallback(async () => {
+    try {
+      const res = await getAgentDiscoveryStatus();
+      setDiscovery(res);
+    } catch (err) {
+      toast.error(err?.toString() || '加载 Agent 发现状态失败');
+    }
+  }, [toast]);
+
   useEffect(() => {
-    let active = true;
-    getAgentDiscoveryStatus()
-      .then(res => {
-        if (active) setDiscovery(res);
-      })
-      .catch(err => {
-        if (active) toast.error(err?.toString() || '加载 Agent 发现状态失败');
-      });
+    let cancelled = false;
+
+    // 每次页面激活（含首次挂载）时重新检测环境，保证安装 node 后返回本页能实时刷新
+    if (active) {
+      getAgentDiscoveryStatus()
+        .then(res => {
+          if (!cancelled) setDiscovery(res);
+        })
+        .catch(err => {
+          if (!cancelled) toast.error(err?.toString() || '加载 Agent 发现状态失败');
+        });
+    }
 
     getInjectedSkillPaths()
       .then(paths => {
-        if (active) setInjectedPaths(paths);
+        if (!cancelled) setInjectedPaths(paths);
       })
       .catch(() => {});
 
     getLoomSkillVersion()
       .then(v => {
-        if (active) setSkillVersion(v);
+        if (!cancelled) setSkillVersion(v);
+      })
+      .catch(() => {});
+
+    getLoomCliStatus()
+      .then(s => {
+        if (!cancelled) setCliStatus(s);
       })
       .catch(() => {});
 
     return () => {
-      active = false;
+      cancelled = true;
     };
-  }, [toast]);
+  }, [active, toast]);
+
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    try {
+      await loadDiscovery();
+    } finally {
+      setRefreshing(false);
+    }
+  };
 
   const handleInjectSkills = async () => {
     setInjectingSkill(true);
@@ -70,6 +104,19 @@ export const AgentManagementPage: React.FC<AgentManagementPageProps> = ({ onOpen
       toast.error(`Skill 注入失败: ${err}`);
     } finally {
       setInjectingSkill(false);
+    }
+  };
+
+  const handleInstallCli = async () => {
+    setInstallingCli(true);
+    try {
+      const s = await installLoomCli();
+      setCliStatus(s);
+      toast.success(`loom CLI v${s.version} 安装成功`);
+    } catch (err: unknown) {
+      toast.error(`loom CLI 安装失败: ${err}`);
+    } finally {
+      setInstallingCli(false);
     }
   };
 
@@ -158,12 +205,40 @@ export const AgentManagementPage: React.FC<AgentManagementPageProps> = ({ onOpen
   };
 
   return (
-    <div style={{ padding: '24px', maxWidth: '1000px', margin: '0 auto', color: 'var(--text-primary)' }}>
-      <div style={{ marginBottom: '24px' }}>
-        <h1 style={{ margin: 0, fontSize: '24px', fontWeight: 600, color: 'var(--text-primary)' }}>配置引导</h1>
-        <p style={{ margin: '4px 0 0', color: 'var(--text-secondary)', fontSize: '14px' }}>
-          安装opencode 自动注入模型与配置agent
-        </p>
+    <div data-tauri-drag-region style={{ padding: '24px', maxWidth: '1000px', margin: '0 auto', color: 'var(--text-primary)' }}>
+      <div data-tauri-drag-region style={{ marginBottom: '24px', paddingBottom: '16px', borderBottom: '1px solid var(--border-subtle)', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px' }}>
+        <div>
+          <h1
+            data-tauri-drag-region
+            onMouseDown={(e) => {
+              if (e.button === 0) {
+                getCurrentWindow().startDragging();
+              }
+            }}
+            style={{ margin: 0, fontSize: '24px', fontWeight: 600, color: 'var(--text-primary)', userSelect: 'none', cursor: 'default' }}
+          >配置引导</h1>
+          <p data-tauri-drag-region style={{ margin: '4px 0 0', color: 'var(--text-secondary)', fontSize: '14px' }}>
+            安装opencode 自动注入模型与配置agent
+          </p>
+        </div>
+        <button
+          onClick={handleRefresh}
+          disabled={refreshing}
+          style={{
+            padding: '5px 14px',
+            borderRadius: 'var(--radius-sm, 4px)',
+            border: '1px solid var(--border-subtle)',
+            background: 'var(--bg-elevated)',
+            color: 'var(--text-secondary)',
+            cursor: refreshing ? 'default' : 'pointer',
+            fontSize: '12px',
+            fontWeight: 500,
+            flexShrink: 0,
+            transition: 'background 0.2s'
+          }}
+        >
+          {refreshing ? '检测中...' : '重新检测'}
+        </button>
       </div>
 
       {/* 1. Agent Discovery Section */}
@@ -172,11 +247,59 @@ export const AgentManagementPage: React.FC<AgentManagementPageProps> = ({ onOpen
           <div style={{ color: 'var(--text-secondary)' }}>检测中...</div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            {/* loom CLI Status Row */}
+            <div style={{ padding: '16px', borderRadius: 'var(--radius-sm, 6px)', border: '1px solid var(--border-subtle)', background: 'var(--bg-surface)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <h3 style={{ margin: 0, color: 'var(--text-primary)', fontSize: '15px' }}>loom CLI 全局命令</h3>
+                  {cliStatus && cliStatus.version && (
+                    <span style={{ fontSize: '12px', color: 'var(--text-secondary)', fontWeight: 500 }}>v{cliStatus.version}</span>
+                  )}
+                </div>
+                <button
+                  onClick={handleInstallCli}
+                  disabled={installingCli || cliStatus?.is_dev}
+                  style={{
+                    padding: '4px 12px',
+                    borderRadius: 'var(--radius-sm, 4px)',
+                    border: '1px solid var(--border-subtle)',
+                    background: 'var(--bg-elevated)',
+                    color: 'var(--text-primary)',
+                    cursor: cliStatus?.is_dev ? 'not-allowed' : 'pointer',
+                    fontSize: '12px',
+                    fontWeight: 500,
+                    opacity: cliStatus?.is_dev ? 0.6 : 1,
+                    transition: 'background 0.2s'
+                  }}
+                >
+                  {installingCli ? '正在安装...' : cliStatus?.is_dev ? 'dev 环境' : '安装 / 修复'}
+                </button>
+              </div>
+              {cliStatus?.is_dev ? (
+                <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginTop: '8px' }}>
+                  dev 环境，无法操作（发布版安装后自动注入全局 CLI）
+                </div>
+              ) : cliStatus?.installed ? (
+                <div style={{ fontSize: '12px', color: 'var(--text-secondary)', fontFamily: 'monospace', marginTop: '8px' }}>
+                  {cliStatus.cli_path}
+                  {cliStatus.bundled_version && cliStatus.version !== cliStatus.bundled_version && (
+                    <span style={{ display: 'block', color: '#f59e0b', marginTop: '4px' }}>
+                      内置版本 v{cliStatus.bundled_version} 与已装版本 v{cliStatus.version} 不一致，可点击“安装 / 修复”更新
+                    </span>
+                  )}
+                </div>
+              ) : (
+                <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginTop: '8px' }}>
+                  未检测到全局 loom CLI，请点击右侧“安装 / 修复”使其进入 PATH
+                </div>
+              )}
+            </div>
+
             {/* Loom Skill Status Row */}
             <div style={{ padding: '16px', borderRadius: 'var(--radius-sm, 6px)', border: '1px solid var(--border-subtle)', background: 'var(--bg-surface)' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <h3 style={{ margin: 0, color: 'var(--text-primary)', fontSize: '15px' }}>Loom skill自动注入</h3>
+                  <h3 style={{ margin: 0, color: 'var(--text-primary)', fontSize: '15px' }}>loom skill自动注入</h3>
                   <span style={{ fontSize: '12px', color: 'var(--text-secondary)', fontWeight: 500 }}>v{skillVersion}</span>
                 </div>
                 <button
@@ -230,6 +353,39 @@ export const AgentManagementPage: React.FC<AgentManagementPageProps> = ({ onOpen
               <p style={{ fontSize: '13px', color: 'var(--text-secondary)', margin: '8px 0 0' }}>
                 {discovery.npm_installed ? `路径: ${discovery.npm_path}` : '未检测到全局 npm 包管理器，建议先安装 Node.js'}
               </p>
+              {!discovery.npm_installed && (
+                <div style={{ display: 'flex', gap: '10px', marginTop: '12px' }}>
+                  <button
+                    onClick={() => onOpenTerminal?.(discovery.node_install_command)}
+                    style={{
+                      padding: '6px 12px',
+                      fontSize: '12px',
+                      borderRadius: '4px',
+                      background: 'var(--accent-primary, #3b82f6)',
+                      color: '#fff',
+                      border: 'none',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    点击安装
+                  </button>
+                  <button
+                    onClick={() => openUrl(discovery.node_download_url)}
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      color: 'var(--text-link, #3b82f6)',
+                      fontSize: '12px',
+                      cursor: 'pointer',
+                      padding: 0,
+                      alignSelf: 'center',
+                      textDecoration: 'none'
+                    }}
+                  >
+                    查看官方文档
+                  </button>
+                </div>
+              )}
             </div>
 
             {/* Agent Rows */}
@@ -253,25 +409,37 @@ export const AgentManagementPage: React.FC<AgentManagementPageProps> = ({ onOpen
                 </p>
                 <div style={{ display: 'flex', gap: '10px', marginTop: '12px' }}>
                   {!agent.installed && (
-                    <button
-                      onClick={() => {
-                        const targetCmd = discovery.npm_installed
-                          ? agent.install_command
-                          : `npm i -g npm && ${agent.install_command}`;
-                        onOpenTerminal?.(targetCmd);
-                      }}
-                      style={{
-                        padding: '6px 12px',
-                        fontSize: '12px',
-                        borderRadius: '4px',
-                        background: 'var(--accent-primary, #3b82f6)',
-                        color: '#fff',
-                        border: 'none',
-                        cursor: 'pointer'
-                      }}
-                    >
-                      {!discovery.npm_installed ? '在 Loom 终端一键安装 npm 与 Agent' : '在 Loom 终端一键安装'}
-                    </button>
+                    discovery.npm_installed ? (
+                      <button
+                        onClick={() => onOpenTerminal?.(agent.install_command)}
+                        style={{
+                          padding: '6px 12px',
+                          fontSize: '12px',
+                          borderRadius: '4px',
+                          background: 'var(--accent-primary, #3b82f6)',
+                          color: '#fff',
+                          border: 'none',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        点击安装
+                      </button>
+                    ) : (
+                      <button
+                        disabled
+                        style={{
+                          padding: '6px 12px',
+                          fontSize: '12px',
+                          borderRadius: '4px',
+                          background: 'var(--border-subtle)',
+                          color: 'var(--text-tertiary)',
+                          border: 'none',
+                          cursor: 'not-allowed'
+                        }}
+                      >
+                        需先安装 Node.js
+                      </button>
+                    )
                   )}
                   <button
                     onClick={() => openUrl(agent.download_url)}
@@ -298,7 +466,7 @@ export const AgentManagementPage: React.FC<AgentManagementPageProps> = ({ onOpen
       {/* 2. Provider & Model Configuration Section */}
       <section style={{ background: 'var(--bg-card)', padding: '20px', borderRadius: 'var(--radius-md, 8px)', marginBottom: '24px', border: '1px solid var(--border-subtle)' }}>
         <h2 style={{ fontSize: '18px', marginTop: 0, marginBottom: '16px', color: 'var(--text-primary)' }}>
-          模型自动配置 <span style={{ color: 'var(--accent-primary, #3b82f6)', fontWeight: 600 }}>OpenCode</span>
+          <span style={{ color: 'var(--accent-primary, #3b82f6)', fontWeight: 600 }}>opencode</span> 模型自动配置
         </h2>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
           <div>

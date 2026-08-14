@@ -860,7 +860,7 @@ fn expand_process_env(input: &str) -> String {
 }
 
 #[cfg(target_os = "windows")]
-fn registry_path_entries() -> Vec<String> {
+pub fn registry_path_entries() -> Vec<String> {
     use winreg::enums::{HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE};
     use winreg::RegKey;
 
@@ -1206,7 +1206,7 @@ pub fn update_cli_alias(cli_id: String, alias: Option<String>) -> Result<()> {
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty());
     if let Some(ref alias_name) = normalized_alias {
-        if ["list", "search", "mock-run", "help", "version"].contains(&alias_name.as_str()) {
+        if ["list", "search", "mock-run", "template", "help", "version"].contains(&alias_name.as_str()) {
             return Err(StorageError::Validation(format!(
                 "Alias '{}' conflicts with built-in commands",
                 alias_name
@@ -1300,6 +1300,48 @@ pub fn delete_template(template_id: String) -> Result<()> {
     config.templates.retain(|t| t.id != template_id);
     if config.templates.len() == initial_len {
         return Err(StorageError::TemplateNotFound(template_id));
+    }
+    save_config(&config)?;
+    Ok(())
+}
+
+/// Resolve a CLI tool id from its id, name or alias (case-insensitive).
+pub fn resolve_cli_id(agent: &str) -> Result<String> {
+    let config = load_config()?;
+    let tool = config
+        .cli_tools
+        .iter()
+        .find(|t| {
+            t.id == agent
+                || t.name.eq_ignore_ascii_case(agent)
+                || t.alias
+                    .as_deref()
+                    .map(|a| a.eq_ignore_ascii_case(agent))
+                    .unwrap_or(false)
+        })
+        .ok_or_else(|| StorageError::CliToolNotFound(agent.to_string()))?;
+    Ok(tool.id.clone())
+}
+
+/// List templates belonging to a specific CLI tool.
+pub fn get_templates_for_cli(cli_id: &str) -> Result<Vec<Template>> {
+    let config = load_config()?;
+    Ok(config
+        .templates
+        .into_iter()
+        .filter(|t| t.cli_id == cli_id)
+        .collect())
+}
+
+/// Delete a template of a CLI tool by its name (case-insensitive).
+pub fn delete_template_by_name(cli_id: &str, name: &str) -> Result<()> {
+    let mut config = load_config()?;
+    let initial_len = config.templates.len();
+    config
+        .templates
+        .retain(|t| !(t.cli_id == cli_id && t.name.eq_ignore_ascii_case(name)));
+    if config.templates.len() == initial_len {
+        return Err(StorageError::TemplateNotFound(name.to_string()));
     }
     save_config(&config)?;
     Ok(())

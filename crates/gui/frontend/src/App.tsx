@@ -22,6 +22,7 @@ import { useProjectCompositeStates } from "./hooks/useProjectCompositeStates";
 import { markStartup } from "./startupTiming";
 import { getFloatingSidebarEnabled, setFloatingSidebarEnabled as apiSetFloatingSidebarEnabled, getFloatingSidebarPosition, setFloatingSidebarPosition as apiSetFloatingSidebarPosition, getSidebarWidth, setSidebarWidth as setSidebarWidthBackend, getBottomPanelMode, setBottomPanelMode as apiSetBottomPanelMode } from "./api";
 import { AgentManagementPage } from "./pages/AgentManagementPage";
+import { listen } from "@tauri-apps/api/event";
 import type { Template } from "./types";
 
 type Page = "workspace" | "settings" | "agents";
@@ -70,6 +71,21 @@ function App() {
 			markStartup("first paint done (double rAF)");
 		}));
 		return () => cancelAnimationFrame(raf);
+	}, []);
+
+	// External changes to loom.json (e.g. the `loom` CLI adding/removing templates)
+	// arrive as a Tauri `config-changed` event. Bridge it into the existing
+	// `loom-refresh-data` DOM event so all pages refresh their data in real time.
+	useEffect(() => {
+		let unlisten: (() => void) | undefined;
+		listen("config-changed", () => {
+			window.dispatchEvent(new Event("loom-refresh-data"));
+		}).then((fn) => {
+			unlisten = fn;
+		});
+		return () => {
+			unlisten?.();
+		};
 	}, []);
 
 	// Check onboarding status on first load with 500ms delay
@@ -318,7 +334,7 @@ function App() {
 							<SettingsPage theme={theme.theme} onThemeChange={theme.handleThemeChange} projectColumnAlign={theme.projectColumnAlign} onProjectColumnAlignChange={theme.handleProjectColumnAlignChange} fontFamily={theme.fontFamily} fontSize={theme.fontSize} onFontFamilyChange={theme.handleFontFamilyChange} onFontSizeChange={theme.handleFontSizeChange} updateInfo={updater.updateInfo} onCheckUpdate={updater.performUpdateCheck} onInstallUpdate={updater.handleInstallUpdate} onSkipVersion={updater.handleSkipVersion} floatingSidebarEnabled={floatingSidebarEnabled} onFloatingSidebarEnabledChange={handleFloatingSidebarEnabledChange} floatingSidebarPosition={floatingSidebarPosition} onFloatingSidebarPositionChange={handleFloatingSidebarPositionChange} sidebarCollapseEnabled={sidebarCollapseEnabled} onSidebarCollapseEnabledChange={handleSidebarCollapseEnabledChange} bottomPanelMode={bottomPanelMode} onBottomPanelModeChange={handleBottomPanelModeChange} onboarding={onboarding} />
 						</div>
 						<div style={{ display: page === "agents" ? "flex" : "none", flexDirection: "column", flex: 1, minHeight: 0, overflow: "auto" }}>
-							<AgentManagementPage onOpenTerminal={(cmd) => {
+							<AgentManagementPage active={page === "agents"} onOpenTerminal={(cmd) => {
 								if (p.selectedProjectId) {
 									setPage("workspace");
 									setTimeout(() => {

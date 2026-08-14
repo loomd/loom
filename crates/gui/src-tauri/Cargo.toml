@@ -9,7 +9,7 @@ loom-core = { path = "../../core" }
 rfd = "0.17.2"
 serde = { workspace = true }
 serde_json = { workspace = true }
-tauri = { version = "2.0.0", features = ["tray-icon", "image-png"] }
+tauri = { version = "2.0.0", features = ["tray-icon", "image-png", "custom-protocol"] }
 tauri-plugin-single-instance = "2.0.0"
 tauri-plugin-autostart = "2.0.0"
 tauri-plugin-updater = "2.0.0"
@@ -31,6 +31,7 @@ winapi = { version = "0.3.9", features = [
 raw-window-handle = "0.6.2"
 which = "6.0.0"
 rusqlite = { version = "0.34", features = ["bundled"] }
+notify = "6"
 
 [build-dependencies]
 tauri-build = { version = "2.0.0", features = [] }

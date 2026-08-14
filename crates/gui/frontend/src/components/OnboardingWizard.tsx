@@ -72,12 +72,15 @@ export default function OnboardingWizard({ onboarding }: { onboarding: UseOnboar
 			}}
 		>
 			<div className="modal" style={{ maxWidth: "640px" }}>
-				<div style={{
-					display: "flex",
-					alignItems: "flex-start",
-					justifyContent: "space-between",
-					marginBottom: "12px",
-				}}>
+				<div
+					data-tauri-drag-region
+					style={{
+						display: "flex",
+						alignItems: "flex-start",
+						justifyContent: "space-between",
+						marginBottom: "12px",
+					}}
+				>
 					<div>
 						<h2 style={{
 							margin: 0,
@@ -100,6 +103,7 @@ export default function OnboardingWizard({ onboarding }: { onboarding: UseOnboar
 						className="btn-icon"
 						onClick={skipWizard}
 						title={t("onboard.btn.skip")}
+						style={{"WebkitAppRegion": "no-drag"} as React.CSSProperties}
 					>
 						✕
 					</button>
