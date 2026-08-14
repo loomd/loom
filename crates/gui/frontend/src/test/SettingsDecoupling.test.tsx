@@ -1,5 +1,6 @@
 import React from "react";
-import { render, screen, fireEvent, act } from "@testing-library/react";
+import { render, act } from "@testing-library/react";
+import { screen, fireEvent } from "@testing-library/dom";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { I18nProvider } from "../I18nContext";
 import { ToastProvider } from "../ToastContext";
@@ -132,8 +133,8 @@ describe("CliToolsTab", () => {
     await act(async () => {
       renderWithProviders(<CliToolsTab />);
     });
-    expect(screen.getByText((c) => c.includes("刷新列表"))).toBeInTheDocument();
-    expect(screen.getByText((c) => c.includes("导入可执行文件"))).toBeInTheDocument();
+    expect(screen.getByText((c: string) => c.includes("刷新列表"))).toBeInTheDocument();
+    expect(screen.getByText((c: string) => c.includes("导入可执行文件"))).toBeInTheDocument();
   });
 });
 
@@ -146,9 +147,9 @@ describe("LibsTab", () => {
     await act(async () => {
       renderWithProviders(<LibsTab />);
     });
-    const skills = screen.getAllByText((c) => c.includes("技能模版"));
+    const skills = screen.getAllByText((c: string) => c.includes("技能模版"));
     expect(skills.length).toBeGreaterThanOrEqual(1);
-    const docs = screen.getAllByText((c) => c.includes("规则文档"));
+    const docs = screen.getAllByText((c: string) => c.includes("规则文档"));
     expect(docs.length).toBeGreaterThanOrEqual(1);
   });
 });
@@ -170,7 +171,7 @@ describe("CliToolConfigModal", () => {
         <CliToolConfigModal tool={mockTool} onClose={vi.fn()} onSave={vi.fn()} />
       );
     });
-    expect(screen.getByText((c) => c.includes("配置"))).toBeInTheDocument();
+    expect(screen.getByText((c: string) => c.includes("配置"))).toBeInTheDocument();
   });
 
   it("calls onClose when overlay clicked", async () => {
@@ -291,10 +292,10 @@ describe("SettingsPage", () => {
     await act(async () => {
       renderWithProviders(<SettingsPage {...defaultProps} />);
     });
-    expect(screen.getByText((c) => c.includes("配置选项"))).toBeInTheDocument();
-    expect(screen.getByText((c) => c.includes("Agent 工具"))).toBeInTheDocument();
-    expect(screen.getByText((c) => c.includes("环境变量"))).toBeInTheDocument();
-    expect(screen.getByText((c) => c.includes("模版库管理"))).toBeInTheDocument();
+    expect(screen.getByText((c: string) => c.includes("配置选项"))).toBeInTheDocument();
+    expect(screen.getByText((c: string) => c.includes("Agent 工具"))).toBeInTheDocument();
+    expect(screen.getByText((c: string) => c.includes("环境变量"))).toBeInTheDocument();
+    expect(screen.getByText((c: string) => c.includes("模版库管理"))).toBeInTheDocument();
   });
 
   it("shows general tab by default", async () => {
@@ -308,16 +309,16 @@ describe("SettingsPage", () => {
     await act(async () => {
       renderWithProviders(<SettingsPage {...defaultProps} />);
     });
-    const toolsTab = screen.getByText((c) => c.includes("Agent 工具"));
+    const toolsTab = screen.getByText((c: string) => c.includes("Agent 工具"));
     await act(async () => { fireEvent.click(toolsTab); });
-    expect(screen.getByText((c) => c.includes("刷新列表"))).toBeInTheDocument();
+    expect(screen.getByText((c: string) => c.includes("刷新列表"))).toBeInTheDocument();
   });
 
   it("switches to env tab on click", async () => {
     await act(async () => {
       renderWithProviders(<SettingsPage {...defaultProps} />);
     });
-    const envTab = screen.getByText((c) => c.includes("环境变量"));
+    const envTab = screen.getByText((c: string) => c.includes("环境变量"));
     await act(async () => { fireEvent.click(envTab); });
     expect(screen.getByText("全局环境变量")).toBeInTheDocument();
   });
@@ -326,9 +327,9 @@ describe("SettingsPage", () => {
     await act(async () => {
       renderWithProviders(<SettingsPage {...defaultProps} />);
     });
-    const libsTab = screen.getByText((c) => c.includes("模版库管理"));
+    const libsTab = screen.getByText((c: string) => c.includes("模版库管理"));
     await act(async () => { fireEvent.click(libsTab); });
-    const skills = screen.getAllByText((c) => c.includes("技能模版"));
+    const skills = screen.getAllByText((c: string) => c.includes("技能模版"));
     expect(skills.length).toBeGreaterThanOrEqual(1);
   });
 });

@@ -1,5 +1,6 @@
 import React from "react";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render } from "@testing-library/react";
+import { screen, fireEvent } from "@testing-library/dom";
 import { describe, it, expect, vi } from "vitest";
 import { I18nProvider } from "../I18nContext";
 import type { Project } from "../types";
@@ -81,25 +82,25 @@ describe("RightSidebar", () => {
   it("renders register project button", async () => {
     const onRegisterProject = vi.fn();
     await renderSidebar({ onRegisterProject });
-    expect(screen.getByText((c) => c.includes("注册项目"))).toBeInTheDocument();
+    expect(screen.getByText((c: string) => c.includes("注册项目"))).toBeInTheDocument();
   });
 
   it("calls onRegisterProject when add button clicked", async () => {
     const onRegisterProject = vi.fn();
     await renderSidebar({ onRegisterProject });
-    fireEvent.click(screen.getByText((c) => c.includes("注册项目")));
+    fireEvent.click(screen.getByText((c: string) => c.includes("注册项目")));
     expect(onRegisterProject).toHaveBeenCalled();
   });
 
   it("renders settings button", async () => {
     await renderSidebar();
-    expect(screen.getByText((c) => c.includes("系统设置"))).toBeInTheDocument();
+    expect(screen.getByText((c: string) => c.includes("系统设置"))).toBeInTheDocument();
   });
 
   it("calls onNavigate to settings when settings button clicked", async () => {
     const onNavigate = vi.fn();
     await renderSidebar({ onNavigate });
-    fireEvent.click(screen.getByText((c) => c.includes("系统设置")));
+    fireEvent.click(screen.getByText((c: string) => c.includes("系统设置")));
     expect(onNavigate).toHaveBeenCalledWith("settings");
   });
 

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render } from "@testing-library/react";
+import { screen, fireEvent } from "@testing-library/dom";
 import { describe, it, expect } from "vitest";
 
 const log: string[] = [];

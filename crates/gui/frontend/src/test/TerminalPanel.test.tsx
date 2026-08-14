@@ -1,5 +1,6 @@
 import React from "react";
-import { render, fireEvent } from "@testing-library/react";
+import { render } from "@testing-library/react";
+import { fireEvent } from "@testing-library/dom";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import type { ConsoleTab } from "../hooks/useTabs";
 

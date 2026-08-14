@@ -1,5 +1,6 @@
 import React from "react";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { render } from "@testing-library/react";
+import { screen, fireEvent, waitFor } from "@testing-library/dom";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { I18nProvider } from "../I18nContext";
 import { ToastProvider } from "../ToastContext";
@@ -44,7 +45,7 @@ describe("FileEditor", () => {
         <FileEditor filePath="/test/file.ts" onContentDirtyChange={mockOnContentDirtyChange} />
       </TestWrapper>
     );
-    expect(screen.getByText((c) => c.includes("正在加载文件内容"))).toBeInTheDocument();
+    expect(screen.getByText((c: string) => c.includes("正在加载文件内容"))).toBeInTheDocument();
   });
 
   it("loads and displays file content", async () => {
@@ -162,7 +163,7 @@ describe("FileEditor", () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByText((c) => c.includes("加载文件失败"))).toBeInTheDocument();
+      expect(screen.getByText((c: string) => c.includes("加载文件失败"))).toBeInTheDocument();
     });
   });
 
