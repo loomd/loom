@@ -88,10 +88,13 @@ function App() {
 		};
 	}, []);
 
-	// Check onboarding status on first load with 500ms delay
+	// Check onboarding status on first load with 500ms delay; navigate to settings if not onboarded
 	useEffect(() => {
-		const timer = setTimeout(() => {
-			onboarding.checkOnboarding();
+		const timer = setTimeout(async () => {
+			const needsOnboarding = await onboarding.checkOnboarding();
+			if (needsOnboarding) {
+				setPage("settings");
+			}
 		}, 500);
 		return () => clearTimeout(timer);
 	}, [onboarding]);
@@ -113,7 +116,7 @@ function App() {
 		const saved = safeGetItem("loom_floating_sidebar_enabled");
 		if (saved !== null) return saved === "true";
 		const oldSaved = safeGetItem("loom_right_sidebar_enabled");
-		return oldSaved !== "false";
+		return oldSaved === "true";
 	});
 	const [showSpawnPanel, setShowSpawnPanel] = useState(false);
 

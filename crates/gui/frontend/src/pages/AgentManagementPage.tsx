@@ -220,6 +220,13 @@ export const AgentManagementPage: React.FC<AgentManagementPageProps> = ({ onOpen
           <p data-tauri-drag-region style={{ margin: '4px 0 0', color: 'var(--text-secondary)', fontSize: '14px' }}>
             安装opencode 自动注入模型与配置agent
           </p>
+          {cliStatus?.installed && injectedPaths.length > 0 && (
+            <div className="rainbow-wave-banner" style={{ marginTop: '10px' }}>
+              <span className="rainbow-wave-text">
+                ✨ 当前已支持Agent直接配置loom，欢迎使用
+              </span>
+            </div>
+          )}
         </div>
         <button
           onClick={handleRefresh}
@@ -253,7 +260,7 @@ export const AgentManagementPage: React.FC<AgentManagementPageProps> = ({ onOpen
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <h3 style={{ margin: 0, color: 'var(--text-primary)', fontSize: '15px' }}>loom CLI 全局命令</h3>
                   {cliStatus && cliStatus.version && (
-                    <span style={{ fontSize: '12px', color: 'var(--text-secondary)', fontWeight: 500 }}>v{cliStatus.version}</span>
+                    <span className="badge badge-emerald" style={{ fontSize: '11px', fontFamily: 'monospace' }}>v{cliStatus.version}</span>
                   )}
                 </div>
                 <button
@@ -300,7 +307,7 @@ export const AgentManagementPage: React.FC<AgentManagementPageProps> = ({ onOpen
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <h3 style={{ margin: 0, color: 'var(--text-primary)', fontSize: '15px' }}>loom skill自动注入</h3>
-                  <span style={{ fontSize: '12px', color: 'var(--text-secondary)', fontWeight: 500 }}>v{skillVersion}</span>
+                  <span className="badge badge-emerald" style={{ fontSize: '11px', fontFamily: 'monospace' }}>v{skillVersion}</span>
                 </div>
                 <button
                   onClick={handleInjectSkills}

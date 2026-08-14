@@ -83,7 +83,7 @@ pub fn default_has_onboarded() -> bool {
 }
 
 pub fn default_floating_sidebar_enabled() -> bool {
-    true
+    false
 }
 
 pub fn default_floating_sidebar_position() -> String {

@@ -1809,3 +1809,56 @@ body.theme-day select.input option {
   }
 }
 
+/* ─── Rainbow Wave Banner ──────────────────────────── */
+@keyframes rainbow-wave-flow {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+@keyframes wave-text-float {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-2px);
+  }
+}
+
+.rainbow-wave-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: rgba(139, 92, 246, 0.08);
+  border: 1px solid rgba(139, 92, 246, 0.25);
+  border-radius: var(--radius-md);
+  margin-top: 10px;
+}
+
+.rainbow-wave-text {
+  font-size: var(--fs-12);
+  font-weight: 700;
+  background: linear-gradient(
+    90deg,
+    #ec4899,
+    #8b5cf6,
+    #3b82f6,
+    #06b6d4,
+    #10b981,
+    #f59e0b,
+    #ec4899
+  );
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: rainbow-wave-flow 3s linear infinite, wave-text-float 2.5s ease-in-out infinite;
+}
+
+

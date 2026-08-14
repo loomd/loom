@@ -51,9 +51,6 @@ export function useOnboarding(): UseOnboardingReturn {
 	const checkOnboarding = useCallback(async (): Promise<boolean> => {
 		try {
 			const onboarded = await getOnboardedStatus();
-			if (!onboarded) {
-				setShowWizard(true);
-			}
 			return !onboarded;
 		} catch (e) {
 			console.error("Failed to check onboarding status:", e);
