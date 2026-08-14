@@ -52,7 +52,7 @@ jobs:
           New-Item -ItemType Directory -Force -Path target/release/portable
 
           # Copy and rename GUI binary to Loom.exe（loom CLI 已内嵌其中，运行/安装后自动注入）
-          Copy-Item -Path target/release/loom-gui.exe -Destination target/release/portable/Loom.exe
+          Copy-Item -Path "crates/gui/src-tauri/target/release/loom-gui.exe", "target/release/loom-gui.exe" -Destination target/release/portable/Loom.exe -ErrorAction SilentlyContinue
 
           # Copy README
           Copy-Item -Path README.md -Destination target/release/portable/README.md
@@ -61,10 +61,10 @@ jobs:
           Compress-Archive -Path target/release/portable/* -DestinationPath "target/release/Loom-${version}-portable-x64.zip"
 
           # Locate execution installation file and its signature
-          $exeFile = Get-ChildItem -Path target/release/bundle/nsis/*.exe | Select-Object -First 1
+          $exeFile = Get-ChildItem -Path "crates/gui/src-tauri/target/release/bundle/nsis/*.exe", "target/release/bundle/nsis/*.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
           if ($exeFile) {
               $exeName = $exeFile.Name
-              $sigFile = Get-ChildItem -Path "target/release/bundle/nsis/${exeName}.sig" | Select-Object -First 1
+              $sigFile = Get-ChildItem -Path "$($exeFile.DirectoryName)/${exeName}.sig" | Select-Object -First 1
               if ($sigFile) {
                   $signature = Get-Content -Path $sigFile.FullName -Raw
                   $signature = $signature.Trim()
