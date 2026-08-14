@@ -26,9 +26,10 @@ description: 检查项目的 CI 构建情况、分析和修复发生的报错、
 
 ### 本地构建
 
-**注意：打包前必须先重新编译 loom CLI**，否则 `cargo tauri build` 会把旧的 CLI 产物内嵌进 GUI（例如缺失 `template` 子命令）。正确顺序：
+**注意：打包前必须先重新编译 loom CLI**，否则 `cargo tauri build` 会把旧的 CLI 产物内嵌进 GUI（例如缺失 `template` 子命令）。如果之前已编译过 `loom-gui` 且有增量缓存，需先对 `loom-gui` 进行 clean，确保内嵌 `loom.exe` 成功更新。正确顺序：
 
 ```bash
+cargo clean -p loom-gui
 cargo build --release --package loom-cli
 cargo tauri build
 ```
