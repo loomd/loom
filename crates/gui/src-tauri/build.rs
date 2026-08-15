@@ -21,28 +21,46 @@ fn embed_loom_cli() {
         return; // dev 不内嵌
     }
 
-    let Some(target_dir) = workspace_target_dir() else {
+    let Some(profile_dir) = profile_target_dir() else {
         println!("cargo:warning=无法解析 target 目录，loom CLI 未内嵌");
         return;
     };
-    let profile = env::var("PROFILE").unwrap_or_default();
-    let loom_exe = target_dir.join(&profile).join("loom.exe");
-    if !loom_exe.is_file() {
+    let loom_exe = find_loom_exe(&profile_dir);
+    let Some(loom_exe) = loom_exe else {
         println!(
-            "cargo:warning=loom.exe 不存在（{}），loom CLI 未内嵌。请先执行 cargo build --release --package loom-cli",
-            loom_exe.display()
+            "cargo:warning=loom.exe 不存在（在 {} 下未找到），loom CLI 未内嵌。请先执行 cargo build --release --package loom-cli",
+            profile_dir.display()
         );
         return;
-    }
+    };
 
     println!("cargo:rustc-cfg=embed_loom_cli");
     println!("cargo:rustc-env=LOOM_CLI_EMBED_PATH={}", loom_exe.display());
     println!("cargo:rerun-if-changed={}", loom_exe.display());
 }
 
-/// 从 `OUT_DIR`（`{target}/{profile}/build/{pkg}-{hash}/out`）向上推导 workspace target 目录。
-fn workspace_target_dir() -> Option<PathBuf> {
+/// 从 `OUT_DIR`（`{target}/{profile}/build/{pkg}-{hash}/out` 或 `{target}/{triple}/{profile}/build/{pkg}-{hash}/out`）
+/// 向上推导 current profile target 目录（即 `loom.exe` 所在的输出目录）。
+fn profile_target_dir() -> Option<PathBuf> {
     let out_dir = env::var("OUT_DIR").ok()?;
     let out_path = Path::new(&out_dir);
     out_path.ancestors().nth(3).map(|p| p.to_path_buf())
+}
+
+fn find_loom_exe(profile_dir: &Path) -> Option<PathBuf> {
+    // 1. 同 Profile 输出路径下的 loom.exe
+    let candidate = profile_dir.join("loom.exe");
+    if candidate.is_file() {
+        return Some(candidate);
+    }
+    // 2. 备选：防止跨 target 架构编译时 loom.exe 在 workspace target/release/loom.exe
+    if let Some(parent) = profile_dir.parent() {
+        if let Some(grandparent) = parent.parent() {
+            let candidate = grandparent.join("release").join("loom.exe");
+            if candidate.is_file() {
+                return Some(candidate);
+            }
+        }
+    }
+    None
 }
