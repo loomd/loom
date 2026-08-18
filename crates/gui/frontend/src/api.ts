@@ -397,15 +397,9 @@ export const getUpdateCheckInterval = (): Promise<string> =>
 export const setUpdateCheckInterval = (interval: string): Promise<void> =>
 	invoke("set_update_check_interval", { interval });
 
-// ─── AI Agent Classification & Onboarding ────────────────────
+// ─── AI Agent Classification ────────────────────────────────
 export const scanAndClassifyAgents = (): Promise<ScanResult[]> =>
 	invoke("scan_and_classify_agents");
-
-export const getOnboardedStatus = (): Promise<boolean> =>
-	invoke("get_onboarded_status");
-
-export const setOnboardedStatus = (status: boolean): Promise<void> =>
-	invoke("set_onboarded_status", { status });
 
 export const createAgentTemplates = (
 	agents: Array<[string, string]>,

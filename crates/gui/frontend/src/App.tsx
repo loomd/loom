@@ -17,7 +17,6 @@ import BottomPanel from "./components/BottomPanel";
 import { useProjects } from "./hooks/useProjects";
 import { useTheme } from "./hooks/useTheme";
 import { useUpdateChecker } from "./hooks/useUpdateChecker";
-import { useOnboarding } from "./hooks/useOnboarding";
 import { useProjectCompositeStates } from "./hooks/useProjectCompositeStates";
 import { markStartup } from "./startupTiming";
 import { getFloatingSidebarEnabled, setFloatingSidebarEnabled as apiSetFloatingSidebarEnabled, getFloatingSidebarPosition, setFloatingSidebarPosition as apiSetFloatingSidebarPosition, getSidebarWidth, setSidebarWidth as setSidebarWidthBackend, getBottomPanelMode, setBottomPanelMode as apiSetBottomPanelMode } from "./api";
@@ -62,7 +61,6 @@ function App() {
 	const p = useProjects(toast, t);
 	const theme = useTheme(toast);
 	const updater = useUpdateChecker(t, toast);
-	const onboarding = useOnboarding();
 	const compositeStates = useProjectCompositeStates(p.projects);
 
 	useEffect(() => {
@@ -87,17 +85,6 @@ function App() {
 			unlisten?.();
 		};
 	}, []);
-
-	// Check onboarding status on first load with 500ms delay; navigate to settings if not onboarded
-	useEffect(() => {
-		const timer = setTimeout(async () => {
-			const needsOnboarding = await onboarding.checkOnboarding();
-			if (needsOnboarding) {
-				setPage("settings");
-			}
-		}, 500);
-		return () => clearTimeout(timer);
-	}, [onboarding]);
 
 	const [sidebarWidth, setSidebarWidth] = useState<number>(() => {
 		const saved = safeGetItem("loom_sidebar_width");
