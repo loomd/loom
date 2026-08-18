@@ -18,6 +18,7 @@ updated_at: 2026-08-17T06:50:45.900939200Z
 
 ## 当前状态
 
+- 2026-08-18: beta 版本存在 bug，相关修改已本地回退，恢复稳定版依赖（@xterm/xterm ^6.0.0、@xterm/addon-fit ^0.11.0、@xterm/addon-web-links ^0.12.0、@xterm/addon-webgl ^0.19.0），等待稳定版发布后再升级
 - @xterm/xterm: ^6.0.0 → 6.1.0-beta.302（锁定精确版本）
 - @xterm/addon-fit: ^0.11.0 → 0.12.0-beta.299
 - @xterm/addon-web-links: ^0.12.0 → 0.13.0-beta.299
