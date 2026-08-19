@@ -11,7 +11,7 @@ pub use manager::{
     get_active_instances, get_active_instances_list, get_agent_skill_map, get_autostart_enabled,
     get_categories, get_cli_tools, get_config_path, get_font_family, get_font_size,
     get_global_docs, get_global_env_vars, get_global_skills, get_language, get_onboarded_status,
-    get_project_agents, get_project_skills, get_projects, get_skipped_version,
+    get_last_version, get_project_agents, get_project_skills, get_projects, get_skipped_version,
     get_templates, get_templates_for_cli, resolve_cli_id, get_theme, get_project_column_align, get_update_check_interval, set_project_column_align,
     set_update_check_interval, get_floating_sidebar_enabled, set_floating_sidebar_enabled,
     get_floating_sidebar_position, set_floating_sidebar_position,
@@ -23,7 +23,7 @@ pub use manager::{
     scan_path_env, scan_path_env_auto_register, scan_project_agent_docs, set_agent_skill_map,
     set_autostart_enabled, set_font_family, set_font_size, set_language, set_onboarded_status,
     set_skipped_version, set_theme, smart_classify, spawn_project_agent, sync_running_processes, toggle_project_skill,
-    update_category, update_cli_args, update_cli_env, update_global_doc, update_global_env_var,
+    set_last_version, update_category, update_cli_args, update_cli_env, update_global_doc, update_global_env_var,
     update_global_skill, update_cli_alias, update_template, StorageManager, ScanResult,
 };
 pub use models::{

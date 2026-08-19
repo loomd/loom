@@ -82,6 +82,7 @@ let original = AppConfig {
 		global_docs: Vec::new(),
 		autostart: false,
 		skipped_version: None,
+		last_version: None,
 		update_check_interval: String::new(),
 		has_onboarded: false,
 		sidebar_width: 170,
@@ -258,6 +259,43 @@ fn test_skipped_version_persistence() {
         // Reload via getter (simulates fresh load)
         let reloaded = get_skipped_version().expect("Failed to reload skipped version");
         assert_eq!(reloaded, Some("1.0.0-rc.3".to_string()));
+    });
+}
+
+#[test]
+fn test_get_set_last_version() {
+    run_test_with_temp_config(|_config_path| {
+        use super::manager::{get_last_version, set_last_version};
+
+        // Default should be None
+        let default_version = get_last_version().expect("Failed to get default last version");
+        assert_eq!(default_version, None);
+
+        // Set a last version
+        set_last_version(Some("0.6.5".to_string()))
+            .expect("Failed to set last version");
+        let updated = get_last_version().expect("Failed to get updated last version");
+        assert_eq!(updated, Some("0.6.5".to_string()));
+
+        // Clear by setting None
+        set_last_version(None).expect("Failed to clear last version");
+        let cleared = get_last_version().expect("Failed to get cleared last version");
+        assert_eq!(cleared, None);
+    });
+}
+
+#[test]
+fn test_last_version_persistence() {
+    run_test_with_temp_config(|_config_path| {
+        use super::manager::{get_last_version, set_last_version};
+
+        set_last_version(Some("0.6.5".to_string())).expect("Failed to set last version");
+
+        let config = load_config().expect("Failed to load config");
+        assert_eq!(config.last_version, Some("0.6.5".to_string()));
+
+        let reloaded = get_last_version().expect("Failed to reload last version");
+        assert_eq!(reloaded, Some("0.6.5".to_string()));
     });
 }
 

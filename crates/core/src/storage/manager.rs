@@ -1943,6 +1943,18 @@ pub fn set_skipped_version(version: Option<String>) -> Result<()> {
     Ok(())
 }
 
+pub fn get_last_version() -> Result<Option<String>> {
+    let config = load_config()?;
+    Ok(config.last_version.clone())
+}
+
+pub fn set_last_version(version: Option<String>) -> Result<()> {
+    let mut config = load_config()?;
+    config.last_version = version;
+    save_config(&config)?;
+    Ok(())
+}
+
 pub fn get_project_column_align() -> Result<String> {
     let config = load_config()?;
     Ok(config.project_column_align.clone())

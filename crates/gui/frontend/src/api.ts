@@ -397,6 +397,21 @@ export const getUpdateCheckInterval = (): Promise<string> =>
 export const setUpdateCheckInterval = (interval: string): Promise<void> =>
 	invoke("set_update_check_interval", { interval });
 
+export const getLastVersion = (): Promise<string | null> =>
+	invoke("get_last_version");
+
+export const setLastVersion = (version: string | null): Promise<void> =>
+	invoke("set_last_version", { version });
+
+export const getWhatsNewAggregate = (lastVersion: string, currentVersion: string): Promise<Array<[string, string]>> =>
+	invoke("get_whats_new_aggregate", { lastVersion, currentVersion });
+
+export const getWhatsNewAll = (): Promise<Array<[string, string]>> =>
+	invoke("get_whats_new_all");
+
+export const isWhatsNewForced = (): Promise<boolean> =>
+	invoke("is_whats_new_forced");
+
 // ─── AI Agent Classification ────────────────────────────────
 export const scanAndClassifyAgents = (): Promise<ScanResult[]> =>
 	invoke("scan_and_classify_agents");

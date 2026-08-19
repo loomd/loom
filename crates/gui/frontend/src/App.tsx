@@ -10,6 +10,7 @@ import RightSidebar from "./components/RightSidebar";
 import AppLayout from "./components/AppLayout";
 import Sidebar from "./components/Sidebar";
 import UpdateToast from "./components/UpdateToast";
+import WhatsNewDialog from "./components/WhatsNewDialog";
 import NewProjectModal from "./components/NewProjectModal";
 
 import SpawnAgentPanel from "./components/SpawnAgentPanel";
@@ -17,6 +18,7 @@ import BottomPanel from "./components/BottomPanel";
 import { useProjects } from "./hooks/useProjects";
 import { useTheme } from "./hooks/useTheme";
 import { useUpdateChecker } from "./hooks/useUpdateChecker";
+import { useWhatsNew } from "./hooks/useWhatsNew";
 import { useProjectCompositeStates } from "./hooks/useProjectCompositeStates";
 import { markStartup } from "./startupTiming";
 import { getFloatingSidebarEnabled, setFloatingSidebarEnabled as apiSetFloatingSidebarEnabled, getFloatingSidebarPosition, setFloatingSidebarPosition as apiSetFloatingSidebarPosition, getSidebarWidth, setSidebarWidth as setSidebarWidthBackend, getBottomPanelMode, setBottomPanelMode as apiSetBottomPanelMode } from "./api";
@@ -61,6 +63,7 @@ function App() {
 	const p = useProjects(toast, t);
 	const theme = useTheme(toast);
 	const updater = useUpdateChecker(t, toast);
+	const { whatsNewState, dismissWhatsNew } = useWhatsNew();
 	const compositeStates = useProjectCompositeStates(p.projects);
 
 	useEffect(() => {
@@ -347,6 +350,9 @@ function App() {
 			/>
 			{updater.showUpdateToast && updater.updateInfo?.hasUpdate && (
 				<UpdateToast updateInfo={updater.updateInfo} downloadProgress={updater.downloadProgress} t={t} onClose={() => { updater.setShowUpdateToast(false); updater.setDownloadProgress({ status: "idle", percent: 0 }); }} onSkip={updater.handleSkipVersion} onInstall={updater.handleInstallUpdate} />
+			)}
+			{whatsNewState?.show && (
+				<WhatsNewDialog entries={whatsNewState.entries} t={t} onClose={dismissWhatsNew} />
 			)}
 			{p.showModal && (
 				<NewProjectModal t={t} newProjName={p.newProjName} newProjPath={p.newProjPath} creating={p.creating} onNameChange={p.setNewProjName} onPathChange={p.setNewProjPath} onBrowse={p.handleBrowseFolder} onRegister={() => p.handleRegisterProject(setPage)} onCancel={() => p.setShowModal(false)} onGoAgents={() => setPage("agents")} />

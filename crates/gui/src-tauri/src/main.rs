@@ -1427,6 +1427,7 @@ fn log_frontend(level: String, message: String) {
 mod pty;
 mod agent_monitor;
 mod crash_shield;
+mod whats_new;
 
 fn get_window_state_path() -> std::path::PathBuf {
     let mut path = cstore::get_config_path();
@@ -1485,6 +1486,44 @@ fn get_skipped_version() -> Result<Option<String>, String> {
 #[tauri::command]
 fn set_skipped_version(version: Option<String>) -> Result<(), String> {
     cstore::set_skipped_version(version).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn get_last_version() -> Result<Option<String>, String> {
+    cstore::get_last_version().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn set_last_version(version: Option<String>) -> Result<(), String> {
+    cstore::set_last_version(version).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn get_whats_new_aggregate(app: tauri::AppHandle, last_version: Option<String>, current_version: String) -> Vec<(String, String)> {
+    let dir = whats_new_dir(&app);
+    whats_new::collect_entries(&dir, last_version.as_deref(), Some(&current_version))
+}
+
+#[tauri::command]
+fn get_whats_new_all(app: tauri::AppHandle) -> Vec<(String, String)> {
+    let dir = whats_new_dir(&app);
+    whats_new::collect_entries(&dir, Some("0.0.0"), None)
+}
+
+fn whats_new_dir(app: &tauri::AppHandle) -> std::path::PathBuf {
+    if cfg!(debug_assertions) {
+        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("whats-new")
+    } else {
+        match app.path().resource_dir() {
+            Ok(dir) => dir.join("whats-new"),
+            Err(_) => std::path::PathBuf::new(),
+        }
+    }
+}
+
+#[tauri::command]
+fn is_whats_new_forced() -> bool {
+    std::env::var("LOOM_FORCE_WHATS_NEW").map(|v| v == "1").unwrap_or(false)
 }
 
 #[tauri::command]
@@ -1945,6 +1984,11 @@ fn main() {
             pty::pty_close,
             get_skipped_version,
             set_skipped_version,
+            get_last_version,
+            set_last_version,
+            get_whats_new_aggregate,
+            get_whats_new_all,
+            is_whats_new_forced,
             get_project_column_align,
             set_project_column_align,
             get_update_check_interval,

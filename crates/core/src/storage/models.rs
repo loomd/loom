@@ -176,6 +176,8 @@ pub struct LoomStorage {
     pub autostart: bool,
     #[serde(default)]
     pub skipped_version: Option<String>,
+    #[serde(default)]
+    pub last_version: Option<String>,
     #[serde(default = "default_update_check_interval")]
     pub update_check_interval: String,
     #[serde(default = "default_has_onboarded")]
@@ -210,6 +212,7 @@ impl Default for LoomStorage {
             global_docs: Vec::new(),
             autostart: false,
             skipped_version: None,
+            last_version: None,
             update_check_interval: default_update_check_interval(),
             has_onboarded: default_has_onboarded(),
             floating_sidebar_enabled: default_floating_sidebar_enabled(),
