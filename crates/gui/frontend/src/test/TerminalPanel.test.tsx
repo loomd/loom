@@ -407,4 +407,78 @@ describe("TerminalPanel", () => {
     });
     expect(rowSplitter.getAttribute("style")).toContain("width: 70%");
   });
+
+  it("dispatches splits-dirty events on drag and on reset", async () => {
+    const { invoke } = await import("@tauri-apps/api/core");
+    const invokeMock = invoke as ReturnType<typeof vi.fn>;
+    invokeMock.mockClear();
+    invokeMock.mockResolvedValue([]);
+
+    const { TerminalPanel } = await import("../components/TerminalPanel");
+    const t1 = makeTerminal("t1");
+    const t2 = makeTerminal("t2");
+    const events: Array<{ layout: string; dirty: boolean }> = [];
+    const onDirty = (e: Event) => {
+      events.push((e as CustomEvent).detail);
+    };
+    window.addEventListener("loom-splits-dirty", onDirty);
+
+    const { container } = render(
+      <TerminalPanel terminals={[t1, t2]} activeTabId="t1" layoutMode="2x2" showGrid={true} isVisible={true} />
+    );
+    await vi.waitFor(() => {
+      expect(invokeMock).toHaveBeenCalledWith("pty_spawn", expect.objectContaining({ sessionId: "t2" }));
+    });
+
+    const grid = container.querySelector(".grid-pane-container")!;
+    mockContainerRect(grid);
+    const splitter = container.querySelector('[data-testid="split-col-0"]')!;
+    fireEvent.mouseDown(splitter, { clientX: 500 });
+    fireEvent.mouseMove(window, { clientX: 700 });
+    fireEvent.mouseUp(window);
+
+    expect(events.some(e => e.layout === "2x2" && e.dirty)).toBe(true);
+
+    window.dispatchEvent(new CustomEvent("loom-reset-splits", { detail: "2x2" }));
+    await vi.waitFor(() => {
+      expect(events.some(e => e.layout === "2x2" && !e.dirty)).toBe(true);
+    });
+
+    window.removeEventListener("loom-splits-dirty", onDirty);
+  });
+
+  it("does not move the other splitter when dragging one in 1x3 layout", async () => {
+    const { invoke } = await import("@tauri-apps/api/core");
+    const invokeMock = invoke as ReturnType<typeof vi.fn>;
+    invokeMock.mockClear();
+    invokeMock.mockResolvedValue([]);
+
+    const { TerminalPanel } = await import("../components/TerminalPanel");
+    const t1 = makeTerminal("t1");
+    const t2 = makeTerminal("t2");
+    const t3 = makeTerminal("t3");
+
+    const { container } = render(
+      <TerminalPanel terminals={[t1, t2, t3]} activeTabId="t1" layoutMode="1x3" showGrid={true} isVisible={true} />
+    );
+    await vi.waitFor(() => {
+      expect(invokeMock).toHaveBeenCalledWith("pty_spawn", expect.objectContaining({ sessionId: "t3" }));
+    });
+
+    const grid = container.querySelector(".grid-pane-container")!;
+    mockContainerRect(grid);
+    const row0 = grid.querySelector('[data-testid="split-row-0"]')!;
+    const row1 = grid.querySelector('[data-testid="split-row-1"]')!;
+    const row1Before = row1.getAttribute("style");
+
+    fireEvent.mouseDown(row0, { clientY: 400 });
+    fireEvent.mouseMove(window, { clientY: 700 });
+    fireEvent.mouseUp(window);
+
+    await vi.waitFor(() => {
+      expect(row0.getAttribute("style")).toContain("calc(56.6667% - 3px)");
+    });
+    expect(row1.getAttribute("style")).toBe(row1Before);
+    expect(grid.getAttribute("style")).toContain("grid-template-rows: 1.7fr 0.3");
+  });
 });

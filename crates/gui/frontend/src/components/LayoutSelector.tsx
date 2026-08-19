@@ -44,8 +44,35 @@ interface LayoutSelectorProps {
 export function LayoutSelector({ layoutMode, onSelect }: LayoutSelectorProps) {
   const { t } = useI18n();
   const [open, setOpen] = useState(false);
+  const [dirtyLayouts, setDirtyLayouts] = useState<Set<string>>(() => new Set());
   const containerRef = useRef<HTMLDivElement>(null);
   const btnRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    const onDirty = (e: Event) => {
+      const { layout, dirty } = (e as CustomEvent).detail as { layout: string; dirty: boolean };
+      setDirtyLayouts(prev => {
+        if (prev.has(layout) === dirty) return prev;
+        const next = new Set(prev);
+        if (dirty) next.add(layout);
+        else next.delete(layout);
+        return next;
+      });
+    };
+    window.addEventListener('loom-splits-dirty', onDirty);
+    return () => window.removeEventListener('loom-splits-dirty', onDirty);
+  }, []);
+
+  const handleReset = () => {
+    if (!layoutMode) return;
+    window.dispatchEvent(new CustomEvent('loom-reset-splits', { detail: layoutMode }));
+    setDirtyLayouts(prev => {
+      const next = new Set(prev);
+      next.delete(layoutMode);
+      return next;
+    });
+    setOpen(false);
+  };
 
   useEffect(() => {
     if (!open) return;
@@ -63,7 +90,22 @@ export function LayoutSelector({ layoutMode, onSelect }: LayoutSelectorProps) {
   }, [open]);
 
   return (
-    <div ref={containerRef} style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', alignSelf: 'center' }}>
+    <div ref={containerRef} style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', gap: '4px', alignSelf: 'center' }}>
+      {layoutMode && dirtyLayouts.has(layoutMode) && (
+        <button
+          onClick={handleReset}
+          title={t('proj.layout.reset')}
+          style={{
+            display: 'inline-flex', alignItems: 'center', alignSelf: 'center', lineHeight: 1, padding: '4px 4px',
+            fontSize: '0.82rem', borderRadius: 'var(--radius-sm, 4px)', cursor: 'pointer',
+            backgroundColor: 'var(--bg-elevated, #18181b)',
+            border: '1px solid var(--border-subtle, #27272a)',
+            color: 'var(--text-primary, #fff)', fontWeight: 500, userSelect: 'none',
+          }}
+        >
+          {t('proj.layout.reset')}
+        </button>
+      )}
       <button
         ref={btnRef}
         onClick={() => setOpen(o => !o)}
@@ -87,10 +129,7 @@ export function LayoutSelector({ layoutMode, onSelect }: LayoutSelectorProps) {
             <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>{t('proj.layout.title')}</span>
             {layoutMode && (
               <button
-                onClick={() => {
-                  window.dispatchEvent(new CustomEvent('loom-reset-splits', { detail: layoutMode }));
-                  setOpen(false);
-                }}
+                onClick={handleReset}
                 title={t('proj.layout.reset')}
                 style={{
                   fontSize: '0.68rem', color: 'var(--text-secondary, #a1a1aa)', cursor: 'pointer', padding: '2px 6px',

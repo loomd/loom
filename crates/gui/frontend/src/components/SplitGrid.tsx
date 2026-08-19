@@ -1,14 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { GridSplitLine } from '../hooks/useTabs';
-import { splitLines } from '../hooks/useTabs';
+import type { GridSplitLine, SplitWeights } from '../hooks/useTabs';
+import { isDefaultSplitWeights, splitLines } from '../hooks/useTabs';
 
 const MIN_RATIO = 0.1;
 const HANDLE_SIZE = 6;
-
-interface SplitWeights {
-  col: number[];
-  row: number[];
-}
 
 interface SplitGridProps {
   cols: number;
@@ -21,6 +16,7 @@ interface SplitGridProps {
 
 export function SplitGrid({ cols, rows, areas, grid, layoutKey, children }: SplitGridProps) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const latestRef = useRef<SplitWeights | null>(null);
   const [weightsMap, setWeightsMap] = useState<Record<string, SplitWeights>>({});
   const [hovered, setHovered] = useState<GridSplitLine | null>(null);
 
@@ -33,27 +29,47 @@ export function SplitGrid({ cols, rows, areas, grid, layoutKey, children }: Spli
   const totalCol = storedCol.reduce((a, b) => a + b, 0);
   const totalRow = storedRow.reduce((a, b) => a + b, 0);
 
+  const reportDirty = (w: SplitWeights) => {
+    if (!layoutKey) return;
+    window.dispatchEvent(new CustomEvent('loom-splits-dirty', {
+      detail: { layout: layoutKey, dirty: !isDefaultSplitWeights(w) },
+    }));
+  };
+
   const updateWeights = (isCol: boolean, next: number[]) => {
     setWeightsMap(prev => {
       const cur = prev[key] ?? { col: Array(cols).fill(1), row: Array(rows).fill(1) };
-      return { ...prev, [key]: isCol ? { ...cur, col: next } : { ...cur, row: next } };
+      const merged = isCol ? { ...cur, col: next } : { ...cur, row: next };
+      latestRef.current = merged;
+      return { ...prev, [key]: merged };
     });
   };
 
   useEffect(() => {
+    if (layoutKey) {
+      window.dispatchEvent(new CustomEvent('loom-splits-dirty', {
+        detail: { layout: layoutKey, dirty: !isDefaultSplitWeights(weightsMap[layoutKey]) },
+      }));
+    }
     const onReset = (e: Event) => {
       if ((e as CustomEvent).detail !== layoutKey) return;
       setWeightsMap(prev => ({
         ...prev,
         [key]: { col: Array(cols).fill(1), row: Array(rows).fill(1) },
       }));
+      if (layoutKey) {
+        window.dispatchEvent(new CustomEvent('loom-splits-dirty', {
+          detail: { layout: layoutKey, dirty: false },
+        }));
+      }
     };
     window.addEventListener('loom-reset-splits', onReset);
     return () => window.removeEventListener('loom-reset-splits', onReset);
-  }, [key, cols, rows, layoutKey]);
+  }, [key, cols, rows, layoutKey, weightsMap]);
 
   const startDrag = (line: GridSplitLine) => (e: React.MouseEvent) => {
     e.preventDefault();
+    latestRef.current = null;
     const container = containerRef.current;
     if (!container) return;
     const rect = container.getBoundingClientRect();
@@ -66,8 +82,9 @@ export function SplitGrid({ cols, rows, areas, grid, layoutKey, children }: Spli
     const move = (ev: MouseEvent) => {
       const delta = ((isCol ? ev.clientX : ev.clientY) - startPos) / (isCol ? rect.width : rect.height) * total;
       const next = startWeights.slice();
-      next[line.index] = Math.min(Math.max(startWeights[line.index] + delta, min), total - min);
-      next[line.index + 1] = total - next[line.index];
+      const maxNext = startWeights[line.index] + (startWeights[line.index + 1] - min);
+      next[line.index] = Math.min(Math.max(startWeights[line.index] + delta, min), maxNext);
+      next[line.index + 1] = startWeights[line.index + 1] - (next[line.index] - startWeights[line.index]);
       updateWeights(isCol, next);
     };
     const up = () => {
@@ -76,6 +93,7 @@ export function SplitGrid({ cols, rows, areas, grid, layoutKey, children }: Spli
       window.removeEventListener('blur', up);
       document.body.style.cursor = '';
       document.body.style.userSelect = '';
+      if (latestRef.current) reportDirty(latestRef.current);
     };
     document.body.style.cursor = isCol ? 'col-resize' : 'row-resize';
     document.body.style.userSelect = 'none';

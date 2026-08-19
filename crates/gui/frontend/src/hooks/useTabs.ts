@@ -65,6 +65,16 @@ export interface GridSplitLine {
   span: number;
 }
 
+export interface SplitWeights {
+  col: number[];
+  row: number[];
+}
+
+export function isDefaultSplitWeights(w: SplitWeights | undefined): boolean {
+  if (!w) return true;
+  return w.col.every(v => v === 1) && w.row.every(v => v === 1);
+}
+
 export function splitLines(areas: string): GridSplitLine[] {
   const grid = (areas.match(/"([^"]*)"/g) ?? []).map(s => s.replaceAll('"', '').trim().split(/\s+/));
   const cols = grid[0].length;
