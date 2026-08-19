@@ -15,9 +15,10 @@ interface TerminalPanelProps {
   theme?: 'dark' | 'day' | 'gray';
   onAddTerminal?: () => void;
   onPaneFocus?: (tabId: string) => void;
+  projectId?: string;
 }
 
-export function TerminalPanel({ terminals, activeTabId, layoutMode, showGrid, isVisible, theme, onAddTerminal, onPaneFocus }: TerminalPanelProps) {
+export function TerminalPanel({ terminals, activeTabId, layoutMode, showGrid, isVisible, theme, onAddTerminal, onPaneFocus, projectId }: TerminalPanelProps) {
   const dims = showGrid && layoutMode ? gridDims(layoutMode) : null;
   const areas = showGrid && layoutMode ? (gridCellAreas(layoutMode) ?? layoutPreview(layoutMode).areas) : null;
   const cellCount = dims ? gridCellCount(layoutMode!) : 0;
@@ -90,7 +91,7 @@ export function TerminalPanel({ terminals, activeTabId, layoutMode, showGrid, is
       boxSizing: 'border-box',
       overflow: 'hidden'
     }}>
-      <SplitGrid cols={dims?.cols ?? 1} rows={dims?.rows ?? 1} areas={areas ?? '"a"'} grid={!!dims} layoutKey={layoutMode}>
+      <SplitGrid cols={dims?.cols ?? 1} rows={dims?.rows ?? 1} areas={areas ?? '"a"'} grid={!!dims} layoutKey={layoutMode} projectId={projectId}>
         {panes}
         {emptyPanes}
       </SplitGrid>

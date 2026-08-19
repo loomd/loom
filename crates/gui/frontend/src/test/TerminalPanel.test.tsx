@@ -481,4 +481,46 @@ describe("TerminalPanel", () => {
     expect(row1.getAttribute("style")).toBe(row1Before);
     expect(grid.getAttribute("style")).toContain("grid-template-rows: 1.7fr 0.3");
   });
+
+  it("scopes reset and dirty events to the matching project", async () => {
+    const { invoke } = await import("@tauri-apps/api/core");
+    const invokeMock = invoke as ReturnType<typeof vi.fn>;
+    invokeMock.mockClear();
+    invokeMock.mockResolvedValue([]);
+
+    const { TerminalPanel } = await import("../components/TerminalPanel");
+    const t1 = makeTerminal("t1");
+    const t2 = makeTerminal("t2");
+    const events: Array<{ projectId?: string; layout: string; dirty: boolean }> = [];
+    const onDirty = (e: Event) => {
+      events.push((e as CustomEvent).detail);
+    };
+    window.addEventListener("loom-splits-dirty", onDirty);
+
+    const { container } = render(
+      <TerminalPanel terminals={[t1, t2]} activeTabId="t1" layoutMode="2x2" showGrid={true} isVisible={true} projectId="proj-a" />
+    );
+    await vi.waitFor(() => {
+      expect(invokeMock).toHaveBeenCalledWith("pty_spawn", expect.objectContaining({ sessionId: "t2" }));
+    });
+
+    const grid = container.querySelector(".grid-pane-container")!;
+    mockContainerRect(grid);
+    const splitter = container.querySelector('[data-testid="split-col-0"]')!;
+    fireEvent.mouseDown(splitter, { clientX: 500 });
+    fireEvent.mouseMove(window, { clientX: 700 });
+    fireEvent.mouseUp(window);
+
+    expect(events.some(e => e.projectId === "proj-a" && e.layout === "2x2" && e.dirty)).toBe(true);
+
+    window.dispatchEvent(new CustomEvent("loom-reset-splits", { detail: { projectId: "proj-b", layout: "2x2" } }));
+    expect(grid.getAttribute("style")).toContain("grid-template-columns: 1.4fr 0.6");
+
+    window.dispatchEvent(new CustomEvent("loom-reset-splits", { detail: { projectId: "proj-a", layout: "2x2" } }));
+    await vi.waitFor(() => {
+      expect(grid.getAttribute("style")).toContain("grid-template-columns: 1fr 1fr");
+    });
+
+    window.removeEventListener("loom-splits-dirty", onDirty);
+  });
 });

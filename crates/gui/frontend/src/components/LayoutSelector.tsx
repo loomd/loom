@@ -39,9 +39,10 @@ function LayoutOption({ active, label, cols, rows, areas, onClick }: LayoutOptio
 interface LayoutSelectorProps {
   layoutMode: GridLayout | null;
   onSelect: (layout: GridLayout | null) => void;
+  projectId?: string;
 }
 
-export function LayoutSelector({ layoutMode, onSelect }: LayoutSelectorProps) {
+export function LayoutSelector({ layoutMode, onSelect, projectId }: LayoutSelectorProps) {
   const { t } = useI18n();
   const [open, setOpen] = useState(false);
   const [dirtyLayouts, setDirtyLayouts] = useState<Set<string>>(() => new Set());
@@ -50,7 +51,8 @@ export function LayoutSelector({ layoutMode, onSelect }: LayoutSelectorProps) {
 
   useEffect(() => {
     const onDirty = (e: Event) => {
-      const { layout, dirty } = (e as CustomEvent).detail as { layout: string; dirty: boolean };
+      const { projectId: pid, layout, dirty } = (e as CustomEvent).detail as { projectId?: string; layout: string; dirty: boolean };
+      if (pid !== projectId) return;
       setDirtyLayouts(prev => {
         if (prev.has(layout) === dirty) return prev;
         const next = new Set(prev);
@@ -61,11 +63,11 @@ export function LayoutSelector({ layoutMode, onSelect }: LayoutSelectorProps) {
     };
     window.addEventListener('loom-splits-dirty', onDirty);
     return () => window.removeEventListener('loom-splits-dirty', onDirty);
-  }, []);
+  }, [projectId]);
 
   const handleReset = () => {
     if (!layoutMode) return;
-    window.dispatchEvent(new CustomEvent('loom-reset-splits', { detail: layoutMode }));
+    window.dispatchEvent(new CustomEvent('loom-reset-splits', { detail: { projectId, layout: layoutMode } }));
     setDirtyLayouts(prev => {
       const next = new Set(prev);
       next.delete(layoutMode);

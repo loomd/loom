@@ -11,10 +11,11 @@ interface SplitGridProps {
   areas: string;
   grid: boolean;
   layoutKey?: string | null;
+  projectId?: string;
   children: React.ReactNode;
 }
 
-export function SplitGrid({ cols, rows, areas, grid, layoutKey, children }: SplitGridProps) {
+export function SplitGrid({ cols, rows, areas, grid, layoutKey, projectId, children }: SplitGridProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const latestRef = useRef<SplitWeights | null>(null);
   const [weightsMap, setWeightsMap] = useState<Record<string, SplitWeights>>({});
@@ -32,7 +33,7 @@ export function SplitGrid({ cols, rows, areas, grid, layoutKey, children }: Spli
   const reportDirty = (w: SplitWeights) => {
     if (!layoutKey) return;
     window.dispatchEvent(new CustomEvent('loom-splits-dirty', {
-      detail: { layout: layoutKey, dirty: !isDefaultSplitWeights(w) },
+      detail: { projectId, layout: layoutKey, dirty: !isDefaultSplitWeights(w) },
     }));
   };
 
@@ -48,24 +49,27 @@ export function SplitGrid({ cols, rows, areas, grid, layoutKey, children }: Spli
   useEffect(() => {
     if (layoutKey) {
       window.dispatchEvent(new CustomEvent('loom-splits-dirty', {
-        detail: { layout: layoutKey, dirty: !isDefaultSplitWeights(weightsMap[layoutKey]) },
+        detail: { projectId, layout: layoutKey, dirty: !isDefaultSplitWeights(weightsMap[layoutKey]) },
       }));
     }
     const onReset = (e: Event) => {
-      if ((e as CustomEvent).detail !== layoutKey) return;
+      const detail = (e as CustomEvent).detail as { projectId?: string; layout?: string } | string | undefined;
+      const layout = typeof detail === 'string' ? detail : detail?.layout;
+      const pid = typeof detail === 'string' ? undefined : detail?.projectId;
+      if (pid !== projectId || layout !== layoutKey) return;
       setWeightsMap(prev => ({
         ...prev,
         [key]: { col: Array(cols).fill(1), row: Array(rows).fill(1) },
       }));
       if (layoutKey) {
         window.dispatchEvent(new CustomEvent('loom-splits-dirty', {
-          detail: { layout: layoutKey, dirty: false },
+          detail: { projectId, layout: layoutKey, dirty: false },
         }));
       }
     };
     window.addEventListener('loom-reset-splits', onReset);
     return () => window.removeEventListener('loom-reset-splits', onReset);
-  }, [key, cols, rows, layoutKey, weightsMap]);
+  }, [key, cols, rows, layoutKey, projectId, weightsMap]);
 
   const startDrag = (line: GridSplitLine) => (e: React.MouseEvent) => {
     e.preventDefault();

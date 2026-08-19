@@ -287,7 +287,7 @@ const closeActiveByShortcut = useCallback(() => {
         <div data-tauri-drag-region onDoubleClick={() => { document.querySelector('.titlebar-tabs-scroll')?.scrollTo({ left: 0, behavior: 'smooth' }); }}
           style={{ width: '24px', flexShrink: 0, alignSelf: 'stretch', cursor: 'grab' }} title="拖拽窗口 / 双击回到起始位置" />
         <div style={{ display: 'flex', gap: '2px', alignItems: 'stretch', alignSelf: 'stretch' }}>
-          <LayoutSelector layoutMode={layoutMode} onSelect={(l) => { setPendingGridMode(null); setLayoutMode(l); }} />
+          <LayoutSelector layoutMode={layoutMode} projectId={project.id} onSelect={(l) => { setPendingGridMode(null); setLayoutMode(l); }} />
           <WindowControlButtons />
         </div>
       </div>
@@ -456,6 +456,7 @@ const closeActiveByShortcut = useCallback(() => {
           theme={theme}
           onAddTerminal={openSpawnPanel}
           onPaneFocus={setActiveTabId}
+          projectId={project.id}
         />
 
         {tabs.map(tab => {
