@@ -83,8 +83,24 @@ export function LayoutSelector({ layoutMode, onSelect }: LayoutSelectorProps) {
           backgroundColor: 'var(--bg-modal, #1c1917)', border: '1px solid var(--border-subtle, #27272a)',
           borderRadius: 'var(--radius-md, 8px)', padding: '8px', boxShadow: '0 8px 24px rgba(0, 0, 0, 0.4)',
         }}>
-          <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', padding: '2px 4px 6px', userSelect: 'none' }}>
-            {t('proj.layout.title')}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '2px 4px 6px', userSelect: 'none' }}>
+            <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>{t('proj.layout.title')}</span>
+            {layoutMode && (
+              <button
+                onClick={() => {
+                  window.dispatchEvent(new CustomEvent('loom-reset-splits', { detail: layoutMode }));
+                  setOpen(false);
+                }}
+                title={t('proj.layout.reset')}
+                style={{
+                  fontSize: '0.68rem', color: 'var(--text-secondary, #a1a1aa)', cursor: 'pointer', padding: '2px 6px',
+                  borderRadius: 'var(--radius-sm, 4px)', border: '1px solid var(--border-subtle, #27272a)',
+                  backgroundColor: 'var(--bg-elevated, #18181b)', userSelect: 'none',
+                }}
+              >
+                {t('proj.layout.reset')}
+              </button>
+            )}
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, auto)', gap: '6px' }}>
             <LayoutOption active={layoutMode === null} label={t('proj.layout.single')} {...layoutPreview(null)}

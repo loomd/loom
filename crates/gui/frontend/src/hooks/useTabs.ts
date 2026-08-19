@@ -18,7 +18,7 @@ export interface ConsoleTab {
 
 export type GridLayout = '2x1' | '1x2' | '3x1' | '1x3' | '2x2' | '2x3' | '3x2' | '3x3' | '2+1' | '1+2';
 
-export const GRID_LAYOUTS: readonly GridLayout[] = ['2x1', '1x2', '3x1', '1x3', '2+1', '1+2', '2x2', '2x3', '3x2', '3x3'];
+export const GRID_LAYOUTS: readonly GridLayout[] = ['2x1', '1x2', '3x1', '1x3', '1+2', '2+1', '2x2', '2x3', '3x2', '3x3'];
 
 export function isCompositeLayout(layout: GridLayout): boolean {
   return layout === '2+1' || layout === '1+2';
@@ -56,6 +56,45 @@ export function layoutPreview(layout: GridLayout | null): { cols: number; rows: 
     case '3x2': return { cols: 3, rows: 2, areas: '"a b c" "d e f"' };
     case '3x3': return { cols: 3, rows: 3, areas: '"a b c" "d e f" "g h i"' };
   }
+}
+
+export interface GridSplitLine {
+  axis: 'col' | 'row';
+  index: number;
+  start: number;
+  span: number;
+}
+
+export function splitLines(areas: string): GridSplitLine[] {
+  const grid = (areas.match(/"([^"]*)"/g) ?? []).map(s => s.replaceAll('"', '').trim().split(/\s+/));
+  const cols = grid[0].length;
+  const rows = grid.length;
+  const lines: GridSplitLine[] = [];
+  for (let c = 0; c < cols - 1; c++) {
+    let start = -1;
+    for (let r = 0; r < rows; r++) {
+      if (grid[r][c] !== grid[r][c + 1]) {
+        if (start === -1) start = r;
+      } else if (start !== -1) {
+        lines.push({ axis: 'col', index: c, start, span: r - start });
+        start = -1;
+      }
+    }
+    if (start !== -1) lines.push({ axis: 'col', index: c, start, span: rows - start });
+  }
+  for (let r = 0; r < rows - 1; r++) {
+    let start = -1;
+    for (let c = 0; c < cols; c++) {
+      if (grid[r][c] !== grid[r + 1][c]) {
+        if (start === -1) start = c;
+      } else if (start !== -1) {
+        lines.push({ axis: 'row', index: r, start, span: c - start });
+        start = -1;
+      }
+    }
+    if (start !== -1) lines.push({ axis: 'row', index: r, start, span: cols - start });
+  }
+  return lines;
 }
 
 export function useTabs(projectRoot: string) {
