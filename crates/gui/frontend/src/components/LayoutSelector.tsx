@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { GridLayout } from '../hooks/useTabs';
-import { GRID_LAYOUTS, gridDims } from '../hooks/useTabs';
+import { GRID_LAYOUTS, isCompositeLayout, layoutPreview } from '../hooks/useTabs';
 import { useI18n } from '../I18nContext';
 
 interface LayoutOptionProps {
@@ -8,10 +8,12 @@ interface LayoutOptionProps {
   label: string;
   cols: number;
   rows: number;
+  areas: string;
   onClick: () => void;
 }
 
-function LayoutOption({ active, label, cols, rows, onClick }: LayoutOptionProps) {
+function LayoutOption({ active, label, cols, rows, areas, onClick }: LayoutOptionProps) {
+  const letters = Array.from(new Set(areas.replaceAll('"', '').split(/\s+/).filter(Boolean)));
   return (
     <button
       onClick={onClick}
@@ -24,9 +26,9 @@ function LayoutOption({ active, label, cols, rows, onClick }: LayoutOptionProps)
         transition: 'border-color 0.15s, background-color 0.15s',
       }}
     >
-      <div style={{ display: 'grid', gridTemplateColumns: `repeat(${cols}, 10px)`, gridTemplateRows: `repeat(${rows}, 10px)`, gap: '2px' }}>
-        {Array.from({ length: cols * rows }, (_, i) => (
-          <div key={i} style={{ width: 10, height: 10, borderRadius: 2, backgroundColor: active ? 'var(--accent-emerald, #10b981)' : 'var(--text-tertiary, #71717a)' }} />
+      <div style={{ display: 'grid', gridTemplateColumns: `repeat(${cols}, 10px)`, gridTemplateRows: `repeat(${rows}, 10px)`, gap: '2px', gridTemplateAreas: areas }}>
+        {letters.map(ch => (
+          <div key={ch} style={{ gridArea: ch, minWidth: 0, minHeight: 0, borderRadius: 2, backgroundColor: active ? 'var(--accent-emerald, #10b981)' : 'var(--text-tertiary, #71717a)' }} />
         ))}
       </div>
       <span style={{ fontSize: '0.68rem', color: 'var(--text-secondary, #a1a1aa)', userSelect: 'none' }}>{label}</span>
@@ -85,12 +87,12 @@ export function LayoutSelector({ layoutMode, onSelect }: LayoutSelectorProps) {
             {t('proj.layout.title')}
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, auto)', gap: '6px' }}>
-            <LayoutOption active={layoutMode === null} label={t('proj.layout.single')} cols={1} rows={1}
+            <LayoutOption active={layoutMode === null} label={t('proj.layout.single')} {...layoutPreview(null)}
               onClick={() => { onSelect(null); setOpen(false); }} />
             {GRID_LAYOUTS.map(l => {
-              const { cols, rows } = gridDims(l);
+              const { cols, rows, areas } = layoutPreview(l);
               return (
-                <LayoutOption key={l} active={layoutMode === l} label={`${cols}×${rows}`} cols={cols} rows={rows}
+                <LayoutOption key={l} active={layoutMode === l} label={isCompositeLayout(l) ? l : `${cols}×${rows}`} cols={cols} rows={rows} areas={areas}
                   onClick={() => { onSelect(l); setOpen(false); }} />
               );
             })}

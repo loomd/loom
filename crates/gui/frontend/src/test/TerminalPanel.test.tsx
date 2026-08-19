@@ -166,4 +166,52 @@ describe("TerminalPanel", () => {
     fireEvent.click(container.querySelector('[data-testid="pane-t2"]')!);
     expect(onPaneFocus).toHaveBeenCalledWith("t2");
   });
+
+  it.each(["2+1", "1+2"])("places composite layout %s panes on the expected grid areas", async (layout) => {
+    const { invoke } = await import("@tauri-apps/api/core");
+    const invokeMock = invoke as ReturnType<typeof vi.fn>;
+    invokeMock.mockClear();
+    invokeMock.mockResolvedValue([]);
+
+    const { TerminalPanel } = await import("../components/TerminalPanel");
+    const t1 = makeTerminal("t1");
+    const t2 = makeTerminal("t2");
+    const t3 = makeTerminal("t3");
+
+    const { container } = render(
+      <TerminalPanel terminals={[t1, t2, t3]} activeTabId="t1" layoutMode={layout as "2+1" | "1+2"} showGrid={true} isVisible={true} />
+    );
+    await vi.waitFor(() => {
+      expect(invokeMock).toHaveBeenCalledWith("pty_spawn", expect.objectContaining({ sessionId: "t3" }));
+    });
+
+    const expectedTemplate = layout === "2+1" ? '"a c" "b c"' : '"a b" "a c"';
+    expect(container.querySelector('[data-testid="pane-t1"]')!.getAttribute("style")).toContain("grid-area: a");
+    expect(container.querySelector('[data-testid="pane-t2"]')!.getAttribute("style")).toContain("grid-area: b");
+    expect(container.querySelector('[data-testid="pane-t3"]')!.getAttribute("style")).toContain("grid-area: c");
+    expect(container.querySelector(".grid-pane-container")!.getAttribute("style")).toContain(`grid-template-areas: ${expectedTemplate}`);
+  });
+
+  it("fills the remaining composite pane with an add-terminal button", async () => {
+    const { invoke } = await import("@tauri-apps/api/core");
+    const invokeMock = invoke as ReturnType<typeof vi.fn>;
+    invokeMock.mockClear();
+    invokeMock.mockResolvedValue([]);
+
+    const { TerminalPanel } = await import("../components/TerminalPanel");
+    const t1 = makeTerminal("t1");
+    const onAddTerminal = vi.fn();
+
+    const { container } = render(
+      <TerminalPanel terminals={[t1]} activeTabId="t1" layoutMode="2+1" showGrid={true} isVisible={true} onAddTerminal={onAddTerminal} />
+    );
+    await vi.waitFor(() => {
+      expect(invokeMock).toHaveBeenCalledWith("pty_spawn", expect.objectContaining({ sessionId: "t1" }));
+    });
+
+    const buttons = Array.from(container.querySelectorAll("button")).filter(b => b.textContent === "+ 新建终端");
+    expect(buttons).toHaveLength(2);
+    buttons[0].click();
+    expect(onAddTerminal).toHaveBeenCalledTimes(1);
+  });
 });

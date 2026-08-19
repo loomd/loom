@@ -1,7 +1,7 @@
 import React, { Suspense } from 'react';
 import { TerminalPlaceholder } from './TerminalPlaceholder';
 import type { ConsoleTab, GridLayout } from '../hooks/useTabs';
-import { gridDims } from '../hooks/useTabs';
+import { gridCellAreas, gridCellCount, gridDims } from '../hooks/useTabs';
 
 const TerminalTab = React.lazy(() => import('./TerminalTab').then(m => ({ default: m.TerminalTab })));
 
@@ -18,7 +18,8 @@ interface TerminalPanelProps {
 
 export function TerminalPanel({ terminals, activeTabId, layoutMode, showGrid, isVisible, theme, onAddTerminal, onPaneFocus }: TerminalPanelProps) {
   const dims = showGrid && layoutMode ? gridDims(layoutMode) : null;
-  const cellCount = dims ? dims.cols * dims.rows : 0;
+  const areas = showGrid && layoutMode ? gridCellAreas(layoutMode) : null;
+  const cellCount = dims ? gridCellCount(layoutMode!) : 0;
 
   const renderTerminal = (tab: ConsoleTab, visible: boolean) => (
     <Suspense fallback={<TerminalPlaceholder />}>
@@ -45,18 +46,20 @@ export function TerminalPanel({ terminals, activeTabId, layoutMode, showGrid, is
       boxSizing: 'border-box',
       overflow: 'hidden'
     }}>
-      <div style={{
+      <div className="grid-pane-container" style={{
         flex: 1,
         minHeight: 0,
         display: dims ? 'grid' : 'flex',
         flexDirection: dims ? undefined : 'column',
         gridTemplateColumns: dims ? `repeat(${dims.cols}, 1fr)` : undefined,
         gridTemplateRows: dims ? `repeat(${dims.rows}, 1fr)` : undefined,
+        gridTemplateAreas: areas ?? undefined,
         gap: dims ? '1px' : 0,
         backgroundColor: dims ? 'var(--border-subtle, #27272a)' : undefined,
       }}>
         {terminals.map((tab, idx) => {
           const isTabVisible = dims ? idx < cellCount : tab.id === activeTabId;
+          const gridArea = areas ? String.fromCharCode(97 + idx) : undefined;
           return (
             <div key={tab.id} data-testid={`pane-${tab.id}`} onClick={() => { if (dims) onPaneFocus?.(tab.id); }} style={{
               display: isTabVisible ? 'flex' : 'none',
@@ -65,6 +68,7 @@ export function TerminalPanel({ terminals, activeTabId, layoutMode, showGrid, is
               minHeight: 0,
               overflow: 'hidden',
               backgroundColor: '#121214',
+              gridArea,
               ...(dims ? {} : { flex: 1 }),
             }}>
               {renderTerminal(tab, isTabVisible)}
@@ -80,6 +84,7 @@ export function TerminalPanel({ terminals, activeTabId, layoutMode, showGrid, is
             minHeight: 0,
             overflow: 'hidden',
             backgroundColor: '#121214',
+            gridArea: areas ? String.fromCharCode(97 + terminals.length + i) : undefined,
           }}>
             <button
               onClick={onAddTerminal}

@@ -16,18 +16,46 @@ export interface ConsoleTab {
   initialCommand?: string;
 }
 
-export type GridLayout = '2x1' | '1x2' | '3x1' | '1x3' | '2x2' | '2x3' | '3x2' | '3x3';
+export type GridLayout = '2x1' | '1x2' | '3x1' | '1x3' | '2x2' | '2x3' | '3x2' | '3x3' | '2+1' | '1+2';
 
-export const GRID_LAYOUTS: readonly GridLayout[] = ['2x1', '1x2', '3x1', '1x3', '2x2', '2x3', '3x2', '3x3'];
+export const GRID_LAYOUTS: readonly GridLayout[] = ['2x1', '1x2', '3x1', '1x3', '2+1', '1+2', '2x2', '2x3', '3x2', '3x3'];
+
+export function isCompositeLayout(layout: GridLayout): boolean {
+  return layout === '2+1' || layout === '1+2';
+}
 
 export function gridDims(layout: GridLayout): { cols: number; rows: number } {
+  if (isCompositeLayout(layout)) return { cols: 2, rows: 2 };
   const [cols, rows] = layout.split('x').map(Number);
   return { cols, rows };
 }
 
 export function gridCellCount(layout: GridLayout): number {
+  if (isCompositeLayout(layout)) return 3;
   const { cols, rows } = gridDims(layout);
   return cols * rows;
+}
+
+export function gridCellAreas(layout: GridLayout): string | null {
+  if (layout === '2+1') return '"a c" "b c"';
+  if (layout === '1+2') return '"a b" "a c"';
+  return null;
+}
+
+export function layoutPreview(layout: GridLayout | null): { cols: number; rows: number; areas: string } {
+  switch (layout) {
+    case null: return { cols: 2, rows: 2, areas: '"a a" "a a"' };
+    case '2x1': return { cols: 2, rows: 2, areas: '"a b" "a b"' };
+    case '1x2': return { cols: 2, rows: 2, areas: '"a a" "b b"' };
+    case '3x1': return { cols: 3, rows: 2, areas: '"a b c" "a b c"' };
+    case '1x3': return { cols: 2, rows: 3, areas: '"a a" "b b" "c c"' };
+    case '2+1': return { cols: 2, rows: 2, areas: '"a c" "b c"' };
+    case '1+2': return { cols: 2, rows: 2, areas: '"a b" "a c"' };
+    case '2x2': return { cols: 2, rows: 2, areas: '"a b" "c d"' };
+    case '2x3': return { cols: 2, rows: 3, areas: '"a b" "c d" "e f"' };
+    case '3x2': return { cols: 3, rows: 2, areas: '"a b c" "d e f"' };
+    case '3x3': return { cols: 3, rows: 3, areas: '"a b c" "d e f" "g h i"' };
+  }
 }
 
 export function useTabs(projectRoot: string) {
