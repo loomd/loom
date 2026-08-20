@@ -34,11 +34,11 @@ export function useWhatsNew() {
 				return;
 			}
 
-			if (lastVersion === null || lastVersion === currentVersion) {
+			if (lastVersion === currentVersion) {
 				return;
 			}
 
-			const entries = await getWhatsNewAggregate(lastVersion, currentVersion);
+			const entries = await getWhatsNewAggregate(lastVersion ?? "0.0.0", currentVersion);
 			if (entries.length > 0) {
 				setState({
 					show: true,

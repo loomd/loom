@@ -111,21 +111,38 @@ gh run view <RUN_ID> --log-failed
    - **前端静态 Fallback 版本**：`AgentManagementPage.tsx` 中的 `skillVersion` 默认初始值须一并更改，避免未完成后端通信前显示旧版本。
    - **发版前校验**：确认注入的 `~/.claude/skills/loom/SKILL.md` / `~/.config/opencode/skills/loom/SKILL.md` 中的 `version` 字段与 `loom --version` 输出一致（均为目标版本号）。
 
-### 第五步：提交版本变更（推 tag 前的强制约束）
+### 第五步：编写更新日志（whats-new）
+
+创建或更新对应版本的 whats-new 更新日志文件，用于新版首次启动时弹窗展示：
+
+1. 检查 `crates/gui/src-tauri/whats-new/` 目录下是否存在 `v0.X.Y.md` 文件
+2. 若不存在，创建该文件；若存在，更新内容为当前版本的变更摘要
+3. 文件内容采用 Markdown 格式，简要描述该版本的新功能、修复和改进：
+   ```markdown
+   - 新功能 A
+   - 修复 B
+   - 改进 C
+   ```
+4. 将该文件加入 git 暂存区，与版本配置一起提交
+
+**请务必在发版前提醒用户编写此文件**，否则用户升级后将看不到更新提示。
+
+### 第六步：提交版本变更（推 tag 前的强制约束）
 
 **🚨 关键规则：必须先提交版本变更，再打 tag 推送。tag 必须指向包含版本号提升的 commit。** 0.4.6 发布事故（tag 指向了 0.4.5 的 commit，导致安装包名仍是 0.4.5）就是因为违反了这个顺序。
 
-1. 添加所有有变更的修正文件和版本配置文件：
+1. 添加所有有变更的修正文件、版本配置文件和更新日志：
    ```bash
-   git add Cargo.toml crates/gui/frontend/package.json crates/gui/src-tauri/tauri.conf.json [其他被修改的文件]
+   git add Cargo.toml crates/gui/frontend/package.json crates/gui/src-tauri/tauri.conf.json crates/gui/src-tauri/whats-new/v0.X.Y.md [其他被修改的文件]
    ```
 
-2. 创建合规的 Git 提交信息，**必须先提交**：
+2. 创建合规的 Git 提交信息，**必须先提交**，提交信息应包含更新日志变更：
    ```powershell
    git commit -m @'
    chore: bump version to v0.X.Y
 
-   - Desc of changes
+   - 更新日志
+   - 其他变更说明
    '@
    ```
 
