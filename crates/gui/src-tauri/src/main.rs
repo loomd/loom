@@ -229,27 +229,10 @@ fn set_theme(theme: String) -> Result<(), String> {
 
 #[tauri::command]
 fn open_url(url: String) -> Result<(), String> {
-    #[cfg(target_os = "windows")]
-    {
-        std::process::Command::new("cmd")
-            .args(["/C", "start", "", &url])
-            .spawn()
-            .map_err(|e| e.to_string())?;
-    }
-    #[cfg(target_os = "macos")]
-    {
-        std::process::Command::new("open")
-            .arg(&url)
-            .spawn()
-            .map_err(|e| e.to_string())?;
-    }
-    #[cfg(target_os = "linux")]
-    {
-        std::process::Command::new("xdg-open")
-            .arg(&url)
-            .spawn()
-            .map_err(|e| e.to_string())?;
-    }
+    std::process::Command::new("cmd")
+        .args(["/C", "start", "", &url])
+        .spawn()
+        .map_err(|e| e.to_string())?;
     Ok(())
 }
 
@@ -502,13 +485,6 @@ mod win_util {
     }
 }
 
-#[cfg(not(target_os = "windows"))]
-mod win_util {
-    pub fn bring_pid_to_foreground(_pid: u32) -> bool {
-        false
-    }
-}
-
 #[tauri::command]
 fn kill_agent_process(instance_id: String) -> Result<(), String> {
     cstore::kill_cli_instance(instance_id).map_err(|e| e.to_string())
@@ -625,14 +601,6 @@ fn open_file_with_system(file_path: String) -> Result<(), String> {
         .args(["/C", "start", "", &file_path])
         .status();
 
-    #[cfg(target_os = "macos")]
-    let res = std::process::Command::new("open").arg(&file_path).status();
-
-    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
-    let res = std::process::Command::new("xdg-open")
-        .arg(&file_path)
-        .status();
-
     match res {
         Ok(status) if status.success() => Ok(()),
         Ok(status) => Err(format!("Command exited with status: {}", status)),
@@ -654,29 +622,6 @@ fn open_in_manager(item_path: String) -> Result<(), String> {
             .arg(format!("/select,{}", win_path))
             .spawn()
             .map_err(|e| e.to_string())?;
-    }
-
-    #[cfg(target_os = "macos")]
-    {
-        std::process::Command::new("open")
-            .args(&["-R", &item_path])
-            .spawn()
-            .map_err(|e| e.to_string())?;
-    }
-
-    #[cfg(target_os = "linux")]
-    {
-        if let Some(parent) = path.parent() {
-            std::process::Command::new("xdg-open")
-                .arg(parent)
-                .spawn()
-                .map_err(|e| e.to_string())?;
-        } else {
-            std::process::Command::new("xdg-open")
-                .arg(path)
-                .spawn()
-                .map_err(|e| e.to_string())?;
-        }
     }
 
     Ok(())

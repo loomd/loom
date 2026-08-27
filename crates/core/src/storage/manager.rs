@@ -236,19 +236,6 @@ pub fn kill_process_tree(pid: u32) -> std::io::Result<()> {
     Ok(())
 }
 
-#[cfg(not(target_os = "windows"))]
-pub fn kill_process_tree(pid: u32) -> std::io::Result<()> {
-    let mut cmd = Command::new("kill");
-    cmd.args(&["-9", &pid.to_string()]);
-    cmd.stdout(Stdio::null());
-    cmd.stderr(Stdio::null());
-    let mut child = cmd.spawn()?;
-    std::thread::spawn(move || {
-        let _ = child.wait();
-    });
-    Ok(())
-}
-
 fn migrate_legacy_config(new_path: &Path) {
     if new_path.exists() {
         return;
@@ -598,41 +585,6 @@ pub fn spawn_in_new_terminal(
 
         cmd.spawn()
     }
-
-    #[cfg(not(target_os = "windows"))]
-    {
-        let mut cmd = Command::new(executable_path);
-        cmd.args(&processed_args);
-        if !working_dir.as_os_str().is_empty() {
-            cmd.current_dir(working_dir);
-        }
-
-        if env_mode == "isolated" {
-            cmd.env_clear();
-            if let Ok(path) = env::var("PATH") {
-                cmd.env("PATH", path);
-            }
-            if let Ok(home) = env::var("HOME") {
-                cmd.env("HOME", home);
-            }
-        }
-
-        if let Some(tool) = config
-            .cli_tools
-            .iter()
-            .find(|t| t.id == command || t.name == command)
-        {
-            for (k, v) in &tool.custom_env {
-                cmd.env(k, v);
-            }
-        }
-
-        for (k, v) in custom_envs {
-            cmd.env(k, v);
-        }
-
-        cmd.spawn()
-    }
 }
 
 pub fn load_config() -> Result<AppConfig> {
@@ -768,23 +720,11 @@ pub fn import_cli_tool(path: String) -> Result<CliTool> {
     }
 
     let is_exe = {
-        #[cfg(target_os = "windows")]
-        {
-            if let Some(ext) = p.extension() {
-                let ext = ext.to_string_lossy().to_lowercase();
-                ext == "exe" || ext == "cmd" || ext == "bat" || ext == "ps1"
-            } else {
-                false
-            }
-        }
-        #[cfg(not(target_os = "windows"))]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            if let Ok(meta) = p.metadata() {
-                meta.permissions().mode() & 0o111 != 0
-            } else {
-                false
-            }
+        if let Some(ext) = p.extension() {
+            let ext = ext.to_string_lossy().to_lowercase();
+            ext == "exe" || ext == "cmd" || ext == "bat" || ext == "ps1"
+        } else {
+            false
         }
     };
     if !is_exe {
@@ -916,23 +856,11 @@ pub fn scan_path_env() -> Result<Vec<CliTool>> {
             }
 
             let is_exe = {
-                #[cfg(target_os = "windows")]
-                {
-                    if let Some(ext) = path.extension() {
-                        let ext = ext.to_string_lossy().to_lowercase();
-                        ext == "exe" || ext == "cmd" || ext == "bat" || ext == "ps1"
-                    } else {
-                        false
-                    }
-                }
-                #[cfg(not(target_os = "windows"))]
-                {
-                    use std::os::unix::fs::PermissionsExt;
-                    if let Ok(meta) = path.metadata() {
-                        meta.permissions().mode() & 0o111 != 0
-                    } else {
-                        false
-                    }
+                if let Some(ext) = path.extension() {
+                    let ext = ext.to_string_lossy().to_lowercase();
+                    ext == "exe" || ext == "cmd" || ext == "bat" || ext == "ps1"
+                } else {
+                    false
                 }
             };
 
@@ -1043,23 +971,11 @@ pub fn scan_directory(path: String) -> Result<Vec<CliTool>> {
                 let _ = walk_dir(&entry_path, depth + 1, max_depth, visited, config, scanned);
             } else if entry_path.is_file() {
                 let is_exe = {
-                    #[cfg(target_os = "windows")]
-                    {
-                        if let Some(ext) = entry_path.extension() {
-                            let ext = ext.to_string_lossy().to_lowercase();
-                            ext == "exe" || ext == "cmd" || ext == "bat" || ext == "ps1"
-                        } else {
-                            false
-                        }
-                    }
-                    #[cfg(not(target_os = "windows"))]
-                    {
-                        use std::os::unix::fs::PermissionsExt;
-                        if let Ok(meta) = entry_path.metadata() {
-                            meta.permissions().mode() & 0o111 != 0
-                        } else {
-                            false
-                        }
+                    if let Some(ext) = entry_path.extension() {
+                        let ext = ext.to_string_lossy().to_lowercase();
+                        ext == "exe" || ext == "cmd" || ext == "bat" || ext == "ps1"
+                    } else {
+                        false
                     }
                 };
 
@@ -2687,34 +2603,19 @@ pub fn sync_running_processes() -> Result<()> {
     for inst in &mut config.agent_instances {
         if inst.status == "running" {
             let is_alive = if let Some(pid) = inst.pid {
-                #[cfg(target_os = "windows")]
-                {
-                    let mut cmd = Command::new("tasklist");
-                    cmd.args(["/FI", &format!("PID eq {}", pid)]);
-                    cmd.stdout(Stdio::piped());
-                    cmd.stderr(Stdio::null());
-                    if let Ok(child) = cmd.spawn() {
-                        if let Ok(output) = child.wait_with_output() {
-                            let stdout = String::from_utf8_lossy(&output.stdout);
-                            stdout.contains(&pid.to_string())
-                        } else {
-                            false
-                        }
+                let mut cmd = Command::new("tasklist");
+                cmd.args(["/FI", &format!("PID eq {}", pid)]);
+                cmd.stdout(Stdio::piped());
+                cmd.stderr(Stdio::null());
+                if let Ok(child) = cmd.spawn() {
+                    if let Ok(output) = child.wait_with_output() {
+                        let stdout = String::from_utf8_lossy(&output.stdout);
+                        stdout.contains(&pid.to_string())
                     } else {
                         false
                     }
-                }
-                #[cfg(not(target_os = "windows"))]
-                {
-                    let mut cmd = Command::new("kill");
-                    cmd.args(&["-0", &pid.to_string()]);
-                    cmd.stdout(Stdio::null());
-                    cmd.stderr(Stdio::null());
-                    if let Ok(mut child) = cmd.spawn() {
-                        child.wait().map(|s| s.success()).unwrap_or(false)
-                    } else {
-                        false
-                    }
+                } else {
+                    false
                 }
             } else {
                 false

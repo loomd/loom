@@ -8,14 +8,7 @@ use std::path::{Path, PathBuf};
 
 /// 安装目录下的 CLI 可执行文件名
 fn cli_exe_name() -> String {
-    #[cfg(target_os = "windows")]
-    {
-        "loom.exe".to_string()
-    }
-    #[cfg(not(target_os = "windows"))]
-    {
-        "loom".to_string()
-    }
+    "loom.exe".to_string()
 }
 
 /// `~/.loom/bin` 安装目录
@@ -187,10 +180,7 @@ mod tests {
 
     #[test]
     fn test_cli_exe_name() {
-        #[cfg(target_os = "windows")]
         assert_eq!(cli_exe_name(), "loom.exe");
-        #[cfg(not(target_os = "windows"))]
-        assert_eq!(cli_exe_name(), "loom");
     }
 
     #[test]

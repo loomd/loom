@@ -1,13 +1,133 @@
 use loom_core::storage::expand_env_vars;
-use portable_pty::{native_pty_system, CommandBuilder, PtySize};
 use std::collections::{HashMap, VecDeque};
-use std::io::{Read, Write};
+use std::ptr;
 use std::sync::{Arc, Mutex, OnceLock};
 use tauri::{AppHandle, Emitter};
+use winapi::ctypes::c_void;
+use winapi::um::handleapi::{CloseHandle, INVALID_HANDLE_VALUE};
+use winapi::um::processthreadsapi::*;
+use winapi::um::winnt::*;
 
-// Job Object Helper for Process Tree Cleanup on Windows
+// ─── Raw Win32 Types (not all exposed by winapi 0.3.9) ───────────────────────
+#[allow(clippy::upper_case_acronyms)]
+type DWORD = u32;
+#[allow(clippy::upper_case_acronyms)]
+type BOOL = i32;
+#[allow(clippy::upper_case_acronyms)]
+type HRESULT = i32;
+#[allow(clippy::upper_case_acronyms)]
+type HPCON = *mut c_void;
+#[allow(clippy::upper_case_acronyms)]
+type LPWCH = *mut u16;
+#[allow(clippy::upper_case_acronyms)]
+type LPVOID = *mut c_void;
+type SizeT = usize;
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+#[allow(non_snake_case, clippy::upper_case_acronyms)]
+struct COORD {
+    X: i16,
+    Y: i16,
+}
+
+#[repr(C)]
+#[allow(non_snake_case)]
+struct SECURITY_ATTRIBUTES {
+    nLength: DWORD,
+    lpSecurityDescriptor: LPVOID,
+    bInheritHandle: BOOL,
+}
+
+#[repr(C)]
+#[allow(non_snake_case, clippy::upper_case_acronyms)]
+struct STARTUPINFOEXW {
+    StartupInfo: STARTUPINFOW,
+    lpAttributeList: *mut PROC_THREAD_ATTRIBUTE_LIST,
+}
+
+#[repr(C)]
+struct PROC_THREAD_ATTRIBUTE_LIST(#[allow(dead_code)] c_void);
+
+const PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE: DWORD = 0x00020016;
+const EXTENDED_STARTUPINFO_PRESENT: DWORD = 0x00080000;
+const CREATE_UNICODE_ENVIRONMENT: DWORD = 0x00000400;
+const STARTF_USESHOWWINDOW: DWORD = 0x00000001;
+const SW_HIDE: u16 = 0;
+
+// ─── ConPTY FFI ───────────────────────────────────────────────────────────────
+extern "system" {
+    fn CreatePseudoConsole(
+        size: COORD,
+        hInput: HANDLE,
+        hOutput: HANDLE,
+        dwFlags: DWORD,
+        phPC: *mut HPCON,
+    ) -> HRESULT;
+
+    fn ResizePseudoConsole(hPC: HPCON, size: COORD) -> HRESULT;
+
+    fn ClosePseudoConsole(hPC: HPCON);
+
+    fn CreatePipe(
+        lpReadAttributes: *mut HANDLE,
+        lpWriteAttributes: *mut HANDLE,
+        lpPipeAttributes: *mut SECURITY_ATTRIBUTES,
+        nSize: DWORD,
+    ) -> BOOL;
+
+    fn ReadFile(
+        hFile: HANDLE,
+        lpBuffer: LPVOID,
+        nNumberOfBytesToRead: DWORD,
+        lpNumberOfBytesRead: *mut DWORD,
+        lpOverlapped: *mut c_void,
+    ) -> BOOL;
+
+    fn WriteFile(
+        hFile: HANDLE,
+        lpBuffer: *const c_void,
+        nNumberOfBytesToWrite: DWORD,
+        lpNumberOfBytesWritten: *mut DWORD,
+        lpOverlapped: *mut c_void,
+    ) -> BOOL;
+
+    fn InitializeProcThreadAttributeList(
+        lpAttributeList: *mut PROC_THREAD_ATTRIBUTE_LIST,
+        dwAttributeCount: DWORD,
+        dwFlags: DWORD,
+        lpdwSize: *mut SizeT,
+    ) -> BOOL;
+
+    fn UpdateProcThreadAttribute(
+        lpAttributeList: *mut PROC_THREAD_ATTRIBUTE_LIST,
+        dwFlags: DWORD,
+        Attribute: usize,
+        lpValue: *const c_void,
+        cbSize: SizeT,
+        lpPreviousValue: *mut c_void,
+        lpReturnSize: *mut SizeT,
+    ) -> BOOL;
+
+    fn DeleteProcThreadAttributeList(lpAttributeList: *mut PROC_THREAD_ATTRIBUTE_LIST);
+
+    fn CreateProcessW(
+        lpApplicationName: LPWCH,
+        lpCommandLine: LPWCH,
+        lpProcessAttributes: *mut SECURITY_ATTRIBUTES,
+        lpThreadAttributes: *mut SECURITY_ATTRIBUTES,
+        bInheritHandles: BOOL,
+        dwCreationFlags: DWORD,
+        lpEnvironment: LPVOID,
+        lpCurrentDirectory: LPWCH,
+        lpStartupInfo: *const STARTUPINFOW,
+        lpProcessInformation: *mut PROCESS_INFORMATION,
+    ) -> BOOL;
+}
+
+// ─── Job Object ───────────────────────────────────────────────────────────────
 pub struct JobObject {
-    handle: winapi::um::winnt::HANDLE,
+    handle: HANDLE,
 }
 
 unsafe impl Send for JobObject {}
@@ -16,12 +136,7 @@ unsafe impl Sync for JobObject {}
 impl JobObject {
     pub fn new() -> std::io::Result<Self> {
         unsafe {
-            use std::ptr;
             use winapi::um::jobapi2::{CreateJobObjectW, SetInformationJobObject};
-            use winapi::um::winnt::{
-                JobObjectExtendedLimitInformation, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
-                JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
-            };
 
             let handle = CreateJobObjectW(ptr::null_mut(), ptr::null());
             if handle.is_null() {
@@ -30,7 +145,7 @@ impl JobObject {
 
             let mut info = std::mem::zeroed::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>();
             info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
-                | winapi::um::winnt::JOB_OBJECT_LIMIT_SILENT_BREAKAWAY_OK;
+                | JOB_OBJECT_LIMIT_SILENT_BREAKAWAY_OK;
 
             let res = SetInformationJobObject(
                 handle,
@@ -41,7 +156,7 @@ impl JobObject {
 
             if res == 0 {
                 let err = std::io::Error::last_os_error();
-                winapi::um::handleapi::CloseHandle(handle);
+                CloseHandle(handle);
                 return Err(err);
             }
 
@@ -49,7 +164,7 @@ impl JobObject {
         }
     }
 
-    pub fn assign_process(&self, process_handle: winapi::um::winnt::HANDLE) -> std::io::Result<()> {
+    pub fn assign_process(&self, process_handle: HANDLE) -> std::io::Result<()> {
         unsafe {
             use winapi::um::jobapi2::AssignProcessToJobObject;
             let res = AssignProcessToJobObject(self.handle, process_handle);
@@ -64,21 +179,18 @@ impl JobObject {
 impl Drop for JobObject {
     fn drop(&mut self) {
         unsafe {
-            winapi::um::handleapi::CloseHandle(self.handle);
+            CloseHandle(self.handle);
         }
     }
 }
 
 pub static GLOBAL_JOB: OnceLock<JobObject> = OnceLock::new();
-
-/// Maps PTY session_id → spawn timestamp (ms since epoch)
 pub static PTY_SPAWN_TIMES: OnceLock<Mutex<HashMap<String, u128>>> = OnceLock::new();
 
-#[cfg(target_os = "windows")]
 pub fn init_process_session_job() {
     if let Ok(job) = JobObject::new() {
         unsafe {
-            let current = winapi::um::processthreadsapi::GetCurrentProcess();
+            let current = GetCurrentProcess();
             if job.assign_process(current).is_ok() {
                 let _ = GLOBAL_JOB.set(job);
             }
@@ -86,7 +198,7 @@ pub fn init_process_session_job() {
     }
 }
 
-// Byte-based Terminal Buffer for redrawing
+// ─── Terminal Buffer ──────────────────────────────────────────────────────────
 pub struct TerminalBuffer {
     buffer: VecDeque<u8>,
     max_bytes: usize,
@@ -107,7 +219,6 @@ impl TerminalBuffer {
             self.buffer.extend(&data[start..]);
             return;
         }
-
         let overflow = (self.buffer.len() + data.len()).saturating_sub(self.max_bytes);
         if overflow > 0 {
             self.buffer.drain(0..overflow);
@@ -120,10 +231,75 @@ impl TerminalBuffer {
     }
 }
 
-// Active PTY session struct
+// ─── ConPTY Handle Wrapper ────────────────────────────────────────────────────
+struct RawHandle(HANDLE);
+unsafe impl Send for RawHandle {}
+unsafe impl Sync for RawHandle {}
+
+struct ConPty {
+    hpc: HPCON,
+    stdin_write: RawHandle,
+    stdout_read: RawHandle,
+}
+
+unsafe impl Send for ConPty {}
+unsafe impl Sync for ConPty {}
+
+impl Drop for ConPty {
+    fn drop(&mut self) {
+        unsafe {
+            ClosePseudoConsole(self.hpc);
+            CloseHandle(self.stdin_write.0);
+            CloseHandle(self.stdout_read.0);
+        }
+    }
+}
+
+fn create_pipe_pair() -> std::io::Result<(HANDLE, HANDLE)> {
+    unsafe {
+        let mut read_handle: HANDLE = INVALID_HANDLE_VALUE;
+        let mut write_handle: HANDLE = INVALID_HANDLE_VALUE;
+        let ok = CreatePipe(&mut read_handle, &mut write_handle, ptr::null_mut(), 0);
+        if ok == 0 {
+            return Err(std::io::Error::last_os_error());
+        }
+        Ok((read_handle, write_handle))
+    }
+}
+
+fn open_conpty(cols: u16, rows: u16) -> Result<ConPty, String> {
+    let (stdin_read, stdin_write) =
+        create_pipe_pair().map_err(|e| format!("Failed to create stdin pipe: {}", e))?;
+    let (stdout_read, stdout_write) =
+        create_pipe_pair().map_err(|e| format!("Failed to create stdout pipe: {}", e))?;
+
+    let coord = COORD {
+        X: cols as i16,
+        Y: rows as i16,
+    };
+
+    let mut hpc: HPCON = ptr::null_mut();
+    let hr = unsafe { CreatePseudoConsole(coord, stdin_read, stdout_write, 0, &mut hpc) };
+
+    unsafe {
+        CloseHandle(stdin_read);
+        CloseHandle(stdout_write);
+    }
+
+    if hr != 0 {
+        return Err(format!("CreatePseudoConsole failed: HRESULT 0x{:08X}", hr));
+    }
+
+    Ok(ConPty {
+        hpc,
+        stdin_write: RawHandle(stdin_write),
+        stdout_read: RawHandle(stdout_read),
+    })
+}
+
+// ─── PTY Session ──────────────────────────────────────────────────────────────
 pub struct PtySession {
-    pub pty_master: Mutex<Box<dyn portable_pty::MasterPty + Send>>,
-    pub stdin_writer: Arc<Mutex<Box<dyn Write + Send>>>,
+    conpty: Mutex<ConPty>,
     pub buffer: Arc<Mutex<TerminalBuffer>>,
     pub is_running: Arc<Mutex<bool>>,
     pub child_pid: u32,
@@ -134,75 +310,76 @@ pub struct PtyState {
     pub sessions: Arc<Mutex<HashMap<String, Arc<PtySession>>>>,
 }
 
-/// Builds the terminal shell arguments to execute the command on startup
-/// while keeping the shell open and interactive afterwards.
-pub fn build_shell_args(
+// ─── Shell Detection ─────────────────────────────────────────────────────────
+fn find_shell() -> String {
+    let find_pwsh = || -> Option<String> {
+        which::which("pwsh")
+            .ok()
+            .map(|p| p.to_string_lossy().to_string())
+    };
+    let find_powershell = || -> Option<String> {
+        let sys = "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe";
+        if std::path::Path::new(sys).exists() {
+            return Some(sys.to_string());
+        }
+        which::which("powershell")
+            .ok()
+            .map(|p| p.to_string_lossy().to_string())
+    };
+    let find_cmd = || -> String {
+        let sys = "C:\\Windows\\System32\\cmd.exe";
+        if std::path::Path::new(sys).exists() {
+            return sys.to_string();
+        }
+        which::which("cmd")
+            .ok()
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_else(|| "cmd.exe".to_string())
+    };
+
+    find_pwsh()
+        .or_else(find_powershell)
+        .unwrap_or_else(find_cmd)
+}
+
+// ─── Build Command Line ──────────────────────────────────────────────────────
+fn build_command_line(
     shell_path: &str,
     cmd_to_run: Option<&str>,
     cmd_args: Option<&[String]>,
-) -> Vec<String> {
-    let mut args = Vec::new();
-    if let Some(target_cmd) = cmd_to_run {
-        let path_lower = shell_path.to_lowercase();
-        let is_pwsh = path_lower.contains("pwsh") || path_lower.contains("powershell");
-        let is_cmd = path_lower.contains("cmd.exe") || path_lower.ends_with("cmd");
+) -> String {
+    let Some(target_cmd) = cmd_to_run else {
+        return shell_path.to_string();
+    };
+    let path_lower = shell_path.to_lowercase();
+    let is_pwsh = path_lower.contains("pwsh") || path_lower.contains("powershell");
 
-        if is_pwsh {
-            let escaped_exe = target_cmd.replace("'", "''");
-            let escaped_args: Vec<String> = cmd_args
-                .unwrap_or(&[])
-                .iter()
-                .map(|a| format!("'{}'", a.replace("'", "''")))
-                .collect();
-            let command_str = format!("& '{}' {}", escaped_exe, escaped_args.join(" "));
-            args.push("-NoExit".to_string());
-            args.push("-Command".to_string());
-            args.push(command_str);
-        } else if is_cmd {
-            let escaped_exe = target_cmd.replace("\"", "\"\"");
-            let escaped_args: Vec<String> = cmd_args
-                .unwrap_or(&[])
-                .iter()
-                .map(|a| format!("\"{}\"", a.replace("\"", "\"\"")))
-                .collect();
-            let command_str = format!("\"{}\" {}", escaped_exe, escaped_args.join(" "));
-            args.push("/K".to_string());
-            args.push(command_str);
-        } else {
-            // Unix fallback (bash/zsh/sh/etc): execute the command, then exec a new shell to keep PTY interactive
-            let escaped_exe = target_cmd.replace("'", "'\\''");
-            let escaped_args: Vec<String> = cmd_args
-                .unwrap_or(&[])
-                .iter()
-                .map(|a| format!("'{}'", a.replace("'", "'\\''")))
-                .collect();
-            let command_str = format!(
-                "'{}' {}; exec {}",
-                escaped_exe,
-                escaped_args.join(" "),
-                shell_path
-            );
-            args.push("-c".to_string());
-            args.push(command_str);
-        }
+    if is_pwsh {
+        let esc = target_cmd.replace("'", "''");
+        let args: Vec<String> = cmd_args
+            .unwrap_or(&[])
+            .iter()
+            .map(|a| format!("'{}'", a.replace("'", "''")))
+            .collect();
+        format!("{} -NoExit -Command & '{}' {}", shell_path, esc, args.join(" "))
+    } else {
+        let esc = target_cmd.replace("\"", "\"\"");
+        let args: Vec<String> = cmd_args
+            .unwrap_or(&[])
+            .iter()
+            .map(|a| format!("\"{}\"", a.replace("\"", "\"\"")))
+            .collect();
+        format!("{} /K \"{}\" {}", shell_path, esc, args.join(" "))
     }
-    args
 }
 
-
-
-// Windows: build the current PATH value by merging the persistent registry PATH
-// (read fresh, so it reflects tools installed after Loom started) with the process
-// PATH, deduplicating while preserving order (registry entries take precedence).
-#[cfg(target_os = "windows")]
+// ─── Fresh PATH from Registry ────────────────────────────────────────────────
 fn fresh_path_value() -> Option<String> {
     use loom_core::storage::manager::registry_path_entries;
-
     let mut segments: Vec<String> = registry_path_entries();
     if let Ok(path_val) = std::env::var("PATH") {
         segments.extend(std::env::split_paths(&path_val).map(|p| p.to_string_lossy().to_string()));
     }
-
     let mut seen = std::collections::HashSet::new();
     segments.retain(|s| !s.is_empty() && seen.insert(s.clone()));
     if segments.is_empty() {
@@ -212,7 +389,7 @@ fn fresh_path_value() -> Option<String> {
     }
 }
 
-// Core PTY spawn function
+// ─── Core Spawn ───────────────────────────────────────────────────────────────
 #[allow(clippy::too_many_arguments)]
 pub fn spawn_pty_session(
     app: AppHandle,
@@ -228,105 +405,19 @@ pub fn spawn_pty_session(
     let cols = if cols == 0 { 80 } else { cols };
     let rows = if rows == 0 { 24 } else { rows };
 
-    let pty_system = native_pty_system();
-    let size = PtySize {
-        rows,
-        cols,
-        pixel_width: 0,
-        pixel_height: 0,
-    };
+    let shell_exe = find_shell();
+    let conpty = open_conpty(cols, rows)?;
 
-    let pair = pty_system
-        .openpty(size)
-        .map_err(|e| format!("Failed to open PTY: {}", e))?;
-
-    // Always spawn the default system shell instead of running the tool executable directly.
-    let shell_exe = {
-        #[cfg(target_os = "windows")]
-        {
-            // Detect shell with priority: pwsh -> powershell -> cmd
-            let find_pwsh = || -> Option<String> {
-                // Check PATH first (covers Microsoft Store installs, custom paths, etc.)
-                if let Ok(path) = which::which("pwsh") {
-                    return Some(path.to_string_lossy().to_string());
-                }
-                None
-            };
-
-            let find_powershell = || -> Option<String> {
-                let system32_powershell =
-                    "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe";
-                if std::path::Path::new(system32_powershell).exists() {
-                    return Some(system32_powershell.to_string());
-                }
-                if let Ok(path) = which::which("powershell") {
-                    return Some(path.to_string_lossy().to_string());
-                }
-                None
-            };
-
-            let find_cmd = || -> String {
-                let system32_cmd = "C:\\Windows\\System32\\cmd.exe";
-                if std::path::Path::new(system32_cmd).exists() {
-                    return system32_cmd.to_string();
-                }
-                if let Ok(path) = which::which("cmd") {
-                    return path.to_string_lossy().to_string();
-                }
-                "cmd.exe".to_string()
-            };
-
-            if let Some(pwsh) = find_pwsh() {
-                pwsh
-            } else if let Some(ps) = find_powershell() {
-                ps
-            } else {
-                find_cmd()
-            }
-        }
-        #[cfg(not(target_os = "windows"))]
-        {
-            std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".to_string())
-        }
-    };
-
-    let mut cmd_builder = CommandBuilder::new(&shell_exe);
-
-    // Explicitly inherit all parent environment variables to avoid missing DLL crashes on Windows
-    for (key, val) in std::env::vars() {
-        cmd_builder.env(key, val);
-    }
-
-    // Merge template-specific environment overrides if provided
-    let mut merged_envs = HashMap::new();
-    for (key, val) in std::env::vars() {
-        merged_envs.insert(key, val);
-    }
-
-    // Windows: override PATH with the freshly-read registry PATH (merged with the
-    // process PATH). Loom's process PATH is captured at startup and goes stale after
-    // installing new tools (e.g. node via winget), while the registry always holds the
-    // current persistent PATH. This lets new terminals use freshly installed tools
-    // without restarting Loom. Template-specific env overrides below still win.
-    #[cfg(target_os = "windows")]
+    let mut merged_envs: HashMap<String, String> = std::env::vars().collect();
     if let Some(fresh_path) = fresh_path_value() {
-        cmd_builder.env("PATH", &fresh_path);
         merged_envs.insert("PATH".to_string(), fresh_path);
     }
-
     if let Some(ref custom_envs) = env {
         for (key, val) in custom_envs {
             merged_envs.insert(key.clone(), val.clone());
         }
     }
 
-    if let Some(custom_envs) = env {
-        for (key, val) in custom_envs {
-            cmd_builder.env(key, val);
-        }
-    }
-
-    // Resolve parameter arguments inside the interactive shell
     let expanded_args = args.as_ref().map(|raw_args| {
         raw_args
             .iter()
@@ -334,43 +425,23 @@ pub fn spawn_pty_session(
             .collect::<Vec<String>>()
     });
 
-    let shell_args = build_shell_args(&shell_exe, command.as_deref(), expanded_args.as_deref());
-    if !shell_args.is_empty() {
-        cmd_builder.args(shell_args);
-    }
+    let cmd_line = build_command_line(&shell_exe, command.as_deref(), expanded_args.as_deref());
+    let env_block = build_env_block(&merged_envs);
+    let work_dir = cwd
+        .as_ref()
+        .filter(|d| !d.is_empty())
+        .map(|d| d.replace("/", "\\"));
 
-    if let Some(ref dir) = cwd {
-        if !dir.is_empty() {
-            let clean_dir = dir.replace("/", "\\");
-            cmd_builder.cwd(clean_dir);
-        }
-    }
+    let stdout_read_val = conpty.stdout_read.0 as usize;
 
-    let pty_slave = pair.slave;
-    let child = pty_slave
-        .spawn_command(cmd_builder)
-        .map_err(|e| format!("Failed to spawn child: {}", e))?;
+    let child_pid =
+        create_process_with_pty(&cmd_line, &env_block, work_dir.as_deref(), conpty.hpc)?;
 
-    let child_pid = child.process_id().unwrap();
-    drop(child);
-    drop(pty_slave);
-
-    let reader = pair
-        .master
-        .try_clone_reader()
-        .map_err(|e| format!("Failed to get reader: {}", e))?;
-
-    let writer = pair
-        .master
-        .take_writer()
-        .map_err(|e| format!("Failed to get writer: {}", e))?;
-
-    let ring_buffer = Arc::new(Mutex::new(TerminalBuffer::new(1024 * 512))); // 512 KB buffer limit
+    let ring_buffer = Arc::new(Mutex::new(TerminalBuffer::new(1024 * 512)));
     let is_running = Arc::new(Mutex::new(true));
 
     let session = Arc::new(PtySession {
-        pty_master: Mutex::new(pair.master),
-        stdin_writer: Arc::new(Mutex::new(writer)),
+        conpty: Mutex::new(conpty),
         buffer: ring_buffer.clone(),
         is_running: is_running.clone(),
         child_pid,
@@ -380,9 +451,8 @@ pub fn spawn_pty_session(
         .sessions
         .lock()
         .unwrap()
-        .insert(session_id.clone(), session);
+        .insert(session_id.clone(), session.clone());
 
-    // Record PTY spawn time for agent monitor session association
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_millis())
@@ -398,20 +468,25 @@ pub fn spawn_pty_session(
     let is_running_clone = is_running.clone();
 
     std::thread::spawn(move || {
-        let mut reader = reader;
+        let stdout_handle = stdout_read_val as HANDLE;
         let mut buffer = [0u8; 4096];
         while *is_running_clone.lock().unwrap() {
-            match reader.read(&mut buffer) {
-                Ok(0) => break,
-                Ok(n) => {
-                    let chunk = &buffer[..n];
-                    ring_buffer.lock().unwrap().write(chunk);
-
-                    // Emit binary blob directly to frontend via Tauri 2.0
-                    let _ = app.emit(&format!("pty-data-{}", session_id_clone), chunk.to_vec());
-                }
-                Err(_) => break,
+            let mut bytes_read: DWORD = 0;
+            let ok = unsafe {
+                ReadFile(
+                    stdout_handle,
+                    buffer.as_mut_ptr() as LPVOID,
+                    buffer.len() as DWORD,
+                    &mut bytes_read,
+                    ptr::null_mut(),
+                )
+            };
+            if ok == 0 || bytes_read == 0 {
+                break;
             }
+            let chunk = &buffer[..bytes_read as usize];
+            ring_buffer.lock().unwrap().write(chunk);
+            let _ = app.emit(&format!("pty-data-{}", session_id_clone), chunk.to_vec());
         }
         *is_running_clone.lock().unwrap() = false;
         let _ = app.emit(&format!("pty-exit-{}", session_id_clone), ());
@@ -420,6 +495,103 @@ pub fn spawn_pty_session(
     Ok(())
 }
 
+fn build_env_block(envs: &HashMap<String, String>) -> Vec<u16> {
+    let mut block = Vec::new();
+    for (key, val) in envs {
+        for c in format!("{}={}", key, val).encode_utf16() {
+            block.push(c);
+        }
+        block.push(0);
+    }
+    block.push(0);
+    block
+}
+
+fn create_process_with_pty(
+    cmd_line: &str,
+    env_block: &[u16],
+    cwd: Option<&str>,
+    hpc: HPCON,
+) -> Result<u32, String> {
+    unsafe {
+        let si_size = std::mem::size_of::<STARTUPINFOEXW>();
+        let mut si_ex: STARTUPINFOEXW = std::mem::zeroed();
+        si_ex.StartupInfo.cb = si_size as u32;
+        si_ex.StartupInfo.dwFlags = STARTF_USESHOWWINDOW;
+        si_ex.StartupInfo.wShowWindow = SW_HIDE;
+
+        let mut attr_list_size: SizeT = 0;
+        InitializeProcThreadAttributeList(ptr::null_mut(), 1, 0, &mut attr_list_size);
+
+        let mut attr_list_bytes = vec![0u8; attr_list_size];
+        let attr_list = attr_list_bytes.as_mut_ptr() as *mut PROC_THREAD_ATTRIBUTE_LIST;
+
+        let ok = InitializeProcThreadAttributeList(attr_list, 1, 0, &mut attr_list_size);
+        if ok == 0 {
+            return Err(format!(
+                "InitializeProcThreadAttributeList failed: {}",
+                std::io::Error::last_os_error()
+            ));
+        }
+
+        let ok = UpdateProcThreadAttribute(
+            attr_list,
+            0,
+            PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE as usize,
+            hpc as LPVOID,
+            std::mem::size_of::<HPCON>(),
+            ptr::null_mut(),
+            ptr::null_mut(),
+        );
+        if ok == 0 {
+            DeleteProcThreadAttributeList(attr_list);
+            return Err(format!(
+                "UpdateProcThreadAttribute failed: {}",
+                std::io::Error::last_os_error()
+            ));
+        }
+
+        si_ex.lpAttributeList = attr_list;
+
+        let mut pi: PROCESS_INFORMATION = std::mem::zeroed();
+        let mut cmd_wide: Vec<u16> = cmd_line.encode_utf16().chain(std::iter::once(0)).collect();
+        let mut cwd_wide: Option<Vec<u16>> =
+            cwd.map(|d| d.encode_utf16().chain(std::iter::once(0)).collect());
+        let cwd_ptr = cwd_wide
+            .as_mut()
+            .map(|w| w.as_mut_ptr())
+            .unwrap_or(ptr::null_mut());
+
+        let flags = EXTENDED_STARTUPINFO_PRESENT | CREATE_UNICODE_ENVIRONMENT;
+
+        let ok = CreateProcessW(
+            ptr::null_mut(),
+            cmd_wide.as_mut_ptr(),
+            ptr::null_mut(),
+            ptr::null_mut(),
+            0,
+            flags,
+            env_block.as_ptr() as LPVOID,
+            cwd_ptr,
+            &si_ex.StartupInfo,
+            &mut pi,
+        );
+
+        DeleteProcThreadAttributeList(attr_list);
+
+        if ok == 0 {
+            return Err(format!(
+                "CreateProcessW failed: {}",
+                std::io::Error::last_os_error()
+            ));
+        }
+
+        CloseHandle(pi.hThread);
+        Ok(pi.dwProcessId)
+    }
+}
+
+// ─── Tauri Commands ───────────────────────────────────────────────────────────
 #[tauri::command]
 #[allow(clippy::too_many_arguments)]
 pub fn pty_spawn(
@@ -434,8 +606,9 @@ pub fn pty_spawn(
     rows: u16,
 ) -> Result<(), String> {
     crate::agent_monitor::record_pty_spawn(&session_id);
-    spawn_pty_session(app, &state, session_id, command, args, env, cwd, cols, rows)
+    spawn_pty_session(app, state.inner(), session_id, command, args, env, cwd, cols, rows)
 }
+
 #[tauri::command]
 pub fn pty_write(
     state: tauri::State<'_, PtyState>,
@@ -450,18 +623,24 @@ pub fn pty_write(
         .cloned()
         .ok_or_else(|| "Session not found".to_string())?;
 
-    // Mark PTY as having real user input (ignore escape sequences like \x1b[I/O).
     if !data.is_empty() && data[0] != 0x1B {
         crate::agent_monitor::mark_pty_active(&session_id);
     }
 
-    let mut writer = session.stdin_writer.lock().unwrap();
-    writer
-        .write_all(&data)
-        .map_err(|e| format!("Failed to write: {}", e))?;
-    writer
-        .flush()
-        .map_err(|e| format!("Failed to flush: {}", e))?;
+    let conpty = session.conpty.lock().unwrap();
+    let mut bytes_written: DWORD = 0;
+    let ok = unsafe {
+        WriteFile(
+            conpty.stdin_write.0,
+            data.as_ptr() as *const c_void,
+            data.len() as DWORD,
+            &mut bytes_written,
+            ptr::null_mut(),
+        )
+    };
+    if ok == 0 {
+        return Err(format!("Failed to write: {}", std::io::Error::last_os_error()));
+    }
     Ok(())
 }
 
@@ -480,18 +659,16 @@ pub fn pty_resize(
         .cloned()
         .ok_or_else(|| "Session not found".to_string())?;
 
-    let res = session
-        .pty_master
-        .lock()
-        .unwrap()
-        .resize(PtySize {
-            rows,
-            cols,
-            pixel_width: 0,
-            pixel_height: 0,
-        })
-        .map_err(|e| format!("Resize failed: {}", e));
-    res
+    let conpty = session.conpty.lock().unwrap();
+    let coord = COORD {
+        X: cols as i16,
+        Y: rows as i16,
+    };
+    let hr = unsafe { ResizePseudoConsole(conpty.hpc, coord) };
+    if hr != 0 {
+        return Err(format!("Resize failed: HRESULT 0x{:08X}", hr));
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -506,25 +683,19 @@ pub fn pty_history(
         .get(&session_id)
         .cloned()
         .ok_or_else(|| "Session not found".to_string())?;
-
     let history = session.buffer.lock().unwrap().get_history();
     Ok(history)
 }
 
 #[tauri::command]
 pub fn pty_close(state: tauri::State<'_, PtyState>, session_id: String) -> Result<(), String> {
-    use winapi::um::handleapi::CloseHandle;
-    use winapi::um::processthreadsapi::{OpenProcess, TerminateProcess};
-    use winapi::um::winnt::PROCESS_TERMINATE;
-
     let session = state.sessions.lock().unwrap().remove(&session_id);
     if let Some(s) = session {
         *s.is_running.lock().unwrap() = false;
-
         let pid = s.child_pid;
-        let handle = unsafe { OpenProcess(PROCESS_TERMINATE, 0, pid) };
-        if !handle.is_null() {
-            unsafe {
+        unsafe {
+            let handle = OpenProcess(PROCESS_TERMINATE, 0, pid);
+            if !handle.is_null() {
                 TerminateProcess(handle, 1);
                 CloseHandle(handle);
             }

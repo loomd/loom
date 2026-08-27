@@ -56,7 +56,6 @@ fn search_dirs() -> Vec<PathBuf> {
 fn check_executable(name: &str) -> Option<String> {
     // Windows 上优先匹配带可执行扩展名的 shim（npm 生成的 opencode.cmd / opencode.ps1），
     // 无扩展名的 bash 脚本无法直接运行且通不过 import_cli_tool 的校验，仅作最后回退。
-    #[cfg(target_os = "windows")]
     let candidates = [
         format!("{}.exe", name),
         format!("{}.cmd", name),
@@ -64,8 +63,6 @@ fn check_executable(name: &str) -> Option<String> {
         format!("{}.ps1", name),
         name.to_string(),
     ];
-    #[cfg(not(target_os = "windows"))]
-    let candidates = [name.to_string()];
 
     for dir in search_dirs() {
         for cand in &candidates {
@@ -101,13 +98,7 @@ pub fn discover_agents() -> DiscoveryOverview {
         download_url: "https://opencode.ai/docs/zh-cn".to_string(),
     });
 
-    let node_install_command = if cfg!(target_os = "windows") {
-        "winget install OpenJS.NodeJS".to_string()
-    } else if cfg!(target_os = "macos") {
-        "brew install node".to_string()
-    } else {
-        "curl -fsSL https://deb.nodesource.com/setup | sudo -E bash - && sudo apt-get install -y nodejs".to_string()
-    };
+    let node_install_command = "winget install OpenJS.NodeJS".to_string();
 
     DiscoveryOverview {
         agents,

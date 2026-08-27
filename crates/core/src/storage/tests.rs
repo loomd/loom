@@ -373,11 +373,7 @@ fn test_cli_tools_reorder() {
         use super::manager::{get_cli_tools, import_cli_tool, reorder_cli_tools};
 
         let temp_dir_path = config_path.parent().unwrap();
-        let ext = if cfg!(target_os = "windows") {
-            ".exe"
-        } else {
-            ""
-        };
+        let ext = ".exe";
         let path1 = temp_dir_path.join(format!("tool1{}", ext));
         let path2 = temp_dir_path.join(format!("tool2{}", ext));
         let path3 = temp_dir_path.join(format!("tool3{}", ext));
@@ -385,16 +381,6 @@ fn test_cli_tools_reorder() {
         std::fs::write(&path1, "").unwrap();
         std::fs::write(&path2, "").unwrap();
         std::fs::write(&path3, "").unwrap();
-
-        #[cfg(not(target_os = "windows"))]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            for p in &[&path1, &path2, &path3] {
-                let mut perms = std::fs::metadata(p).unwrap().permissions();
-                perms.set_mode(0o755);
-                std::fs::set_permissions(p, perms).unwrap();
-            }
-        }
 
         let t1 = import_cli_tool(path1.to_string_lossy().to_string()).unwrap();
         let t2 = import_cli_tool(path2.to_string_lossy().to_string()).unwrap();
