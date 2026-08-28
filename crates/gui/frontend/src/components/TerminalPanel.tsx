@@ -76,7 +76,7 @@ export function TerminalPanel({ terminals, activeTabId, layoutMode, showGrid, is
           color: 'var(--text-tertiary, #71717a)', userSelect: 'none',
         }}
       >
-        + 新建终端
+        + 新派生
       </button>
     </div>
   )) : [];

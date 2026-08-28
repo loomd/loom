@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from "react";
 
 export type CompositeState =
   | "idle"
+  | "active"
   | "waiting"
   | "running"
   | "agent_call"
@@ -10,11 +11,12 @@ export type CompositeState =
 
 const PRIORITY: Record<string, number> = {
   idle: 1,
-  waiting: 2,
-  running: 3,
-  agent_call: 4,
-  question: 5,
-  error: 6,
+  active: 2,
+  waiting: 3,
+  running: 4,
+  agent_call: 5,
+  question: 6,
+  error: 7,
 };
 
 // ─── Module-level store: projectId → { terminalId → CompositeState } ───
@@ -52,8 +54,8 @@ function computeComposite(projectId: string): CompositeState | null {
   const terminals = shellMap.get(projectId);
   if (!terminals || terminals.size === 0) return null;
 
-  let best: CompositeState = "idle";
-  let bestP = -1;
+  let best: CompositeState = "active";
+  let bestP = PRIORITY["active"];
   for (const s of terminals.values()) {
     const p = PRIORITY[s] ?? -1;
     if (p > bestP) {
@@ -61,7 +63,7 @@ function computeComposite(projectId: string): CompositeState | null {
       best = s;
     }
   }
-  return bestP <= 1 ? null : best;
+  return best;
 }
 
 // ─── React hook ──────────────────────────────────────────────
@@ -70,6 +72,7 @@ type StateMap = Record<string, CompositeState>;
 export function useProjectCompositeStates(projects: { id: string }[]): StateMap {
   const [states, setStates] = useState<StateMap>({});
   const prevRef = useRef<StateMap>({});
+  const projectIds = projects.map(p => p.id).join(",");
 
   useEffect(() => {
     const sync = () => {
@@ -91,7 +94,8 @@ export function useProjectCompositeStates(projects: { id: string }[]): StateMap 
     sync();
     listeners.add(sync);
     return () => { listeners.delete(sync); };
-  }, [projects]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectIds]);
 
   return states;
 }

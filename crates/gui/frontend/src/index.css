@@ -1338,6 +1338,9 @@ body.theme-day select.input option {
   color: var(--accent-red);
   animation: status-error 1.5s ease-in-out infinite;
 }
+.project-status-text.active {
+  color: var(--accent-sky);
+}
 .project-status-text.waiting {
   color: var(--accent-sky);
 }

@@ -218,7 +218,7 @@ describe("TerminalPanel", () => {
       expect(invokeMock).toHaveBeenCalledWith("pty_spawn", expect.objectContaining({ sessionId: "t1" }));
     });
 
-    const buttons = Array.from(container.querySelectorAll("button")).filter(b => b.textContent === "+ 新建终端");
+    const buttons = Array.from(container.querySelectorAll("button")).filter(b => b.textContent === "+ 新派生");
     expect(buttons).toHaveLength(2);
     buttons[0].click();
     expect(onAddTerminal).toHaveBeenCalledTimes(1);

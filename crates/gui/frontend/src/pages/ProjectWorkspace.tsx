@@ -39,7 +39,6 @@ const opencodeTerms = useMemo(() => terminals.filter(t => t.isOpencode), [termin
 const [agentStateMap, setAgentStateMap] = useState<Record<string, AgentStateInfo>>({});
 const [pendingGridMode, setPendingGridMode] = useState<GridLayout | null>(null);
 const [dragTabId, setDragTabId] = useState<string | null>(null);
-const opencodeTermIdsRef = useRef<string[]>([]);
 const gridCount = layoutMode ? gridCellCount(layoutMode) : 0;
 
 const handleAddTerminal = useCallback(() => {
@@ -70,6 +69,28 @@ const closeActiveByShortcut = useCallback(() => {
   if (next !== null) maybeRestoreGrid(activeTabId, next);
 }, [removeTabById, activeTabId, maybeRestoreGrid]);
 
+  // Synchronize all active terminals (opencode + raw shells) with composite status
+  const allTermIdsRef = useRef<string[]>([]);
+
+  useEffect(() => {
+    const currentIds = new Set(terminals.map(t => t.id));
+    
+    // Remove terminals that have been closed
+    for (const prevId of allTermIdsRef.current) {
+      if (!currentIds.has(prevId)) {
+        removeShellStatus(project.id, prevId);
+      }
+    }
+    allTermIdsRef.current = Array.from(currentIds);
+
+    // Report active status for raw non-opencode terminals
+    for (const term of terminals) {
+      if (!term.isOpencode) {
+        reportShellStatus(project.id, term.id, 'active');
+      }
+    }
+  }, [terminals, project.id]);
+
   // Poll opencode AI state per terminal
   useEffect(() => {
     if (opencodeTerms.length === 0) return;
@@ -95,15 +116,10 @@ const closeActiveByShortcut = useCallback(() => {
     }
   }, [agentStateMap, project.id]);
 
-  // Keep ref in sync with latest terminal IDs (for unmount cleanup)
-  useEffect(() => {
-    opencodeTermIdsRef.current = opencodeTerms.map(t => t.id);
-  }, [opencodeTerms]);
-
   // Clean up composite statuses on unmount
   useEffect(() => {
     return () => {
-      for (const id of opencodeTermIdsRef.current) {
+      for (const id of allTermIdsRef.current) {
         removeShellStatus(project.id, id);
       }
     };
@@ -205,7 +221,7 @@ const closeActiveByShortcut = useCallback(() => {
             </div>
           ))}
           <div
-            onClick={openSpawnPanel}
+            onClick={handleAddTerminal}
             data-tauri-drag-region
             style={{
               display: 'flex', alignItems: 'center', lineHeight: 1, gap: '6px', padding: '4px 4px',
@@ -305,37 +321,46 @@ const closeActiveByShortcut = useCallback(() => {
 				<h3 style={{ margin: 0, fontSize: '1.0rem', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
 					{t('proj.launcher.title') || 'Quick Spawn'}
               </h3>
-              {data.templates.length === 0 ? (
-                <div style={{ color: 'var(--text-tertiary)', fontSize: '0.85rem', fontStyle: 'italic', padding: '8px 0' }}>
-                  {t('proj.launcher.noTemplates')}
-                </div>
-              ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', width: '100%' }}>
-{data.templates.map((tpl, i) => (
-						<button key={tpl.id} draggable={true}
-							data-tour-target="run-btn"
-							onDragStart={(e) => data.handleDragStart(e, i)}
-							onDragEnter={() => data.handleDragEnter(i)}
-							onDragEnd={data.handleDragEnd}
-							onDragOver={(e) => e.preventDefault()}
-							onClick={() => data.handleRunTemplate(tpl)}
-                      disabled={data.templateLaunching === tpl.id}
-                      className="btn btn-ghost"
-                      style={{
-                        display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 14px',
-                        borderRadius: 'var(--radius-sm, 6px)', border: '1px solid var(--border-subtle, #27272a)',
-                        backgroundColor: 'var(--bg-elevated, rgba(255,255,255,0.04))',
-                        cursor: 'grab', fontSize: '0.85rem', fontWeight: 600, width: '100%',
-                        minWidth: 0, overflow: 'hidden', textAlign: 'left', justifyContent: 'flex-start',
-                        opacity: data.draggedIndex === i ? 0.4 : 1,
-                        transition: 'opacity 0.2s, transform 0.2s, background-color 0.2s',
-                      }}>
-                      {data.templateLaunching === tpl.id ? '⏳' : null}
-                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flexGrow: 1 }}>{tpl.name}</span>
-                    </button>
-                  ))}
-                </div>
-              )}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', width: '100%' }}>
+                <button type="button"
+                  onClick={handleAddTerminal}
+                  className="btn btn-ghost"
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 14px',
+                    borderRadius: 'var(--radius-sm, 6px)', border: '1px dashed var(--border-mid, #3f3f46)',
+                    backgroundColor: 'var(--bg-elevated, rgba(255,255,255,0.04))',
+                    cursor: 'pointer', fontSize: '0.85rem', fontWeight: 600, width: '100%',
+                    minWidth: 0, overflow: 'hidden', textAlign: 'left', justifyContent: 'flex-start',
+                    transition: 'background-color 0.2s, border-color 0.2s',
+                  }}>
+                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flexGrow: 1 }}>
+                    空白终端
+                  </span>
+                </button>
+                {data.templates.map((tpl, i) => (
+                  <button key={tpl.id} draggable={true}
+                    data-tour-target="run-btn"
+                    onDragStart={(e) => data.handleDragStart(e, i)}
+                    onDragEnter={() => data.handleDragEnter(i)}
+                    onDragEnd={data.handleDragEnd}
+                    onDragOver={(e) => e.preventDefault()}
+                    onClick={() => data.handleRunTemplate(tpl)}
+                    disabled={data.templateLaunching === tpl.id}
+                    className="btn btn-ghost"
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 14px',
+                      borderRadius: 'var(--radius-sm, 6px)', border: '1px solid var(--border-subtle, #27272a)',
+                      backgroundColor: 'var(--bg-elevated, rgba(255,255,255,0.04))',
+                      cursor: 'grab', fontSize: '0.85rem', fontWeight: 600, width: '100%',
+                      minWidth: 0, overflow: 'hidden', textAlign: 'left', justifyContent: 'flex-start',
+                      opacity: data.draggedIndex === i ? 0.4 : 1,
+                      transition: 'opacity 0.2s, transform 0.2s, background-color 0.2s',
+                    }}>
+                    {data.templateLaunching === tpl.id ? '⏳' : null}
+                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flexGrow: 1 }}>{tpl.name}</span>
+                  </button>
+                ))}
+              </div>
             </div>
             <div style={{ flex: 4, display: 'flex', flexDirection: 'column', gap: '16px', paddingTop: '2px', overflow: 'hidden' }}>
               <h3 style={{ margin: 0, fontSize: '1.0rem', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
