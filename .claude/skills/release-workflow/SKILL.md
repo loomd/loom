@@ -105,7 +105,9 @@ gh run view <RUN_ID> --log-failed
    const [skillVersion, setSkillVersion] = useState<string>('0.3.5');
    ```
 
-5. **`loom` skill 与 `loom` CLI 的版本自动联动机制说明**：
+5. **`Cargo.lock` 本地 crate 版本同步**：提升根目录 `Cargo.toml` 版本后，`Cargo.lock` 中 `loom-core` / `loom-cli` / `loom-gui` 的 `version` **不会自动更新**，需执行一次 `cargo check --workspace`（或 `cargo build`）刷新 lockfile，并把 `Cargo.lock` 与版本配置一起提交（勿遗漏，否则提交的 lockfile 仍为旧版本）。
+
+6. **`loom` skill 与 `loom` CLI 的版本自动联动机制说明**：
    - **`loom` CLI 版本**直接绑定 workspace 版本（`crates/cli/Cargo.toml` 中定义 `version.workspace = true`），只要更新根目录 `Cargo.toml`，`loom --version` 即可自动同步最新版本。
    - **`loom` skill 后端模版版本**在 `crates/core/src/skills.rs` 中使用 `LOOM_SKILL_VERSION = env!("CARGO_PKG_VERSION")`，在编译阶段自动获取 `Cargo.toml` 的版本，因此生成的 Skill YAML 标头也会自动更新。
    - **前端静态 Fallback 版本**：`AgentManagementPage.tsx` 中的 `skillVersion` 默认初始值须一并更改，避免未完成后端通信前显示旧版本。
