@@ -42,14 +42,14 @@ const [dragTabId, setDragTabId] = useState<string | null>(null);
 const opencodeTermIdsRef = useRef<string[]>([]);
 const gridCount = layoutMode ? gridCellCount(layoutMode) : 0;
 
-const handleAddTerminal = () => {
+const handleAddTerminal = useCallback(() => {
   if (showGrid && layoutMode && terminals.length < gridCount) {
     handleAddRawTerminal(true);
     return;
   }
   if (showGrid && layoutMode) setPendingGridMode(layoutMode);
   handleAddRawTerminal();
-};
+}, [showGrid, layoutMode, gridCount, terminals.length, handleAddRawTerminal, setPendingGridMode]);
 const openSpawnPanel = () => window.dispatchEvent(new CustomEvent("loom-open-spawn"));
 
 const maybeRestoreGrid = useCallback((closedId: string, nextActive: string | null) => {
@@ -128,6 +128,10 @@ const closeActiveByShortcut = useCallback(() => {
 		if (!isVisible) return;
 		const handler = (e: Event) => {
 			const detail = (e as CustomEvent).detail;
+			if (e.type === "loom-new-blank-terminal") {
+				handleAddTerminal();
+				return;
+			}
 			if (detail && typeof detail === 'object' && !Array.isArray(detail) && detail.cmd) {
 				handleAddRawTerminal(false, detail.cmd);
 				return;
@@ -158,12 +162,14 @@ const closeActiveByShortcut = useCallback(() => {
 		window.addEventListener("loom-shortcut", handler);
 		window.addEventListener("loom-run-template", handler);
 		window.addEventListener("loom-open-terminal-cmd", handler);
+		window.addEventListener("loom-new-blank-terminal", handler);
 		return () => {
 			window.removeEventListener("loom-shortcut", handler);
 			window.removeEventListener("loom-run-template", handler);
 			window.removeEventListener("loom-open-terminal-cmd", handler);
+			window.removeEventListener("loom-new-blank-terminal", handler);
 		};
-	}, [tabs, activeTabId, setActiveTabId, setLayoutMode, removeTabById, data, isVisible, showGrid, layoutMode, project.id, closeActiveByShortcut, handleAddRawTerminal]);
+	}, [tabs, activeTabId, setActiveTabId, setLayoutMode, removeTabById, data, isVisible, showGrid, layoutMode, project.id, closeActiveByShortcut, handleAddRawTerminal, handleAddTerminal]);
 
 	return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
@@ -199,7 +205,7 @@ const closeActiveByShortcut = useCallback(() => {
             </div>
           ))}
           <div
-            onClick={handleAddTerminal}
+            onClick={openSpawnPanel}
             data-tauri-drag-region
             style={{
               display: 'flex', alignItems: 'center', lineHeight: 1, gap: '6px', padding: '4px 4px',

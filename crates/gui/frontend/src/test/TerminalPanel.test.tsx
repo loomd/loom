@@ -1,7 +1,7 @@
 import React from "react";
-import { render } from "@testing-library/react";
+import { render, act } from "@testing-library/react";
 import { fireEvent } from "@testing-library/dom";
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach, beforeAll } from "vitest";
 import type { ConsoleTab } from "../hooks/useTabs";
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -55,6 +55,10 @@ vi.mock("../api", () => ({
 }));
 
 const originalRAF = globalThis.requestAnimationFrame;
+beforeAll(async () => {
+  // 预加载 TerminalTab，避免 React.lazy 在测试内异步解析触发 act 警告
+  await import("../components/TerminalTab");
+});
 beforeEach(() => {
   vi.useFakeTimers();
   globalThis.requestAnimationFrame = vi.fn((cb: (t: number) => void) => {
@@ -91,16 +95,21 @@ describe("TerminalPanel", () => {
     const countSpawns = (sessionId: string) =>
       invokeMock.mock.calls.filter(c => c[0] === "pty_spawn" && c[1]?.sessionId === sessionId).length;
 
-    const { rerender } = render(
-      <TerminalPanel terminals={[t1, t2]} activeTabId="t1" layoutMode={null} showGrid={false} isVisible={true} />
-    );
+    let rerender!: ReturnType<typeof render>["rerender"];
+    await act(async () => {
+      ({ rerender } = render(
+        <TerminalPanel terminals={[t1, t2]} activeTabId="t1" layoutMode={null} showGrid={false} isVisible={true} />
+      ));
+    });
     await vi.waitFor(() => {
       expect(countSpawns("t1")).toBe(1);
     });
 
-    rerender(
-      <TerminalPanel terminals={[t1, t2]} activeTabId="t1" layoutMode="1x2" showGrid={true} isVisible={true} />
-    );
+    await act(async () => {
+      rerender(
+        <TerminalPanel terminals={[t1, t2]} activeTabId="t1" layoutMode="1x2" showGrid={true} isVisible={true} />
+      );
+    });
     await vi.waitFor(() => {
       expect(countSpawns("t2")).toBe(1);
     });
@@ -367,7 +376,9 @@ describe("TerminalPanel", () => {
     fireEvent.mouseUp(window);
     expect(grid.getAttribute("style")).toContain("grid-template-columns: 1.4fr 0.6");
 
-    window.dispatchEvent(new CustomEvent("loom-reset-splits", { detail: "2x2" }));
+    act(() => {
+      window.dispatchEvent(new CustomEvent("loom-reset-splits", { detail: "2x2" }));
+    });
     await vi.waitFor(() => {
       expect(grid.getAttribute("style")).toContain("grid-template-columns: 1fr 1fr");
     });
@@ -439,7 +450,9 @@ describe("TerminalPanel", () => {
 
     expect(events.some(e => e.layout === "2x2" && e.dirty)).toBe(true);
 
-    window.dispatchEvent(new CustomEvent("loom-reset-splits", { detail: "2x2" }));
+    act(() => {
+      window.dispatchEvent(new CustomEvent("loom-reset-splits", { detail: "2x2" }));
+    });
     await vi.waitFor(() => {
       expect(events.some(e => e.layout === "2x2" && !e.dirty)).toBe(true);
     });
@@ -513,10 +526,14 @@ describe("TerminalPanel", () => {
 
     expect(events.some(e => e.projectId === "proj-a" && e.layout === "2x2" && e.dirty)).toBe(true);
 
-    window.dispatchEvent(new CustomEvent("loom-reset-splits", { detail: { projectId: "proj-b", layout: "2x2" } }));
+    act(() => {
+      window.dispatchEvent(new CustomEvent("loom-reset-splits", { detail: { projectId: "proj-b", layout: "2x2" } }));
+    });
     expect(grid.getAttribute("style")).toContain("grid-template-columns: 1.4fr 0.6");
 
-    window.dispatchEvent(new CustomEvent("loom-reset-splits", { detail: { projectId: "proj-a", layout: "2x2" } }));
+    act(() => {
+      window.dispatchEvent(new CustomEvent("loom-reset-splits", { detail: { projectId: "proj-a", layout: "2x2" } }));
+    });
     await vi.waitFor(() => {
       expect(grid.getAttribute("style")).toContain("grid-template-columns: 1fr 1fr");
     });

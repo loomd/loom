@@ -63,7 +63,7 @@ pub fn default_theme() -> String {
 }
 
 pub fn default_font_family() -> String {
-    "Plus Jakarta Sans".to_string()
+    "HarmonyOS Sans SC".to_string()
 }
 
 pub fn default_font_size() -> String {

@@ -1,5 +1,5 @@
 import React from "react";
-import { render } from "@testing-library/react";
+import { render, act } from "@testing-library/react";
 import { screen } from "@testing-library/dom";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
@@ -23,6 +23,10 @@ vi.mock("../components/GlobalErrorHandler", () => ({
   default: () => <div data-testid="global-error-handler" />,
 }));
 
+vi.mock("../pages/AgentManagementPage", () => ({
+  AgentManagementPage: () => <div data-testid="agent-management-page" />,
+}));
+
 beforeEach(() => {
   vi.clearAllMocks();
   localStorage.clear();
@@ -39,11 +43,17 @@ describe("App", () => {
       if (cmd === "get_font_size") return Promise.resolve("14px");
       if (cmd === "get_project_column_align") return Promise.resolve("top");
       if (cmd === "get_language") return Promise.resolve("zh");
+      if (cmd === "get_sidebar_width") return Promise.resolve(170);
+      if (cmd === "get_floating_sidebar_enabled") return Promise.resolve(false);
+      if (cmd === "get_floating_sidebar_position") return Promise.resolve("right");
+      if (cmd === "get_bottom_panel_mode") return Promise.resolve("embedded");
       return Promise.resolve(undefined);
     });
 
     const App = (await import("../App")).default;
     const { container } = render(<App />);
+    // 冲刷挂载阶段异步 invoke 引发的状态更新，避免 act 警告
+    await act(async () => {});
 
     expect(container.querySelector(".app-container")).toBeTruthy();
   });
@@ -58,11 +68,16 @@ describe("App", () => {
       if (cmd === "get_font_size") return Promise.resolve("14px");
       if (cmd === "get_project_column_align") return Promise.resolve("top");
       if (cmd === "get_language") return Promise.resolve("zh");
+      if (cmd === "get_sidebar_width") return Promise.resolve(170);
+      if (cmd === "get_floating_sidebar_enabled") return Promise.resolve(false);
+      if (cmd === "get_floating_sidebar_position") return Promise.resolve("right");
+      if (cmd === "get_bottom_panel_mode") return Promise.resolve("embedded");
       return Promise.resolve(undefined);
     });
 
     const App = (await import("../App")).default;
     render(<App />);
+    await act(async () => {});
 
     await vi.waitFor(() => {
       expect(screen.getByText("暂无项目")).toBeInTheDocument();
@@ -79,11 +94,16 @@ describe("App", () => {
       if (cmd === "get_font_size") return Promise.resolve("14px");
       if (cmd === "get_project_column_align") return Promise.resolve("top");
       if (cmd === "get_language") return Promise.resolve("zh");
+      if (cmd === "get_sidebar_width") return Promise.resolve(170);
+      if (cmd === "get_floating_sidebar_enabled") return Promise.resolve(false);
+      if (cmd === "get_floating_sidebar_position") return Promise.resolve("right");
+      if (cmd === "get_bottom_panel_mode") return Promise.resolve("embedded");
       return Promise.resolve(undefined);
     });
 
     const App = (await import("../App")).default;
     render(<App />);
+    await act(async () => {});
 
     await vi.waitFor(() => {
       expect(document.body.className).toContain("theme-dark");

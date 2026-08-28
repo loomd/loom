@@ -237,14 +237,33 @@ function App() {
 		window.dispatchEvent(new CustomEvent("loom-run-template", { detail: tpl }));
 	}, []);
 
+	const handleSpawnBlankTerminal = useCallback(() => {
+		setShowSpawnPanel(false);
+		window.dispatchEvent(new CustomEvent("loom-new-blank-terminal"));
+	}, []);
+
 	useEffect(() => {
 		const openSpawn = () => setShowSpawnPanel(true);
 		window.addEventListener("loom-open-spawn", openSpawn);
 		return () => window.removeEventListener("loom-open-spawn", openSpawn);
 	}, []);
 
+	// 禁止 WebView2/Chromium 的原生右键菜单（各组件自定义右键菜单不受影响）
+	useEffect(() => {
+		const handler = (e: Event) => e.preventDefault();
+		window.addEventListener("contextmenu", handler);
+		return () => window.removeEventListener("contextmenu", handler);
+	}, []);
+
 	useEffect(() => {
 		const handleGlobalKeyDown = (e: KeyboardEvent) => {
+			// 禁止浏览器刷新快捷键（F5 / Ctrl+R），即使焦点在终端输入区也不触发页面刷新
+			if (e.key === "F5" || ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "r")) {
+				e.preventDefault();
+				e.stopPropagation();
+				return;
+			}
+
 			if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "a") {
 				const active = document.activeElement;
 				if (active && (active.tagName === "INPUT" || active.tagName === "TEXTAREA") && !active.classList.contains("xterm-helper-textarea")) {
@@ -361,6 +380,7 @@ function App() {
 			{showSpawnPanel && (
 				<SpawnAgentPanel
 					onSpawn={handleSpawnAgent}
+					onSpawnBlank={handleSpawnBlankTerminal}
 					onClose={() => setShowSpawnPanel(false)}
 				/>
 			)}
