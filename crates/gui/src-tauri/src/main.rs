@@ -524,10 +524,35 @@ fn bring_agent_to_foreground(instance_id: String) -> Result<bool, String> {
 
 #[tauri::command]
 fn select_directory() -> Result<Option<String>, String> {
-    let result = rfd::FileDialog::new()
-        .pick_folder()
-        .map(|path| path.to_string_lossy().to_string());
-    Ok(result)
+    #[cfg(target_os = "windows")]
+    {
+        std::thread::spawn(|| {
+            unsafe {
+                winapi::um::combaseapi::CoInitializeEx(
+                    std::ptr::null_mut(),
+                    winapi::um::objbase::COINIT_APARTMENTTHREADED
+                        | winapi::um::objbase::COINIT_DISABLE_OLE1DDE,
+                );
+            }
+            let result = rfd::FileDialog::new()
+                .pick_folder()
+                .map(|path| path.to_string_lossy().to_string());
+            unsafe {
+                winapi::um::combaseapi::CoUninitialize();
+            }
+            result
+        })
+        .join()
+        .map_err(|e| format!("Dialog thread panicked: {:?}", e))
+        .map(Ok)?
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let result = rfd::FileDialog::new()
+            .pick_folder()
+            .map(|path| path.to_string_lossy().to_string());
+        Ok(result)
+    }
 }
 
 #[derive(serde::Serialize)]

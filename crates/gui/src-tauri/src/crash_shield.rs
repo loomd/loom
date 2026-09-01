@@ -1,14 +1,18 @@
 use std::io::Write;
 use std::sync::OnceLock;
+use std::time::Instant;
 
 static CRASH_HANDLER: OnceLock<crash_handler::CrashHandler> = OnceLock::new();
 static RESTART_CMDLINE: OnceLock<Vec<u16>> = OnceLock::new();
 static LOG_PATH: OnceLock<String> = OnceLock::new();
 static RESTART_COUNT: OnceLock<u32> = OnceLock::new();
+static START_TIME: OnceLock<Instant> = OnceLock::new();
 
 const MAX_RESTARTS: u32 = 2;
 
 pub fn install() {
+    let _ = START_TIME.set(Instant::now());
+
     let exe = std::env::current_exe()
         .map(|p| p.to_string_lossy().to_string())
         .unwrap_or_default();
@@ -24,6 +28,13 @@ pub fn install() {
 
     let _ = RESTART_COUNT.set(count);
     let _ = LOG_PATH.set(log_path);
+
+    // Register Rust panic hook to record panics without verbose backtrace
+    let default_panic_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |panic_info| {
+        log_panic(panic_info);
+        default_panic_hook(panic_info);
+    }));
 
     // Pre-build the restart command line while the heap is healthy. In the
     // crash callback we must avoid allocations (the crash is likely heap
@@ -59,22 +70,121 @@ pub fn install() {
     }
 }
 
+/// Returns a human-readable local timestamp: `YYYY-MM-DD HH:MM:SS`
+fn get_current_time_str() -> String {
+    #[cfg(target_os = "windows")]
+    {
+        use winapi::um::minwinbase::SYSTEMTIME;
+        use winapi::um::sysinfoapi::GetLocalTime;
+
+        let mut st: SYSTEMTIME = unsafe { std::mem::zeroed() };
+        unsafe { GetLocalTime(&mut st) };
+        format!(
+            "{:04}-{:02}-{:02} {:02}:{:02}:{:02}",
+            st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond
+        )
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        let secs = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        let s = secs % 60;
+        let m = (secs / 60) % 60;
+        let h = (secs / 3600) % 24;
+        format!("UTC {:02}:{:02}:{:02}", h, m, s)
+    }
+}
+
+/// Returns formatted uptime string: e.g. "1h 23m 45s"
+fn get_uptime_str() -> String {
+    let secs = START_TIME
+        .get()
+        .map(|t| t.elapsed().as_secs())
+        .unwrap_or(0);
+    let h = secs / 3600;
+    let m = (secs % 3600) / 60;
+    let s = secs % 60;
+    if h > 0 {
+        format!("{}h {:02}m {:02}s", h, m, s)
+    } else if m > 0 {
+        format!("{}m {:02}s", m, s)
+    } else {
+        format!("{}s", s)
+    }
+}
+
+fn exception_name(code: u32) -> &'static str {
+    match code {
+        0xC0000005 => "STATUS_ACCESS_VIOLATION",
+        0xC00000FD => "STATUS_STACK_OVERFLOW",
+        0xC000001D => "STATUS_ILLEGAL_INSTRUCTION",
+        0xC000008C => "STATUS_ARRAY_BOUNDS_EXCEEDED",
+        0xC000008E => "STATUS_FLOAT_DIVIDE_BY_ZERO",
+        0xC0000094 => "STATUS_INTEGER_DIVIDE_BY_ZERO",
+        0xC0000025 => "STATUS_NONCONTINUABLE_EXCEPTION",
+        0x80000003 => "STATUS_BREAKPOINT",
+        0xE06D7363 => "STATUS_CPP_EXCEPTION",
+        _ => "UNKNOWN_EXCEPTION",
+    }
+}
+
 fn log_crash(exception_code: i32) {
     let Some(path) = LOG_PATH.get() else { return };
-    let ts = std::time::SystemTime::now()
+    let unix_ts = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs())
         .unwrap_or(0);
+    let time_str = get_current_time_str();
+    let uptime = get_uptime_str();
     let count = RESTART_COUNT.get().copied().unwrap_or(0);
-    let line = format!(
-        "[{}] crash code=0x{:08X} restart_count={} pid={}\n",
-        ts,
-        exception_code as u32,
-        count,
-        std::process::id()
+    let code_u32 = exception_code as u32;
+    let name = exception_name(code_u32);
+    let version = env!("CARGO_PKG_VERSION");
+
+    let entry = format!(
+        "[{time_str}] [CRASH] ts={unix_ts} uptime={uptime} version={version} code=0x{code_u32:08X} ({name}) restart_count={count} pid={pid}\n",
+        pid = std::process::id()
     );
+
     if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(path) {
-        let _ = f.write_all(line.as_bytes());
+        let _ = f.write_all(entry.as_bytes());
+    }
+}
+
+fn log_panic(info: &std::panic::PanicHookInfo<'_>) {
+    let Some(path) = LOG_PATH.get() else { return };
+    let unix_ts = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let time_str = get_current_time_str();
+    let uptime = get_uptime_str();
+    let count = RESTART_COUNT.get().copied().unwrap_or(0);
+    let version = env!("CARGO_PKG_VERSION");
+
+    let location = info
+        .location()
+        .map(|l| format!("{}:{}:{}", l.file(), l.line(), l.column()))
+        .unwrap_or_else(|| "unknown".to_string());
+
+    let payload_msg = if let Some(s) = info.payload().downcast_ref::<&str>() {
+        *s
+    } else if let Some(s) = info.payload().downcast_ref::<String>() {
+        s.as_str()
+    } else {
+        "unknown panic payload"
+    };
+
+    let entry = format!(
+        "[{time_str}] [PANIC] ts={unix_ts} uptime={uptime} version={version} location={location} msg=\"{payload_msg}\" restart_count={count} pid={pid}\n",
+        pid = std::process::id()
+    );
+
+    if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(path) {
+        let _ = f.write_all(entry.as_bytes());
     }
 }
 
@@ -156,6 +266,9 @@ mod tests {
 
         let log = fs::read_to_string(dir.join("crash.log")).unwrap();
         assert!(log.contains("0xC0000005"), "crash.log missing entry: {log}");
+        assert!(log.contains("STATUS_ACCESS_VIOLATION"), "crash.log missing name: {log}");
+        assert!(log.contains("uptime="), "crash.log missing uptime: {log}");
+        assert!(log.contains("[CRASH]"), "crash.log missing tag: {log}");
 
         fs::remove_dir_all(&dir).ok();
     }
