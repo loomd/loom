@@ -23,24 +23,30 @@ Before doing anything else, confirm the `loom` CLI is installed and callable:
 ## Capabilities & Commands
 
 ### 1. View & Manage Projects
-- List all projects: `loom project list`
+- List all projects: `loom project list [--json]`
 - Add project: `loom project add <name> <root_path>`
+- Delete project: `loom project delete <id-or-name>`
+- Reorder projects: `loom project reorder <id1> <id2>...`
 
 ### 2. Manage Run Templates (agents)
 Templates define how to launch an agent/tool in the Loom workspace (parameters, env vars, working dir).
 - List all templates: `loom template list [--json]`
 - List templates for a specific agent: `loom template list --agent <agent-name> [--json]`
 - Add a template: `loom template add --agent <agent-name> --name <template-name> [--arg <arg>]... [--env KEY=VALUE]... [--pwd <dir>] [--env-mode <inherit|isolated>]`
+- Edit a template: `loom template edit --id <id> [--name <template-name>] [--arg <arg>]... [--env KEY=VALUE]... [--pwd <dir>] [--env-mode <inherit|isolated>]`
 - Delete a template: `loom template delete --agent <agent-name> --name <template-name>`
+- Reorder templates: `loom template reorder <id1> <id2>...`
 
 `--agent` accepts a registered tool name, alias or id. Newly added templates make a derivable agent appear in the Loom overview (derive) panel in real time.
 
 ### 3. Environment Variables
-- List global env vars: `loom env list`
+- List global env vars: `loom env list [--json]`
 - Set global env var: `loom env set <key> <value> [description]`
+- Delete global env var: `loom env delete <id-or-key>`
 
 ### 4. System Status & Tools
-- List registered CLI tools: `loom tool list`
+- List registered CLI tools: `loom tool list [--json]` (or `loom list [--json]`)
+- Search registered CLI tools: `loom tool search <query> [--json]` (or `loom search <query> [--json]`)
 "#,
         LOOM_SKILL_VERSION
     )

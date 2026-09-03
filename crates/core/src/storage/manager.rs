@@ -656,9 +656,11 @@ impl StorageManager {
             return Ok(default_storage);
         }
 
-        let file = std::fs::File::open(&self.config_path)?;
-        let reader = std::io::BufReader::new(file);
-        let storage = serde_json::from_reader(reader)?;
+        let mut bytes = std::fs::read(&self.config_path)?;
+        if bytes.starts_with(&[0xEF, 0xBB, 0xBF]) {
+            bytes.drain(0..3);
+        }
+        let storage = serde_json::from_slice(&bytes)?;
         Ok(storage)
     }
 
