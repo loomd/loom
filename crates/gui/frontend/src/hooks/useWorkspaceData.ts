@@ -385,14 +385,14 @@ export function useWorkspaceData(
 
   useEffect(() => {
     if (!templateContextMenu) return;
-    const handleGlobalPointerDown = () => {
+    const handleGlobalPointerDown = (e: PointerEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (target?.closest('[data-template-context-menu]')) return;
       setTemplateContextMenu(null);
     };
-    window.addEventListener('pointerdown', handleGlobalPointerDown, true);
-    window.addEventListener('contextmenu', handleGlobalPointerDown, true);
+    window.addEventListener('pointerdown', handleGlobalPointerDown);
     return () => {
-      window.removeEventListener('pointerdown', handleGlobalPointerDown, true);
-      window.removeEventListener('contextmenu', handleGlobalPointerDown, true);
+      window.removeEventListener('pointerdown', handleGlobalPointerDown);
     };
   }, [templateContextMenu]);
 

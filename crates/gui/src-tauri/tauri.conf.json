@@ -1,6 +1,6 @@
 {
   "productName": "Loom",
-  "version": "0.6.11",
+  "version": "0.6.12",
   "identifier": "com.loom.app",
   "build": {
     "beforeDevCommand": "npm --prefix ../crates/gui/frontend run dev",

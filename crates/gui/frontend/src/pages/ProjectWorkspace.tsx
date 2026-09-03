@@ -627,6 +627,7 @@ const closeActiveByShortcut = useCallback(() => {
           style={{ position: 'fixed', inset: 0, zIndex: 9998 }}
         >
           <div
+            data-template-context-menu
             tabIndex={-1}
             style={{
               position: 'fixed',
