@@ -15,16 +15,15 @@ export default function SpawnAgentPanel({ onSpawn, onSpawnBlank, onClose }: Prop
   const [search, setSearch] = useState("");
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [loading, setLoading] = useState(true);
+
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     getTemplates()
-      .then((data) => {
-        setTemplates(data);
-        setLoading(false);
-      })
-      .catch(() => setLoading(false));
+      .then((data) => setTemplates(data))
+      .catch(() => {})
+      .finally(() => setLoading(false));
   }, []);
 
   useEffect(() => {
@@ -43,7 +42,7 @@ export default function SpawnAgentPanel({ onSpawn, onSpawnBlank, onClose }: Prop
     () => [{ kind: "blank" }, ...filtered.map((tpl) => ({ kind: "template" as const, tpl }))],
     [filtered],
   );
-  const selectedClamped = Math.min(selectedIndex, items.length - 1);
+  const selectedClamped = Math.min(selectedIndex, Math.max(0, items.length - 1));
 
   const handleSelect = useCallback(
     (item: Item) => {

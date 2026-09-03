@@ -7,6 +7,7 @@ import { LayoutSelector } from '../components/LayoutSelector';
 import { FileExplorerPanel } from '../components/FileExplorerPanel';
 import { useToast } from '../ToastContext';
 import { useI18n } from '../I18nContext';
+import { TemplateModal } from './TemplatesPage';
 import { EditorPlaceholder } from '../components/EditorPlaceholder';
 import { pollAgentState } from '../api';
 import { reportShellStatus, removeShellStatus } from '../hooks/useProjectCompositeStates';
@@ -337,29 +338,54 @@ const closeActiveByShortcut = useCallback(() => {
                     空白终端
                   </span>
                 </button>
-                {data.templates.map((tpl, i) => (
-                  <button key={tpl.id} draggable={true}
-                    data-tour-target="run-btn"
-                    onDragStart={(e) => data.handleDragStart(e, i)}
-                    onDragEnter={() => data.handleDragEnter(i)}
-                    onDragEnd={data.handleDragEnd}
-                    onDragOver={(e) => e.preventDefault()}
-                    onClick={() => data.handleRunTemplate(tpl)}
-                    disabled={data.templateLaunching === tpl.id}
-                    className="btn btn-ghost"
-                    style={{
-                      display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 14px',
-                      borderRadius: 'var(--radius-sm, 6px)', border: '1px solid var(--border-subtle, #27272a)',
-                      backgroundColor: 'var(--bg-elevated, rgba(255,255,255,0.04))',
-                      cursor: 'grab', fontSize: '0.85rem', fontWeight: 600, width: '100%',
-                      minWidth: 0, overflow: 'hidden', textAlign: 'left', justifyContent: 'flex-start',
-                      opacity: data.draggedIndex === i ? 0.4 : 1,
-                      transition: 'opacity 0.2s, transform 0.2s, background-color 0.2s',
-                    }}>
-                    {data.templateLaunching === tpl.id ? '⏳' : null}
-                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flexGrow: 1 }}>{tpl.name}</span>
-                  </button>
-                ))}
+                {data.templates.map((tpl, i) => {
+                  const isDragging = data.draggedIndex === i;
+                  const isDragOver = data.dragOverIndex === i;
+                  const showTopLine = isDragOver && data.draggedIndex !== null && data.draggedIndex > i;
+                  const showBottomLine = isDragOver && data.draggedIndex !== null && data.draggedIndex < i;
+                  return (
+                    <button key={tpl.id} draggable={true}
+                      data-tour-target="run-btn"
+                      onDragStart={(e) => data.handleDragStart(e, i)}
+                      onDragOver={(e) => data.handleDragOver(e, i)}
+                      onDragLeave={data.handleDragLeave}
+                      onDrop={(e) => data.handleDrop(e, i)}
+                      onDragEnd={data.handleDragEnd}
+                      onClick={() => data.handleRunTemplate(tpl)}
+                      onContextMenu={(e) => data.handleTemplateContextMenu(e, tpl)}
+                      disabled={data.templateLaunching === tpl.id}
+                      className="btn btn-ghost"
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 14px',
+                        borderRadius: 'var(--radius-sm, 6px)',
+                        border: isDragging
+                          ? '1px dashed var(--accent-purple, #6366f1)'
+                          : '1px solid var(--border-subtle, #27272a)',
+                        backgroundColor: 'var(--bg-elevated, rgba(255,255,255,0.04))',
+                        boxShadow: showTopLine
+                          ? '0 -2px 0 0 var(--accent-purple, #6366f1)'
+                          : showBottomLine
+                            ? '0 2px 0 0 var(--accent-purple, #6366f1)'
+                            : 'none',
+                        cursor: 'grab', fontSize: '0.85rem', fontWeight: 600, width: '100%',
+                        minWidth: 0, overflow: 'hidden', textAlign: 'left', justifyContent: 'flex-start',
+                        opacity: isDragging ? 0.4 : 1,
+                        transform: isDragging ? 'scale(0.96)' : 'none',
+                        transition: 'opacity 0.2s ease, transform 0.2s ease, border-color 0.2s ease, background-color 0.2s ease, box-shadow 0.1s ease',
+                      }}>
+                      {data.templateLaunching === tpl.id ? '⏳' : null}
+                      <span style={{
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                        flexGrow: 1,
+                        pointerEvents: data.draggedIndex !== null ? 'none' : 'auto',
+                      }}>
+                        {tpl.name}
+                      </span>
+                    </button>
+                  );
+                })}
               </div>
             </div>
             <div style={{ flex: 4, display: 'flex', flexDirection: 'column', gap: '16px', paddingTop: '2px', overflow: 'hidden' }}>
@@ -588,6 +614,108 @@ const closeActiveByShortcut = useCallback(() => {
             </div>
           </div>
         </div>
+      )}
+
+      {/* 模板右键上下文菜单 */}
+      {data.templateContextMenu && (
+        <div
+          onClick={data.handleCloseTemplateContextMenu}
+          onContextMenu={(e) => {
+            e.preventDefault();
+            data.handleCloseTemplateContextMenu();
+          }}
+          style={{ position: 'fixed', inset: 0, zIndex: 9998 }}
+        >
+          <div
+            tabIndex={-1}
+            style={{
+              position: 'fixed',
+              top: data.templateContextMenu.y,
+              left: data.templateContextMenu.x,
+              backgroundColor: 'var(--bg-card, #18181b)',
+              border: '1px solid var(--border-mid, #3f3f46)',
+              borderRadius: 'var(--radius-sm, 6px)',
+              boxShadow: '0 8px 24px rgba(0,0,0,0.5)',
+              zIndex: 9999,
+              minWidth: '130px',
+              padding: '4px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '2px',
+            }}
+            onClick={(e) => e.stopPropagation()}
+            onContextMenu={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+            }}
+          >
+            <button
+              onClick={() => data.handleOpenEditTemplate(data.templateContextMenu!.tpl)}
+              className="btn btn-ghost"
+              style={{
+                padding: '6px 10px',
+                fontSize: '0.85rem',
+                textAlign: 'left',
+                display: 'flex',
+                alignItems: 'center',
+                width: '100%',
+                borderRadius: '4px',
+                border: 'none',
+                cursor: 'pointer',
+              }}
+            >
+              <span>编辑模板</span>
+            </button>
+            <button
+              onClick={() => data.handleDuplicateTemplate(data.templateContextMenu!.tpl)}
+              className="btn btn-ghost"
+              style={{
+                padding: '6px 10px',
+                fontSize: '0.85rem',
+                textAlign: 'left',
+                display: 'flex',
+                alignItems: 'center',
+                width: '100%',
+                borderRadius: '4px',
+                border: 'none',
+                cursor: 'pointer',
+              }}
+            >
+              <span>复制模板</span>
+            </button>
+            <button
+              onClick={() => data.handleDeleteTemplate(data.templateContextMenu!.tpl)}
+              className="btn btn-ghost"
+              style={{
+                padding: '6px 10px',
+                fontSize: '0.85rem',
+                textAlign: 'left',
+                display: 'flex',
+                alignItems: 'center',
+                width: '100%',
+                borderRadius: '4px',
+                border: 'none',
+                cursor: 'pointer',
+                color: 'var(--color-danger, #ef4444)',
+              }}
+            >
+              <span>删除模板</span>
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* 模板编辑弹窗 */}
+      {data.showEditTemplateModal && data.editingTemplate && (
+        <TemplateModal
+          template={data.editingTemplate}
+          tools={data.cliTools}
+          onSave={data.handleSaveTemplate}
+          onClose={() => {
+            data.setShowEditTemplateModal(false);
+            data.setEditingTemplate(null);
+          }}
+        />
       )}
     </div>
   );

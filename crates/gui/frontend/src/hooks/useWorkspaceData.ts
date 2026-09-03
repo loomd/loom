@@ -2,8 +2,10 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   getCliTools,
   getTemplates,
-  getGlobalEnvVars,
+  createTemplate,
+  deleteTemplate,
   reorderTemplates,
+  getGlobalEnvVars,
   listProjectFiles,
   openFileWithSystem,
   openInManager,
@@ -67,8 +69,12 @@ export function useWorkspaceData(
   const [fileFilter, setFileFilter] = useState<string>('');
 
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; file: FileEntry } | null>(null);
+  const [templateContextMenu, setTemplateContextMenu] = useState<{ x: number; y: number; tpl: Template } | null>(null);
+  const [editingTemplate, setEditingTemplate] = useState<Template | null>(null);
+  const [showEditTemplateModal, setShowEditTemplateModal] = useState<boolean>(false);
 
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
+  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
 
   // Pre-cache global env vars so handleRunTemplate can add tabs synchronously
   // (avoiding the async race where tab array order differs from click order).
@@ -292,33 +298,50 @@ export function useWorkspaceData(
   const handleDragStart = (e: React.DragEvent, index: number) => {
     setDraggedIndex(index);
     e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', index.toString());
   };
 
-  const handleDragEnter = (targetIndex: number) => {
-    if (draggedIndex === null || draggedIndex === targetIndex) return;
-    const reorderArray = (list: Template[], fromIndex: number, toIndex: number): Template[] => {
-      const result = Array.from(list);
-      const [removed] = result.splice(fromIndex, 1);
-      result.splice(toIndex, 0, removed);
-      return result;
-    };
-    setTemplates(prev => {
-      const newTemplates = reorderArray(prev, draggedIndex, targetIndex);
-      return newTemplates;
-    });
-    setDraggedIndex(targetIndex);
-  };
-
-  const handleDragEnd = async () => {
-    if (draggedIndex === null) return;
-    setDraggedIndex(null);
-    try {
-      const ids = templates.map(t => t.id);
-      await reorderTemplates(ids);
-    } catch (e) {
-      console.error('Failed to save template order', e);
-      toast.error('Failed to save template order');
+  const handleDragOver = (e: React.DragEvent, index: number) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    if (draggedIndex === index) return;
+    if (dragOverIndex !== index) {
+      setDragOverIndex(index);
     }
+  };
+
+  const handleDragLeave = () => {
+    setDragOverIndex(null);
+  };
+
+  const handleDrop = async (e: React.DragEvent, targetIndex: number) => {
+    e.preventDefault();
+    setDragOverIndex(null);
+    if (draggedIndex === null || draggedIndex === targetIndex) {
+      setDraggedIndex(null);
+      return;
+    }
+
+    const updated = Array.from(templates);
+    const [item] = updated.splice(draggedIndex, 1);
+    updated.splice(targetIndex, 0, item);
+
+    setTemplates(updated);
+    setDraggedIndex(null);
+
+    try {
+      const ids = updated.map(t => t.id);
+      await reorderTemplates(ids);
+    } catch (err) {
+      console.error('Failed to save template order', err);
+      toast.error('Failed to save template order');
+      loadToolsAndTemplates();
+    }
+  };
+
+  const handleDragEnd = () => {
+    setDraggedIndex(null);
+    setDragOverIndex(null);
   };
 
   const handleFileDoubleClick = async (file: FileEntry) => {
@@ -345,10 +368,97 @@ export function useWorkspaceData(
   const handleContextMenu = (e: React.MouseEvent, file: FileEntry) => {
     e.preventDefault();
     e.stopPropagation();
+    setTemplateContextMenu(null);
     setContextMenu({ x: e.clientX, y: e.clientY, file });
   };
 
   const handleCloseContextMenu = () => setContextMenu(null);
+
+  const handleTemplateContextMenu = (e: React.MouseEvent, tpl: Template) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setContextMenu(null);
+    setTemplateContextMenu({ x: e.clientX, y: e.clientY, tpl });
+  };
+
+  const handleCloseTemplateContextMenu = useCallback(() => setTemplateContextMenu(null), []);
+
+  useEffect(() => {
+    if (!templateContextMenu) return;
+    const handleGlobalPointerDown = () => {
+      setTemplateContextMenu(null);
+    };
+    window.addEventListener('pointerdown', handleGlobalPointerDown, true);
+    window.addEventListener('contextmenu', handleGlobalPointerDown, true);
+    return () => {
+      window.removeEventListener('pointerdown', handleGlobalPointerDown, true);
+      window.removeEventListener('contextmenu', handleGlobalPointerDown, true);
+    };
+  }, [templateContextMenu]);
+
+  const handleOpenEditTemplate = (tpl: Template) => {
+    setTemplateContextMenu(null);
+    setEditingTemplate(tpl);
+    setShowEditTemplateModal(true);
+  };
+
+  const handleDuplicateTemplate = async (tpl: Template) => {
+    setTemplateContextMenu(null);
+    try {
+      const copyName = `复制-${tpl.name}`;
+      const newTpl = await createTemplate(
+        tpl.cli_id,
+        copyName,
+        tpl.args || [],
+        tpl.env || {},
+        tpl.env_var_ids || [],
+        tpl.pwd,
+        tpl.env_mode || 'inherit'
+      );
+
+      // 获取当前所有模板并将新建的模板移到被复制模板正下方
+      const allTpls = await getTemplates();
+      const originIndex = allTpls.findIndex((t) => t.id === tpl.id);
+      const otherTpls = allTpls.filter((t) => t.id !== newTpl.id);
+      
+      if (originIndex !== -1) {
+        // 插入在被复制模板之后
+        otherTpls.splice(originIndex + 1, 0, newTpl);
+      } else {
+        otherTpls.push(newTpl);
+      }
+
+      await reorderTemplates(otherTpls.map((t) => t.id));
+      await loadToolsAndTemplates();
+      toast.success(`已复制模板 "${copyName}"`);
+    } catch (e) {
+      toast.error(`复制模板失败: ${String(e)}`);
+    }
+  };
+
+  const handleDeleteTemplate = async (tpl: Template) => {
+    setTemplateContextMenu(null);
+    const ok = await dialog.confirm({
+      message: `确定要删除模板 "${tpl.name}" 吗？此操作不可撤销。`,
+      danger: true,
+      confirmText: "删除",
+    });
+    if (!ok) return;
+
+    try {
+      await deleteTemplate(tpl.id);
+      await loadToolsAndTemplates();
+      toast.success(`已删除模板 "${tpl.name}"`);
+    } catch (e) {
+      toast.error(`删除模板失败: ${String(e)}`);
+    }
+  };
+
+  const handleSaveTemplate = async () => {
+    setShowEditTemplateModal(false);
+    setEditingTemplate(null);
+    await loadToolsAndTemplates();
+  };
 
   const handleOpenInManager = async () => {
     if (!contextMenu) return;
@@ -439,7 +549,13 @@ export function useWorkspaceData(
     fileFilter,
     setFileFilter,
     contextMenu,
+    templateContextMenu,
+    editingTemplate,
+    showEditTemplateModal,
+    setShowEditTemplateModal,
+    setEditingTemplate,
     draggedIndex,
+    dragOverIndex,
     loadFiles,
     handleRunTemplate,
     handleToggleSkill,
@@ -450,11 +566,19 @@ export function useWorkspaceData(
     handleImportDoc,
     handleOpenImportDocModal,
     handleDragStart,
-    handleDragEnter,
+    handleDragOver,
+    handleDragLeave,
+    handleDrop,
     handleDragEnd,
     handleFileDoubleClick,
     handleContextMenu,
     handleCloseContextMenu,
+    handleTemplateContextMenu,
+    handleCloseTemplateContextMenu,
+    handleOpenEditTemplate,
+    handleDuplicateTemplate,
+    handleDeleteTemplate,
+    handleSaveTemplate,
     handleOpenInManager,
     handleDeleteFile,
     handleGoUp,

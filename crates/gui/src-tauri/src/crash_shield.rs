@@ -119,6 +119,7 @@ fn get_uptime_str() -> String {
 fn exception_name(code: u32) -> &'static str {
     match code {
         0xC0000005 => "STATUS_ACCESS_VIOLATION",
+        0xC0000374 => "STATUS_HEAP_CORRUPTION",
         0xC00000FD => "STATUS_STACK_OVERFLOW",
         0xC000001D => "STATUS_ILLEGAL_INSTRUCTION",
         0xC000008C => "STATUS_ARRAY_BOUNDS_EXCEEDED",
@@ -263,10 +264,13 @@ mod tests {
         assert!(RESTART_CMDLINE.get().is_none());
 
         log_crash(0xc0000005u32 as i32);
+        log_crash(0xc0000374u32 as i32);
 
         let log = fs::read_to_string(dir.join("crash.log")).unwrap();
         assert!(log.contains("0xC0000005"), "crash.log missing entry: {log}");
         assert!(log.contains("STATUS_ACCESS_VIOLATION"), "crash.log missing name: {log}");
+        assert!(log.contains("0xC0000374"), "crash.log missing heap corruption: {log}");
+        assert!(log.contains("STATUS_HEAP_CORRUPTION"), "crash.log missing heap corruption name: {log}");
         assert!(log.contains("uptime="), "crash.log missing uptime: {log}");
         assert!(log.contains("[CRASH]"), "crash.log missing tag: {log}");
 

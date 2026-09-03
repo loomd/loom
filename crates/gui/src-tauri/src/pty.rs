@@ -245,13 +245,28 @@ struct ConPty {
 unsafe impl Send for ConPty {}
 unsafe impl Sync for ConPty {}
 
+impl ConPty {
+    fn close(&mut self) {
+        unsafe {
+            if !self.hpc.is_null() {
+                ClosePseudoConsole(self.hpc);
+                self.hpc = ptr::null_mut();
+            }
+            if self.stdin_write.0 != INVALID_HANDLE_VALUE && !self.stdin_write.0.is_null() {
+                CloseHandle(self.stdin_write.0);
+                self.stdin_write.0 = INVALID_HANDLE_VALUE;
+            }
+            if self.stdout_read.0 != INVALID_HANDLE_VALUE && !self.stdout_read.0.is_null() {
+                CloseHandle(self.stdout_read.0);
+                self.stdout_read.0 = INVALID_HANDLE_VALUE;
+            }
+        }
+    }
+}
+
 impl Drop for ConPty {
     fn drop(&mut self) {
-        unsafe {
-            ClosePseudoConsole(self.hpc);
-            CloseHandle(self.stdin_write.0);
-            CloseHandle(self.stdout_read.0);
-        }
+        self.close();
     }
 }
 
@@ -587,6 +602,7 @@ fn create_process_with_pty(
         }
 
         CloseHandle(pi.hThread);
+        CloseHandle(pi.hProcess);
         Ok(pi.dwProcessId)
     }
 }
@@ -692,6 +708,10 @@ pub fn pty_close(state: tauri::State<'_, PtyState>, session_id: String) -> Resul
     let session = state.sessions.lock().unwrap().remove(&session_id);
     if let Some(s) = session {
         *s.is_running.lock().unwrap() = false;
+        // 先显式关闭 ConPTY 管道与伪终端句柄，促使阻塞在 ReadFile 的读线程立即收到 EOF 退出，杜绝 UAF 悬垂句柄
+        if let Ok(mut conpty) = s.conpty.lock() {
+            conpty.close();
+        }
         let pid = s.child_pid;
         unsafe {
             let handle = OpenProcess(PROCESS_TERMINATE, 0, pid);

@@ -899,7 +899,7 @@ body.theme-day select.input option {
   position: fixed; inset: 0;
   background: rgba(0,0,0,0.7);
   backdrop-filter: blur(8px);
-  z-index: 100;
+  z-index: 1000;
   display: flex;
   align-items: center;
   justify-content: center;
