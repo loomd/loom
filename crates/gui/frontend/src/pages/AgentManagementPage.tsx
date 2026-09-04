@@ -10,6 +10,11 @@ interface AgentManagementPageProps {
   active?: boolean;
 }
 
+const STORAGE_KEY_PROVIDER_ID = 'loom_opencode_provider_id';
+const STORAGE_KEY_PROTOCOL = 'loom_opencode_protocol';
+const STORAGE_KEY_BASE_URL = 'loom_opencode_base_url';
+const STORAGE_KEY_API_KEY = 'loom_opencode_api_key';
+
 export const AgentManagementPage: React.FC<AgentManagementPageProps> = ({ onOpenTerminal, active }) => {
   const toast = useToast();
 
@@ -17,18 +22,67 @@ export const AgentManagementPage: React.FC<AgentManagementPageProps> = ({ onOpen
   const [refreshing, setRefreshing] = useState<boolean>(false);
   const [injectingSkill, setInjectingSkill] = useState<boolean>(false);
   const [injectedPaths, setInjectedPaths] = useState<string[]>([]);
-  const [skillVersion, setSkillVersion] = useState<string>('0.6.12');
+  const [skillVersion, setSkillVersion] = useState<string>('0.6.13');
   const [cliStatus, setCliStatus] = useState<CliInstallStatus | null>(null);
   const [installingCli, setInstallingCli] = useState<boolean>(false);
 
-  // Provider config states
-  const [providerId, setProviderId] = useState<string>('loom');
-  const [baseUrl, setBaseUrl] = useState<string>('');
-  const [apiKey, setApiKey] = useState<string>('');
+  // Provider config states with local persistence
+  const [providerId, setProviderId] = useState<string>(() => {
+    try {
+      return localStorage.getItem(STORAGE_KEY_PROVIDER_ID) || 'loom';
+    } catch {
+      return 'loom';
+    }
+  });
+  const [protocol, setProtocol] = useState<'openai' | 'anthropic' | 'gemini'>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY_PROTOCOL);
+      if (saved === 'anthropic' || saved === 'gemini' || saved === 'openai') {
+        return saved;
+      }
+      return 'openai';
+    } catch {
+      return 'openai';
+    }
+  });
+  const [baseUrl, setBaseUrl] = useState<string>(() => {
+    try {
+      return localStorage.getItem(STORAGE_KEY_BASE_URL) || '';
+    } catch {
+      return '';
+    }
+  });
+  const [apiKey, setApiKey] = useState<string>(() => {
+    try {
+      return localStorage.getItem(STORAGE_KEY_API_KEY) || '';
+    } catch {
+      return '';
+    }
+  });
   const [models, setModels] = useState<FetchedModel[]>([]);
   const [fetchingModels, setFetchingModels] = useState<boolean>(false);
   const [selectedModels, setSelectedModels] = useState<string[]>([]);
   const [configuring, setConfiguring] = useState<boolean>(false);
+
+  const handleProviderIdChange = (val: string) => {
+    setProviderId(val);
+    try { localStorage.setItem(STORAGE_KEY_PROVIDER_ID, val); } catch {}
+  };
+
+  const handleProtocolChange = (val: 'openai' | 'anthropic' | 'gemini') => {
+    setProtocol(val);
+    try { localStorage.setItem(STORAGE_KEY_PROTOCOL, val); } catch {}
+  };
+
+  const handleBaseUrlChange = (val: string) => {
+    setBaseUrl(val);
+    try { localStorage.setItem(STORAGE_KEY_BASE_URL, val); } catch {}
+  };
+
+  const handleApiKeyChange = (val: string) => {
+    setApiKey(val);
+    try { localStorage.setItem(STORAGE_KEY_API_KEY, val); } catch {}
+  };
 
   const loadSkillPaths = useCallback(async () => {
     try {
@@ -127,13 +181,13 @@ export const AgentManagementPage: React.FC<AgentManagementPageProps> = ({ onOpen
     }
     setFetchingModels(true);
     try {
-      const res = await fetchProviderModels(baseUrl, apiKey);
+      const res = await fetchProviderModels(baseUrl, apiKey, protocol);
       setModels(res);
       if (res.length > 0) {
-        setSelectedModels([res[0].id]);
+        setSelectedModels([]);
         toast.success(`获取成功！检索到 ${res.length} 个可用模型`);
       } else {
-        toast.error('未检索到任何可用模型，请检查 Base URL / Key');
+        toast.error('未检索到任何可用模型，请检查 Base URL / Key / 协议兼容性');
       }
     } catch (err: unknown) {
       toast.error(`模型拉取失败: ${err instanceof Error ? err.message : String(err)}`);
@@ -164,8 +218,8 @@ export const AgentManagementPage: React.FC<AgentManagementPageProps> = ({ onOpen
 
     setConfiguring(true);
     try {
-      await configureOpencodeProvider(providerId, baseUrl, apiKey, selectedModels);
-      toast.success(`已自动写入 opencode.json 配置文件！(已配置 ${selectedModels.length} 个模型)`);
+      await configureOpencodeProvider(providerId, baseUrl, apiKey, selectedModels, protocol);
+      toast.success(`已自动写入 opencode.json 配置文件！(协议: ${protocol}, 已配置 ${selectedModels.length} 个模型)`);
 
       const cliTools = await getCliTools();
       const opencodeAgent = discovery?.agents.find(a => a.name.toLowerCase().includes('opencode'));
@@ -206,7 +260,7 @@ export const AgentManagementPage: React.FC<AgentManagementPageProps> = ({ onOpen
 
   return (
     <div data-tauri-drag-region style={{ padding: '24px', maxWidth: '1200px', margin: '0 auto', color: 'var(--text-primary)' }}>
-      <div data-tauri-drag-region style={{ marginBottom: '24px', paddingBottom: '16px', borderBottom: '1px solid var(--border-subtle)', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px' }}>
+      <div data-tauri-drag-region style={{ marginBottom: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px' }}>
         <div>
           <h1
             data-tauri-drag-region
@@ -477,11 +531,45 @@ export const AgentManagementPage: React.FC<AgentManagementPageProps> = ({ onOpen
           </h2>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
             <div>
+              <label style={{ display: 'block', fontSize: '14px', marginBottom: '6px', fontWeight: 500, color: 'var(--text-secondary)' }}>接口兼容性</label>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '6px', background: 'var(--bg-surface)', padding: '4px', borderRadius: 'var(--radius-sm, 6px)', border: '1px solid var(--border-subtle)' }}>
+                {[
+                  { id: 'openai', label: 'OpenAI 兼容' },
+                  { id: 'anthropic', label: 'Anthropic' },
+                  { id: 'gemini', label: 'Gemini' },
+                ].map(p => {
+                  const isActive = protocol === p.id;
+                  return (
+                    <button
+                      key={p.id}
+                      type="button"
+                      onClick={() => handleProtocolChange(p.id as 'openai' | 'anthropic' | 'gemini')}
+                      style={{
+                        padding: '6px 8px',
+                        fontSize: '13px',
+                        fontWeight: isActive ? 600 : 400,
+                        borderRadius: '4px',
+                        border: 'none',
+                        background: isActive ? 'var(--accent-primary, #3b82f6)' : 'transparent',
+                        color: isActive ? '#ffffff' : 'var(--text-secondary)',
+                        cursor: 'pointer',
+                        transition: 'all 0.15s ease',
+                        textAlign: 'center'
+                      }}
+                    >
+                      {p.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div>
               <label style={{ display: 'block', fontSize: '14px', marginBottom: '6px', fontWeight: 500, color: 'var(--text-secondary)' }}>Provider 标识</label>
               <input
                 type="text"
                 value={providerId}
-                onChange={e => setProviderId(e.target.value)}
+                onChange={e => handleProviderIdChange(e.target.value)}
                 style={{
                   width: '100%',
                   padding: '8px 12px',
@@ -500,7 +588,7 @@ export const AgentManagementPage: React.FC<AgentManagementPageProps> = ({ onOpen
               <input
                 type="text"
                 value={baseUrl}
-                onChange={e => setBaseUrl(e.target.value)}
+                onChange={e => handleBaseUrlChange(e.target.value)}
                 style={{
                   width: '100%',
                   padding: '8px 12px',
@@ -510,7 +598,13 @@ export const AgentManagementPage: React.FC<AgentManagementPageProps> = ({ onOpen
                   color: 'var(--text-primary)',
                   outline: 'none'
                 }}
-                placeholder="https://api.openai.com/v1 或兼容端点"
+                placeholder={
+                  protocol === 'anthropic'
+                    ? 'https://api.anthropic.com/v1 或兼容端点'
+                    : protocol === 'gemini'
+                    ? 'https://generativelanguage.googleapis.com/v1beta 或兼容端点'
+                    : 'https://api.openai.com/v1 或兼容端点'
+                }
               />
             </div>
 
@@ -519,7 +613,7 @@ export const AgentManagementPage: React.FC<AgentManagementPageProps> = ({ onOpen
               <input
                 type="password"
                 value={apiKey}
-                onChange={e => setApiKey(e.target.value)}
+                onChange={e => handleApiKeyChange(e.target.value)}
                 style={{
                   width: '100%',
                   padding: '8px 12px',
@@ -573,12 +667,12 @@ export const AgentManagementPage: React.FC<AgentManagementPageProps> = ({ onOpen
                 </div>
                 <div
                   style={{
-                    maxHeight: '220px',
+                    maxHeight: '140px',
                     overflowY: 'auto',
                     border: '1px solid var(--border-subtle)',
                     borderRadius: 'var(--radius-sm, 6px)',
                     background: 'var(--bg-input)',
-                    padding: '8px'
+                    padding: '6px'
                   }}
                 >
                   {models.map(m => {
@@ -590,7 +684,7 @@ export const AgentManagementPage: React.FC<AgentManagementPageProps> = ({ onOpen
                           display: 'flex',
                           alignItems: 'center',
                           gap: '8px',
-                          padding: '6px 8px',
+                          padding: '4px 8px',
                           borderRadius: '4px',
                           cursor: 'pointer',
                           background: checked ? 'var(--bg-elevated)' : 'transparent',
@@ -620,7 +714,7 @@ export const AgentManagementPage: React.FC<AgentManagementPageProps> = ({ onOpen
                 onClick={handleSaveConfig}
                 disabled={configuring}
                 style={{
-                  marginTop: '12px',
+                  marginTop: '0',
                   padding: '10px 20px',
                   borderRadius: 'var(--radius-sm, 6px)',
                   border: 'none',

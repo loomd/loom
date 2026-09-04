@@ -458,13 +458,15 @@ export const getAgentDiscoveryStatus = (): Promise<AgentDiscoveryStatus> =>
 export const fetchProviderModels = (
 	baseUrl: string,
 	apiKey: string,
+	protocol?: string,
 ): Promise<FetchedModel[]> =>
-	invoke("fetch_provider_models", { baseUrl, apiKey });
+	invoke("fetch_provider_models", { baseUrl, apiKey, protocol });
 
 export const configureOpencodeProvider = (
 	providerId: string,
 	baseUrl: string,
 	apiKey: string,
 	selectedModels: string[],
+	protocol?: string,
 ): Promise<void> =>
-	invoke("configure_opencode_provider", { providerId, baseUrl, apiKey, selectedModels });
+	invoke("configure_opencode_provider", { providerId, baseUrl, apiKey, selectedModels, protocol });

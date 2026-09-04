@@ -1354,7 +1354,8 @@ fn execute_test_command(cmd: &str, args_json: &str) -> Result<String, String> {
                 .as_str()
                 .or_else(|| args["apiKey"].as_str())
                 .unwrap_or("");
-            let res = fetch_models(base_url, api_key).map_err(|e| e.to_string())?;
+            let protocol = args.get("protocol").and_then(|v| v.as_str());
+            let res = fetch_models(base_url, api_key, protocol).map_err(|e| e.to_string())?;
             serde_json::to_string(&res).map_err(|e| e.to_string())
         }
         "configure_opencode_provider" => {
@@ -1370,6 +1371,7 @@ fn execute_test_command(cmd: &str, args_json: &str) -> Result<String, String> {
                 .as_str()
                 .or_else(|| args["apiKey"].as_str())
                 .unwrap_or("");
+            let protocol = args.get("protocol").and_then(|v| v.as_str()).unwrap_or("openai");
             let selected_models: Vec<String> = if let Some(arr) = args.get("selectedModels").or_else(|| args.get("selected_models")).and_then(|v| v.as_array()) {
                 arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect()
             } else if let Some(s) = args.get("selectedModel").or_else(|| args.get("selected_model")).and_then(|v| v.as_str()) {
@@ -1377,7 +1379,7 @@ fn execute_test_command(cmd: &str, args_json: &str) -> Result<String, String> {
             } else {
                 vec![]
             };
-            let res = write_opencode_config(provider_id, base_url, api_key, &selected_models).map_err(|e| e.to_string())?;
+            let res = write_opencode_config(provider_id, protocol, base_url, api_key, &selected_models).map_err(|e| e.to_string())?;
             serde_json::to_string(&res).map_err(|e| e.to_string())
         }
         _ => Err(format!("Unknown command '{}'", cmd)),
@@ -1551,14 +1553,37 @@ async fn get_agent_discovery_status() -> Result<DiscoveryOverview, String> {
 
 #[tauri::command]
 #[allow(non_snake_case)]
-fn fetch_provider_models(baseUrl: String, apiKey: String) -> Result<Vec<FetchedModel>, String> {
-    fetch_models(&baseUrl, &apiKey).map_err(|e| e.to_string())
+fn fetch_provider_models(
+    base_url: Option<String>,
+    baseUrl: Option<String>,
+    api_key: Option<String>,
+    apiKey: Option<String>,
+    protocol: Option<String>,
+) -> Result<Vec<FetchedModel>, String> {
+    let url = base_url.or(baseUrl).unwrap_or_default();
+    let key = api_key.or(apiKey).unwrap_or_default();
+    fetch_models(&url, &key, protocol.as_deref()).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 #[allow(non_snake_case)]
-fn configure_opencode_provider(providerId: String, baseUrl: String, apiKey: String, selectedModels: Vec<String>) -> Result<String, String> {
-    write_opencode_config(&providerId, &baseUrl, &apiKey, &selectedModels).map_err(|e| e.to_string())
+fn configure_opencode_provider(
+    provider_id: Option<String>,
+    providerId: Option<String>,
+    protocol: Option<String>,
+    base_url: Option<String>,
+    baseUrl: Option<String>,
+    api_key: Option<String>,
+    apiKey: Option<String>,
+    selected_models: Option<Vec<String>>,
+    selectedModels: Option<Vec<String>>,
+) -> Result<String, String> {
+    let p_id = provider_id.or(providerId).unwrap_or_else(|| "custom".to_string());
+    let url = base_url.or(baseUrl).unwrap_or_default();
+    let key = api_key.or(apiKey).unwrap_or_default();
+    let models = selected_models.or(selectedModels).unwrap_or_default();
+    let proto = protocol.as_deref().unwrap_or("openai");
+    write_opencode_config(&p_id, proto, &url, &key, &models).map_err(|e| e.to_string())
 }
 
 /// Watch loom.json for external changes (e.g. the `loom` CLI adding/removing
