@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import {
 	getTheme,
 	setTheme,
@@ -6,8 +6,10 @@ import {
 	setProjectColumnAlign,
 	getFontFamily,
 	getFontSize,
+	getTerminalFontSize,
 	setFontFamily as apiFontFamily,
 	setFontSize as apiFontSize,
+	setTerminalFontSize as apiTerminalFontSize,
 } from "../api";
 
 function applyFontToDocument(family: string, size: string) {
@@ -27,8 +29,19 @@ function applyFontToDocument(family: string, size: string) {
 export function useTheme(toast: { error: (msg: string) => void }) {
 	const [theme, setThemeState] = useState<"dark" | "day" | "gray">("gray");
 	const [fontFamily, setFontFamilyState] = useState("HarmonyOS Sans SC");
-	const [fontSize, setFontSizeState] = useState("14px");
+	const [fontSize, setFontSizeState] = useState("15px");
+	const [terminalFontSize, setTerminalFontSizeState] = useState("13px");
 	const [projectColumnAlign, setProjectColumnAlignState] = useState("top");
+
+	const fontSizeDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+	const termFontSizeDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+	useEffect(() => {
+		return () => {
+			if (fontSizeDebounceRef.current) clearTimeout(fontSizeDebounceRef.current);
+			if (termFontSizeDebounceRef.current) clearTimeout(termFontSizeDebounceRef.current);
+		};
+	}, []);
 
 	useEffect(() => {
 		getTheme()
@@ -43,10 +56,15 @@ export function useTheme(toast: { error: (msg: string) => void }) {
 				toast.error("主题加载失败，已使用默认主题");
 			});
 
-		Promise.all([getFontFamily(), getFontSize()])
-			.then(([family, size]) => {
+		Promise.all([
+			getFontFamily(),
+			getFontSize(),
+			getTerminalFontSize().catch(() => "13px"),
+		])
+			.then(([family, size, termSize]) => {
 				setFontFamilyState(family);
 				setFontSizeState(size);
+				setTerminalFontSizeState(termSize || "13px");
 				applyFontToDocument(family, size);
 			})
 			.catch((err) => {
@@ -86,15 +104,32 @@ export function useTheme(toast: { error: (msg: string) => void }) {
 		}
 	}, [fontSize]);
 
-	const handleFontSizeChange = useCallback(async (size: string) => {
-		setFontSizeState(size);
-		applyFontToDocument(fontFamily, size);
-		try {
-			await apiFontSize(size);
-		} catch (err) {
-			console.error("Failed to persist font size", err);
-		}
+	const handleFontSizeChange = useCallback((size: string) => {
+		const normalizedSize = size.endsWith("px") ? size : `${size}px`;
+		setFontSizeState(normalizedSize);
+		applyFontToDocument(fontFamily, normalizedSize);
+		if (fontSizeDebounceRef.current) clearTimeout(fontSizeDebounceRef.current);
+		fontSizeDebounceRef.current = setTimeout(async () => {
+			try {
+				await apiFontSize(normalizedSize);
+			} catch (err) {
+				console.error("Failed to persist font size", err);
+			}
+		}, 300);
 	}, [fontFamily]);
+
+	const handleTerminalFontSizeChange = useCallback((termSize: string) => {
+		const normalizedTermSize = termSize.endsWith("px") ? termSize : `${termSize}px`;
+		setTerminalFontSizeState(normalizedTermSize);
+		if (termFontSizeDebounceRef.current) clearTimeout(termFontSizeDebounceRef.current);
+		termFontSizeDebounceRef.current = setTimeout(async () => {
+			try {
+				await apiTerminalFontSize(normalizedTermSize);
+			} catch (err) {
+				console.error("Failed to persist terminal font size", err);
+			}
+		}, 300);
+	}, []);
 
 	const handleProjectColumnAlignChange = useCallback(async (align: string) => {
 		setProjectColumnAlignState(align);
@@ -109,10 +144,12 @@ export function useTheme(toast: { error: (msg: string) => void }) {
 		theme,
 		fontFamily,
 		fontSize,
+		terminalFontSize,
 		projectColumnAlign,
 		handleThemeChange,
 		handleFontFamilyChange,
 		handleFontSizeChange,
+		handleTerminalFontSizeChange,
 		handleProjectColumnAlignChange,
 	};
 }

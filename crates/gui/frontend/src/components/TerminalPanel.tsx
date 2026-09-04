@@ -13,12 +13,13 @@ interface TerminalPanelProps {
   showGrid: boolean;
   isVisible: boolean;
   theme?: 'dark' | 'day' | 'gray';
+  fontSize?: string | number;
   onAddTerminal?: () => void;
   onPaneFocus?: (tabId: string) => void;
   projectId?: string;
 }
 
-export function TerminalPanel({ terminals, activeTabId, layoutMode, showGrid, isVisible, theme, onAddTerminal, onPaneFocus, projectId }: TerminalPanelProps) {
+export function TerminalPanel({ terminals, activeTabId, layoutMode, showGrid, isVisible, theme, fontSize, onAddTerminal, onPaneFocus, projectId }: TerminalPanelProps) {
   const dims = showGrid && layoutMode ? gridDims(layoutMode) : null;
   const areas = showGrid && layoutMode ? (gridCellAreas(layoutMode) ?? layoutPreview(layoutMode).areas) : null;
   const cellCount = dims ? gridCellCount(layoutMode!) : 0;
@@ -34,6 +35,7 @@ export function TerminalPanel({ terminals, activeTabId, layoutMode, showGrid, is
         initialCommand={tab.initialCommand}
         isVisible={isVisible && visible}
         theme={theme}
+        fontSize={fontSize}
       />
     </Suspense>
   );

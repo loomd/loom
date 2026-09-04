@@ -190,6 +190,12 @@ export const getFontSize = (): Promise<string> => invoke("get_font_size");
 export const setFontSize = (size: string): Promise<void> =>
   invoke("set_font_size", { size });
 
+export const getTerminalFontSize = (): Promise<string> =>
+  invoke("get_terminal_font_size");
+
+export const setTerminalFontSize = (size: string): Promise<void> =>
+  invoke("set_terminal_font_size", { size });
+
 // ─── Sidebar Width ─────────────────────────────────────────
 export const getSidebarWidth = (): Promise<number> =>
   invoke("get_sidebar_width");

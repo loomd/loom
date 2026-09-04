@@ -21,13 +21,14 @@ interface Props {
   isVisible: boolean;
   onUnregisterProject: (proj: Project) => void;
   theme?: 'dark' | 'day' | 'gray';
+  fontSize?: string;
   isSidebarCollapsed?: boolean;
   onToggleSidebar?: () => void;
   bottomPanelEmbedded?: boolean;
   bottomPanelHeight?: number;
 }
 
-export default function ProjectWorkspace({ project, isVisible, onUnregisterProject, theme, isSidebarCollapsed, onToggleSidebar, bottomPanelEmbedded, bottomPanelHeight }: Props) {
+export default function ProjectWorkspace({ project, isVisible, onUnregisterProject, theme, fontSize, isSidebarCollapsed, onToggleSidebar, bottomPanelEmbedded, bottomPanelHeight }: Props) {
   const { t } = useI18n();
   const toast = useToast();
 
@@ -511,6 +512,7 @@ const closeActiveByShortcut = useCallback(() => {
           showGrid={showGrid}
           isVisible={isVisible}
           theme={theme}
+          fontSize={fontSize}
           onAddTerminal={openSpawnPanel}
           onPaneFocus={setActiveTabId}
           projectId={project.id}

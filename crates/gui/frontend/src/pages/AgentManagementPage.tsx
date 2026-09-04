@@ -22,7 +22,7 @@ export const AgentManagementPage: React.FC<AgentManagementPageProps> = ({ onOpen
   const [refreshing, setRefreshing] = useState<boolean>(false);
   const [injectingSkill, setInjectingSkill] = useState<boolean>(false);
   const [injectedPaths, setInjectedPaths] = useState<string[]>([]);
-  const [skillVersion, setSkillVersion] = useState<string>('0.6.13');
+  const [skillVersion, setSkillVersion] = useState<string>('0.6.14');
   const [cliStatus, setCliStatus] = useState<CliInstallStatus | null>(null);
   const [installingCli, setInstallingCli] = useState<boolean>(false);
 
@@ -66,22 +66,22 @@ export const AgentManagementPage: React.FC<AgentManagementPageProps> = ({ onOpen
 
   const handleProviderIdChange = (val: string) => {
     setProviderId(val);
-    try { localStorage.setItem(STORAGE_KEY_PROVIDER_ID, val); } catch {}
+    try { localStorage.setItem(STORAGE_KEY_PROVIDER_ID, val); } catch { /* ignore */ }
   };
 
   const handleProtocolChange = (val: 'openai' | 'anthropic' | 'gemini') => {
     setProtocol(val);
-    try { localStorage.setItem(STORAGE_KEY_PROTOCOL, val); } catch {}
+    try { localStorage.setItem(STORAGE_KEY_PROTOCOL, val); } catch { /* ignore */ }
   };
 
   const handleBaseUrlChange = (val: string) => {
     setBaseUrl(val);
-    try { localStorage.setItem(STORAGE_KEY_BASE_URL, val); } catch {}
+    try { localStorage.setItem(STORAGE_KEY_BASE_URL, val); } catch { /* ignore */ }
   };
 
   const handleApiKeyChange = (val: string) => {
     setApiKey(val);
-    try { localStorage.setItem(STORAGE_KEY_API_KEY, val); } catch {}
+    try { localStorage.setItem(STORAGE_KEY_API_KEY, val); } catch { /* ignore */ }
   };
 
   const loadSkillPaths = useCallback(async () => {

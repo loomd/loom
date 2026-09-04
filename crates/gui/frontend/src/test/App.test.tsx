@@ -40,7 +40,8 @@ describe("App", () => {
       if (cmd === "get_projects") return Promise.resolve([]);
       if (cmd === "get_theme") return Promise.resolve("dark");
       if (cmd === "get_font_family") return Promise.resolve("Plus Jakarta Sans");
-      if (cmd === "get_font_size") return Promise.resolve("14px");
+      if (cmd === "get_font_size") return Promise.resolve("15px");
+      if (cmd === "get_terminal_font_size") return Promise.resolve("13px");
       if (cmd === "get_project_column_align") return Promise.resolve("top");
       if (cmd === "get_language") return Promise.resolve("zh");
       if (cmd === "get_sidebar_width") return Promise.resolve(170);
@@ -65,7 +66,8 @@ describe("App", () => {
       if (cmd === "get_projects") return Promise.resolve([]);
       if (cmd === "get_theme") return Promise.resolve("dark");
       if (cmd === "get_font_family") return Promise.resolve("Plus Jakarta Sans");
-      if (cmd === "get_font_size") return Promise.resolve("14px");
+      if (cmd === "get_font_size") return Promise.resolve("15px");
+      if (cmd === "get_terminal_font_size") return Promise.resolve("13px");
       if (cmd === "get_project_column_align") return Promise.resolve("top");
       if (cmd === "get_language") return Promise.resolve("zh");
       if (cmd === "get_sidebar_width") return Promise.resolve(170);
@@ -91,7 +93,8 @@ describe("App", () => {
       if (cmd === "get_projects") return Promise.resolve([]);
       if (cmd === "get_theme") return Promise.resolve("dark");
       if (cmd === "get_font_family") return Promise.resolve("Plus Jakarta Sans");
-      if (cmd === "get_font_size") return Promise.resolve("14px");
+      if (cmd === "get_font_size") return Promise.resolve("15px");
+      if (cmd === "get_terminal_font_size") return Promise.resolve("13px");
       if (cmd === "get_project_column_align") return Promise.resolve("top");
       if (cmd === "get_language") return Promise.resolve("zh");
       if (cmd === "get_sidebar_width") return Promise.resolve(170);

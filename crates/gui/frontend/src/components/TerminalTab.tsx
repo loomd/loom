@@ -16,7 +16,17 @@ interface TerminalTabProps {
   initialCommand?: string;
   isVisible: boolean;
   theme?: 'dark' | 'day' | 'gray';
+  fontSize?: string | number;
 }
+
+const parseFontSize = (size?: string | number): number => {
+  if (typeof size === 'number') return size >= 8 && size <= 72 ? size : 13;
+  if (typeof size === 'string') {
+    const parsed = parseInt(size, 10);
+    return isNaN(parsed) || parsed < 8 || parsed > 72 ? 13 : parsed;
+  }
+  return 13;
+};
 
 const getTerminalTheme = (theme?: 'dark' | 'day' | 'gray') => {
   switch (theme) {
@@ -89,13 +99,17 @@ const getTerminalTheme = (theme?: 'dark' | 'day' | 'gray') => {
   }
 };
 
-export function TerminalTab({ sessionId, cwd, command, args, env, initialCommand, isVisible, theme }: TerminalTabProps) {
+export function TerminalTab({ sessionId, cwd, command, args, env, initialCommand, isVisible, theme, fontSize }: TerminalTabProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const outerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
   const initialized = useRef<boolean>(false);
   const spawnSuccessRef = useRef<boolean>(false);
+  const fontSizeRef = useRef(fontSize);
+  useEffect(() => {
+    fontSizeRef.current = fontSize;
+  }, [fontSize]);
 
   const isVisibleRef = useRef(isVisible);
   useEffect(() => {
@@ -260,7 +274,7 @@ export function TerminalTab({ sessionId, cwd, command, args, env, initialCommand
       const term = new Terminal({
         cursorBlink: true,
         fontFamily: 'Consolas, "Courier New", monospace',
-        fontSize: 13,
+        fontSize: parseFontSize(fontSizeRef.current),
         scrollback: 10000,
         theme: getTerminalTheme(theme)
       });
@@ -552,12 +566,39 @@ export function TerminalTab({ sessionId, cwd, command, args, env, initialCommand
     }
   }, [isVisible, sessionId]);
 
+  // Dynamically update terminal font size when fontSize prop changes
+  useEffect(() => {
+    if (!termRef.current) return;
+    const sizeNum = parseFontSize(fontSize);
+    if (termRef.current.options && termRef.current.options.fontSize !== sizeNum) {
+      termRef.current.options.fontSize = sizeNum;
+      if (fitAddonRef.current && spawnSuccessRef.current) {
+        const timer = setTimeout(() => {
+          if (!termRef.current || !fitAddonRef.current || !spawnSuccessRef.current) return;
+          try {
+            fitAddonRef.current.fit();
+            invoke('pty_resize', {
+              sessionId,
+              cols: termRef.current.cols,
+              rows: termRef.current.rows
+            }).catch((err) => console.warn('Failed to resize PTY on font size change:', err));
+          } catch (e) {
+            console.warn('Resize error on font size change:', e);
+          }
+        }, 50);
+        return () => clearTimeout(timer);
+      }
+    }
+  }, [fontSize, sessionId]);
+
   const getOuterBg = (theme?: 'dark' | 'day' | 'gray') => {
     switch (theme) {
       case 'gray': return '#1a1a1f';
       default: return '#1a1a1f';
     }
   };
+
+  const parsedFontSize = parseFontSize(fontSize);
 
   return (
     <div
@@ -595,7 +636,7 @@ export function TerminalTab({ sessionId, cwd, command, args, env, initialCommand
           opacity: 1 !important;
           z-index: 99999 !important;
           width: 200px !important;
-          height: 16px !important;
+          height: ${Math.round(parsedFontSize * 1.2)}px !important;
           clip: auto !important;
           clip-path: none !important;
           overflow: visible !important;
@@ -604,7 +645,7 @@ export function TerminalTab({ sessionId, cwd, command, args, env, initialCommand
           caret-color: transparent !important; /* Hide caret */
           pointer-events: none !important;
           font-family: Consolas, "Courier New", monospace !important;
-          font-size: 13px !important;
+          font-size: ${parsedFontSize}px !important;
           line-height: 1.2 !important;
           border: 0 !important;
           padding: 0 !important;

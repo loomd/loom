@@ -12,8 +12,10 @@ interface Props {
 	onProjectColumnAlignChange: (align: string) => Promise<void>;
 	fontFamily: string;
 	fontSize: string;
-	onFontFamilyChange: (family: string) => Promise<void>;
-	onFontSizeChange: (size: string) => Promise<void>;
+	terminalFontSize?: string;
+	onFontFamilyChange: (family: string) => void | Promise<void>;
+	onFontSizeChange: (size: string) => void | Promise<void>;
+	onTerminalFontSizeChange?: (size: string) => void | Promise<void>;
 	updateInfo?: {
 		hasUpdate: boolean;
 		latestVersion: string;
@@ -43,21 +45,23 @@ export default function SettingsPage({
 	onProjectColumnAlignChange,
 	fontFamily,
 	fontSize,
+	terminalFontSize,
 	onFontFamilyChange,
 	onFontSizeChange,
+	onTerminalFontSizeChange,
 	updateInfo,
 	onCheckUpdate,
 	onInstallUpdate,
-		onSkipVersion,
-		floatingSidebarEnabled,
-		onFloatingSidebarEnabledChange,
-		floatingSidebarPosition,
-		onFloatingSidebarPositionChange,
-		sidebarCollapseEnabled,
-		onSidebarCollapseEnabledChange,
-		bottomPanelMode,
-		onBottomPanelModeChange,
-	}: Props) {
+	onSkipVersion,
+	floatingSidebarEnabled,
+	onFloatingSidebarEnabledChange,
+	floatingSidebarPosition,
+	onFloatingSidebarPositionChange,
+	sidebarCollapseEnabled,
+	onSidebarCollapseEnabledChange,
+	bottomPanelMode,
+	onBottomPanelModeChange,
+}: Props) {
 	const { t } = useI18n();
 	const [activeSubTab, setActiveSubTab] = useState<Tab>("general");
 
@@ -147,8 +151,10 @@ export default function SettingsPage({
 						onProjectColumnAlignChange={onProjectColumnAlignChange}
 						fontFamily={fontFamily}
 						fontSize={fontSize}
+						terminalFontSize={terminalFontSize}
 						onFontFamilyChange={onFontFamilyChange}
 						onFontSizeChange={onFontSizeChange}
+						onTerminalFontSizeChange={onTerminalFontSizeChange}
 						updateInfo={updateInfo}
 						onCheckUpdate={onCheckUpdate}
 						onInstallUpdate={onInstallUpdate}

@@ -2080,6 +2080,18 @@ pub fn set_font_size(size: String) -> Result<()> {
     Ok(())
 }
 
+pub fn get_terminal_font_size() -> Result<String> {
+    let config = load_config()?;
+    Ok(config.terminal_font_size.clone())
+}
+
+pub fn set_terminal_font_size(size: String) -> Result<()> {
+    let mut config = load_config()?;
+    config.terminal_font_size = size;
+    save_config(&config)?;
+    Ok(())
+}
+
 pub fn get_floating_sidebar_enabled() -> Result<bool> {
     let config = load_config()?;
     Ok(config.floating_sidebar_enabled)

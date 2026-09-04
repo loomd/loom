@@ -122,7 +122,7 @@ body {
 
   /* ─── Font Variables ─── */
   --font-family: 'HarmonyOS Sans SC';
-  --font-size-base: 14px;
+  --font-size-base: 15px;
   --fs-9:  calc(var(--font-size-base) - 5px);
   --fs-10: calc(var(--font-size-base) - 4px);
   --fs-11: calc(var(--font-size-base) - 3px);

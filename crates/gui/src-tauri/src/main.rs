@@ -291,6 +291,16 @@ fn set_font_size(size: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn get_terminal_font_size() -> Result<String, String> {
+    cstore::get_terminal_font_size().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn set_terminal_font_size(size: String) -> Result<(), String> {
+    cstore::set_terminal_font_size(size).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 fn get_floating_sidebar_enabled() -> Result<bool, String> {
     cstore::get_floating_sidebar_enabled().map_err(|e| e.to_string())
 }
@@ -1132,6 +1142,17 @@ fn execute_test_command(cmd: &str, args_json: &str) -> Result<String, String> {
             set_font_size(size.to_string())?;
             Ok("null".to_string())
         }
+        "get_terminal_font_size" => {
+            let res = get_terminal_font_size()?;
+            serde_json::to_string(&res).map_err(|e| e.to_string())
+        }
+        "set_terminal_font_size" => {
+            let size = args["size"]
+                .as_str()
+                .ok_or_else(|| "Missing argument 'size'".to_string())?;
+            set_terminal_font_size(size.to_string())?;
+            Ok("null".to_string())
+        }
         "get_floating_sidebar_enabled" => {
             let res = get_floating_sidebar_enabled()?;
             serde_json::to_string(&res).map_err(|e| e.to_string())
@@ -1932,6 +1953,8 @@ fn main() {
             set_font_family,
             get_font_size,
             set_font_size,
+            get_terminal_font_size,
+            set_terminal_font_size,
             get_floating_sidebar_enabled,
             set_floating_sidebar_enabled,
             get_floating_sidebar_position,

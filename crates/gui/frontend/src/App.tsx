@@ -337,13 +337,36 @@ function App() {
 							{p.projects.length === 0 ? <EmptyState onAdd={() => p.setShowModal(true)} t={t} /> : (
 								p.projects.map((proj) => (
 									<div key={proj.id} style={{ display: proj.id === p.selectedProjectId ? "flex" : "none", flexDirection: "column", flex: 1, minHeight: 0, overflow: "hidden" }}>
-										<ProjectWorkspace isSidebarCollapsed={actualCollapsed} onToggleSidebar={sidebarCollapseEnabled ? () => setIsCollapsed(!isCollapsed) : undefined} project={proj} isVisible={page === "workspace" && proj.id === p.selectedProjectId} onUnregisterProject={p.handleUnregisterProject} theme={theme.theme} bottomPanelEmbedded={floatingSidebarEnabled && floatingSidebarPosition === "bottom" && bottomPanelMode === "embedded"} bottomPanelHeight={floatingSidebarEnabled && floatingSidebarPosition === "bottom" && bottomPanelMode === "embedded" ? bottomPanelHeight : 0} />
+										<ProjectWorkspace isSidebarCollapsed={actualCollapsed} onToggleSidebar={sidebarCollapseEnabled ? () => setIsCollapsed(!isCollapsed) : undefined} project={proj} isVisible={page === "workspace" && proj.id === p.selectedProjectId} onUnregisterProject={p.handleUnregisterProject} theme={theme.theme} fontSize={theme.terminalFontSize} bottomPanelEmbedded={floatingSidebarEnabled && floatingSidebarPosition === "bottom" && bottomPanelMode === "embedded"} bottomPanelHeight={floatingSidebarEnabled && floatingSidebarPosition === "bottom" && bottomPanelMode === "embedded" ? bottomPanelHeight : 0} />
 									</div>
 								))
 							)}
 						</div>
 						<div style={{ display: page === "settings" ? "flex" : "none", flexDirection: "column", flex: 1, minHeight: 0, overflow: "hidden" }}>
-							<SettingsPage theme={theme.theme} onThemeChange={theme.handleThemeChange} projectColumnAlign={theme.projectColumnAlign} onProjectColumnAlignChange={theme.handleProjectColumnAlignChange} fontFamily={theme.fontFamily} fontSize={theme.fontSize} onFontFamilyChange={theme.handleFontFamilyChange} onFontSizeChange={theme.handleFontSizeChange} updateInfo={updater.updateInfo} onCheckUpdate={updater.performUpdateCheck} onInstallUpdate={updater.handleInstallUpdate} onSkipVersion={updater.handleSkipVersion} floatingSidebarEnabled={floatingSidebarEnabled} onFloatingSidebarEnabledChange={handleFloatingSidebarEnabledChange} floatingSidebarPosition={floatingSidebarPosition} onFloatingSidebarPositionChange={handleFloatingSidebarPositionChange} sidebarCollapseEnabled={sidebarCollapseEnabled} onSidebarCollapseEnabledChange={handleSidebarCollapseEnabledChange} bottomPanelMode={bottomPanelMode} onBottomPanelModeChange={handleBottomPanelModeChange} />
+							<SettingsPage
+								theme={theme.theme}
+								onThemeChange={theme.handleThemeChange}
+								projectColumnAlign={theme.projectColumnAlign}
+								onProjectColumnAlignChange={theme.handleProjectColumnAlignChange}
+								fontFamily={theme.fontFamily}
+								fontSize={theme.fontSize}
+								terminalFontSize={theme.terminalFontSize}
+								onFontFamilyChange={theme.handleFontFamilyChange}
+								onFontSizeChange={theme.handleFontSizeChange}
+								onTerminalFontSizeChange={theme.handleTerminalFontSizeChange}
+								updateInfo={updater.updateInfo}
+								onCheckUpdate={updater.performUpdateCheck}
+								onInstallUpdate={updater.handleInstallUpdate}
+								onSkipVersion={updater.handleSkipVersion}
+								floatingSidebarEnabled={floatingSidebarEnabled}
+								onFloatingSidebarEnabledChange={handleFloatingSidebarEnabledChange}
+								floatingSidebarPosition={floatingSidebarPosition}
+								onFloatingSidebarPositionChange={handleFloatingSidebarPositionChange}
+								sidebarCollapseEnabled={sidebarCollapseEnabled}
+								onSidebarCollapseEnabledChange={handleSidebarCollapseEnabledChange}
+								bottomPanelMode={bottomPanelMode}
+								onBottomPanelModeChange={handleBottomPanelModeChange}
+							/>
 						</div>
 						<div style={{ display: page === "agents" ? "flex" : "none", flexDirection: "column", flex: 1, minHeight: 0, overflow: "auto" }}>
 							<AgentManagementPage active={page === "agents"} onOpenTerminal={(cmd) => {

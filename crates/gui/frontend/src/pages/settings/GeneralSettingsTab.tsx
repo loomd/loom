@@ -10,8 +10,10 @@ interface Props {
 	onProjectColumnAlignChange: (align: string) => Promise<void>;
 	fontFamily: string;
 	fontSize: string;
-	onFontFamilyChange: (family: string) => Promise<void>;
-	onFontSizeChange: (size: string) => Promise<void>;
+	terminalFontSize?: string;
+	onFontFamilyChange: (family: string) => void | Promise<void>;
+	onFontSizeChange: (size: string) => void | Promise<void>;
+	onTerminalFontSizeChange?: (size: string) => void | Promise<void>;
 	updateInfo?: {
 		hasUpdate: boolean;
 		latestVersion: string;
@@ -49,8 +51,10 @@ export default function GeneralSettingsTab({
 	onProjectColumnAlignChange,
 	fontFamily,
 	fontSize,
+	terminalFontSize = "13px",
 	onFontFamilyChange,
 	onFontSizeChange,
+	onTerminalFontSizeChange,
 	updateInfo,
 	onCheckUpdate,
 	onInstallUpdate,
@@ -142,15 +146,6 @@ export default function GeneralSettingsTab({
 	const handleFontFamilySelect = async (family: string) => {
 		try {
 			await onFontFamilyChange(family);
-			toast.success(t("settings.toast.fontSaved"));
-		} catch {
-			toast.error(t("settings.toast.fontSaveFailed"));
-		}
-	};
-
-	const handleFontSizeSelect = async (size: string) => {
-		try {
-			await onFontSizeChange(size);
 			toast.success(t("settings.toast.fontSaved"));
 		} catch {
 			toast.error(t("settings.toast.fontSaveFailed"));
@@ -455,7 +450,7 @@ export default function GeneralSettingsTab({
 						})}
 					</div>
 
-					<div className="form-group" style={{ marginBottom: "24px" }}>
+					<div className="form-group" style={{ marginBottom: "28px" }}>
 						<label className="form-label">
 							{t("settings.font.custom")}
 						</label>
@@ -471,64 +466,145 @@ export default function GeneralSettingsTab({
 						/>
 					</div>
 
+					{/* ─── UI Font Size ─────────────────────────── */}
 					<div
 						style={{
-							fontSize: "13px",
-							fontWeight: 600,
-							color: "var(--text-primary)",
-							marginBottom: "12px",
+							display: "flex",
+							alignItems: "center",
+							justifyContent: "space-between",
+							marginBottom: "8px",
 						}}
 					>
-						{t("settings.font.size")}
+						<div
+							style={{
+								fontSize: "13px",
+								fontWeight: 600,
+								color: "var(--text-primary)",
+							}}
+						>
+							{t("settings.font.uiSize")}
+						</div>
+						<div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+							<input
+								type="number"
+								min={10}
+								max={36}
+								className="input"
+								style={{
+									width: "60px",
+									padding: "4px 8px",
+									textAlign: "center",
+									fontSize: "13px",
+									fontWeight: 600,
+								}}
+								value={parseInt(fontSize, 10) || 15}
+								onChange={(e) => {
+									const val = parseInt(e.target.value, 10);
+									if (!isNaN(val) && val >= 8 && val <= 72) {
+										onFontSizeChange(`${val}px`);
+									}
+								}}
+							/>
+							<span style={{ fontSize: "12px", color: "var(--text-secondary)" }}>px</span>
+						</div>
 					</div>
+
+					{/* UI Slider */}
 					<div
 						style={{
-							display: "grid",
-							gridTemplateColumns:
-								"repeat(auto-fill, minmax(160px, 1fr))",
+							display: "flex",
+							alignItems: "center",
 							gap: "12px",
 							marginBottom: "24px",
 						}}
 					>
-						{[
-							{ label: t("settings.font.small"), value: "12px" },
-							{ label: t("settings.font.medium"), value: "14px" },
-							{ label: t("settings.font.large"), value: "16px" },
-							{ label: t("settings.font.xlarge"), value: "18px" },
-							{ label: t("settings.font.xxlarge"), value: "20px" },
-							{ label: t("settings.font.xxlarge2"), value: "22px" },
-							{ label: t("settings.font.xxlarge3"), value: "24px" },
-							{ label: t("settings.font.xxlarge4"), value: "28px" },
-							{ label: t("settings.font.xxlarge5"), value: "32px" },
-							{ label: t("settings.font.xxlarge6"), value: "36px" },
-						].map((sz) => {
-							const isActive = fontSize === sz.value;
-							return (
-								<button
-									key={sz.value}
-									onClick={() => handleFontSizeSelect(sz.value)}
-									style={{
-										background: isActive
-											? "var(--accent-purple-dim)"
-											: "var(--bg-elevated)",
-										border: isActive
-											? "1px solid var(--accent-purple)"
-											: "1px solid var(--border-mid)",
-										borderRadius: "var(--radius-md)",
-										padding: "12px 16px",
-										cursor: "pointer",
-										textAlign: "center",
-										color: "var(--text-primary)",
-										fontWeight: isActive ? 600 : 400,
-										transition: "all 200ms var(--ease-spring)",
-									}}
-								>
-									{sz.label}
-								</button>
-							);
-						})}
+						<span style={{ fontSize: "11px", color: "var(--text-tertiary)" }}>10px</span>
+						<input
+							type="range"
+							min={10}
+							max={36}
+							step={1}
+							value={parseInt(fontSize, 10) || 15}
+							onChange={(e) => onFontSizeChange(`${e.target.value}px`)}
+							style={{
+								flex: 1,
+								accentColor: "var(--accent-purple)",
+								cursor: "pointer",
+							}}
+						/>
+						<span style={{ fontSize: "11px", color: "var(--text-tertiary)" }}>36px</span>
 					</div>
 
+					{/* ─── Terminal Font Size ───────────────────── */}
+					<div
+						style={{
+							display: "flex",
+							alignItems: "center",
+							justifyContent: "space-between",
+							marginBottom: "8px",
+						}}
+					>
+						<div
+							style={{
+								fontSize: "13px",
+								fontWeight: 600,
+								color: "var(--text-primary)",
+							}}
+						>
+							{t("settings.font.termSize")}
+						</div>
+						<div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+							<input
+								type="number"
+								min={10}
+								max={36}
+								className="input"
+								style={{
+									width: "60px",
+									padding: "4px 8px",
+									textAlign: "center",
+									fontSize: "13px",
+									fontWeight: 600,
+								}}
+								value={parseInt(terminalFontSize, 10) || 13}
+								onChange={(e) => {
+									const val = parseInt(e.target.value, 10);
+									if (!isNaN(val) && val >= 8 && val <= 72) {
+										onTerminalFontSizeChange?.(`${val}px`);
+									}
+								}}
+							/>
+							<span style={{ fontSize: "12px", color: "var(--text-secondary)" }}>px</span>
+						</div>
+					</div>
+
+					{/* Terminal Slider */}
+					<div
+						style={{
+							display: "flex",
+							alignItems: "center",
+							gap: "12px",
+							marginBottom: "28px",
+						}}
+					>
+						<span style={{ fontSize: "11px", color: "var(--text-tertiary)" }}>10px</span>
+						<input
+							type="range"
+							min={10}
+							max={36}
+							step={1}
+							value={parseInt(terminalFontSize, 10) || 13}
+							onChange={(e) => onTerminalFontSizeChange?.(`${e.target.value}px`)}
+							style={{
+								flex: 1,
+								accentColor: "var(--accent-purple)",
+								cursor: "pointer",
+							}}
+						/>
+						<span style={{ fontSize: "11px", color: "var(--text-tertiary)" }}>36px</span>
+					</div>
+
+					{/* ─── Previews ─────────────────────────────── */}
 					<div
 						style={{
 							fontSize: "13px",
@@ -550,13 +626,43 @@ export default function GeneralSettingsTab({
 							fontSize: fontSize,
 							color: "var(--text-primary)",
 							lineHeight: 1.6,
-							minHeight: "60px",
+							minHeight: "54px",
 							display: "flex",
 							alignItems: "center",
+							marginBottom: "16px",
 						}}
 					>
 						The quick brown fox jumps over the lazy dog. 1234567890
 						(智能分类与字体管理测试)
+					</div>
+
+					<div
+						style={{
+							fontSize: "13px",
+							fontWeight: 600,
+							color: "var(--text-primary)",
+							marginBottom: "8px",
+						}}
+					>
+						{t("settings.font.termPreview")}
+					</div>
+					<div
+						style={{
+							background: "#121214",
+							border: "1px solid var(--border-subtle, #27272a)",
+							borderRadius: "var(--radius-md)",
+							padding: "14px 16px",
+							fontFamily: 'Consolas, "Courier New", monospace',
+							fontSize: terminalFontSize || "13px",
+							lineHeight: 1.5,
+							minHeight: "64px",
+							boxSizing: "border-box",
+							color: "#e4e4e7",
+						}}
+					>
+						<div><span style={{ color: "#4ade80" }}>user@loom</span>:<span style={{ color: "#60a5fa" }}>~/project</span>$ <span style={{ color: "#facc15" }}>loom run test</span></div>
+						<div style={{ color: "#a1a1aa" }}>[pty] Process spawned with PID 1042</div>
+						<div style={{ color: "#4ade80" }}>[ok] 169 tests passed in 0.18s</div>
 					</div>
 				</div>
 			</div>

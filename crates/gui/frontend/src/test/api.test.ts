@@ -276,6 +276,21 @@ describe("api - Theme & Font", () => {
     await setFontSize("16px");
     expect(mockInvoke).toHaveBeenCalledWith("set_font_size", { size: "16px" });
   });
+
+  it("getTerminalFontSize calls invoke", async () => {
+    mockInvoke.mockResolvedValueOnce("13px");
+    const { getTerminalFontSize } = await import("../api");
+    const result = await getTerminalFontSize();
+    expect(mockInvoke).toHaveBeenCalledWith("get_terminal_font_size");
+    expect(result).toBe("13px");
+  });
+
+  it("setTerminalFontSize calls invoke", async () => {
+    mockInvoke.mockResolvedValueOnce(undefined);
+    const { setTerminalFontSize } = await import("../api");
+    await setTerminalFontSize("14px");
+    expect(mockInvoke).toHaveBeenCalledWith("set_terminal_font_size", { size: "14px" });
+  });
 });
 
 describe("api - Projects", () => {

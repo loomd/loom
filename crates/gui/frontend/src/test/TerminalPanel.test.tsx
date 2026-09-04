@@ -4,12 +4,12 @@ import { fireEvent } from "@testing-library/dom";
 import { describe, it, expect, vi, beforeEach, afterEach, beforeAll } from "vitest";
 import type { ConsoleTab } from "../hooks/useTabs";
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-function FakeTerminal(this: Record<string, unknown>, _opts: Record<string, unknown>) {
+function FakeTerminal(this: Record<string, unknown>, opts?: Record<string, unknown>) {
   const textarea = document.createElement("textarea");
   const element = document.createElement("div");
   const line = { getCell: vi.fn() };
   Object.assign(this, {
+    options: { fontSize: opts?.fontSize ?? 13 },
     loadAddon: vi.fn(),
     open: vi.fn(),
     onData: vi.fn(() => ({ dispose: vi.fn() })),

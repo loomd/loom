@@ -4,12 +4,12 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 let mockTerminalInstance: Record<string, unknown>;
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-function FakeTerminal(this: Record<string, unknown>, _opts: Record<string, unknown>) {
+function FakeTerminal(this: Record<string, unknown>, opts?: Record<string, unknown>) {
   const textarea = document.createElement("textarea");
   const element = document.createElement("div");
   const line = { getCell: vi.fn() };
   Object.assign(this, {
+    options: { fontSize: opts?.fontSize ?? 13 },
     loadAddon: vi.fn(),
     open: vi.fn(),
     onData: vi.fn(() => ({ dispose: vi.fn() })),
@@ -190,5 +190,23 @@ describe("TerminalTab", () => {
       <TerminalTab sessionId="s-2" cwd="/tmp" isVisible={true} theme="gray" />
     );
     expect(grayContainer.querySelector('[style*="background-color"]')).toBeTruthy();
+  });
+
+  it("updates terminal font size dynamically when fontSize prop changes", async () => {
+    const { TerminalTab } = await import("../components/TerminalTab");
+    const { rerender } = render(
+      <TerminalTab sessionId="s-font" cwd="/tmp" isVisible={true} fontSize="14px" />
+    );
+    await vi.waitFor(() => {
+      expect(mockTerminalInstance).toBeDefined();
+      expect((mockTerminalInstance.options as { fontSize: number }).fontSize).toBe(14);
+    });
+
+    rerender(
+      <TerminalTab sessionId="s-font" cwd="/tmp" isVisible={true} fontSize="18px" />
+    );
+    await vi.waitFor(() => {
+      expect((mockTerminalInstance.options as { fontSize: number }).fontSize).toBe(18);
+    });
   });
 });
