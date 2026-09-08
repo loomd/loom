@@ -35,5 +35,8 @@ which = "6.0.0"
 rusqlite = { version = "0.34", features = ["bundled"] }
 notify = "6"
 
+[target.'cfg(windows)'.dependencies]
+webview2-com = "0.38"
+
 [build-dependencies]
 tauri-build = { version = "2.0.0", features = [] }
