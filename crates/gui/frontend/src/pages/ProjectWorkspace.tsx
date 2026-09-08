@@ -1,4 +1,4 @@
-import React, { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import WindowControlButtons from '../components/WindowControlButtons';
 import { useTabs } from '../hooks/useTabs';
 import { useWorkspaceData } from '../hooks/useWorkspaceData';
@@ -10,7 +10,8 @@ import { useI18n } from '../I18nContext';
 import { TemplateModal } from './TemplatesPage';
 import { EditorPlaceholder } from '../components/EditorPlaceholder';
 import { pollAgentState } from '../api';
-import { reportShellStatus, removeShellStatus } from '../hooks/useProjectCompositeStates';
+import { syncProjectShells } from '../hooks/useProjectCompositeStates';
+import type { CompositeState } from '../hooks/useProjectCompositeStates';
 import type { Project, AgentStateInfo } from '../types';
 import type { GridLayout } from '../hooks/useTabs';
 import { gridCellCount } from '../hooks/useTabs';
@@ -71,38 +72,24 @@ const closeActiveByShortcut = useCallback(() => {
   if (next !== null) maybeRestoreGrid(activeTabId, next);
 }, [removeTabById, activeTabId, maybeRestoreGrid]);
 
-  // Synchronize all active terminals (opencode + raw shells) with composite status
-  const allTermIdsRef = useRef<string[]>([]);
-
-  useEffect(() => {
-    const currentIds = new Set(terminals.map(t => t.id));
-    
-    // Remove terminals that have been closed
-    for (const prevId of allTermIdsRef.current) {
-      if (!currentIds.has(prevId)) {
-        removeShellStatus(project.id, prevId);
-      }
-    }
-    allTermIdsRef.current = Array.from(currentIds);
-
-    // Report active status for raw non-opencode terminals
-    for (const term of terminals) {
-      if (!term.isOpencode) {
-        reportShellStatus(project.id, term.id, 'active');
-      }
-    }
-  }, [terminals, project.id]);
-
-  // Poll opencode AI state per terminal
+  // 1. 轮询存活的 opencode 终端状态，并保证仅保留当前有效终端的记录
   useEffect(() => {
     if (opencodeTerms.length === 0) return;
 
     const interval = setInterval(async () => {
+      const activeIds = new Set(opencodeTerms.map(t => t.id));
       for (const term of opencodeTerms) {
         try {
           const info = await pollAgentState(project.root_path, term.id);
           if (info) {
-            setAgentStateMap(prev => ({ ...prev, [term.id]: info }));
+            setAgentStateMap(prev => {
+              const next: Record<string, AgentStateInfo> = {};
+              for (const [id, state] of Object.entries(prev)) {
+                if (activeIds.has(id)) next[id] = state;
+              }
+              next[term.id] = info;
+              return next;
+            });
           }
         } catch { /* DB not available */ }
       }
@@ -111,19 +98,23 @@ const closeActiveByShortcut = useCallback(() => {
     return () => clearInterval(interval);
   }, [project.root_path, opencodeTerms]);
 
-  // Report agent state changes as composite status (push model)
+  // 2. 基于当前存活终端全量快照投影，同步项目综合状态
   useEffect(() => {
-    for (const [termId, info] of Object.entries(agentStateMap)) {
-      reportShellStatus(project.id, termId, info.state);
+    const activeShells: Record<string, CompositeState> = {};
+    for (const term of terminals) {
+      if (term.isOpencode) {
+        activeShells[term.id] = (agentStateMap[term.id]?.state as CompositeState) || 'idle';
+      } else {
+        activeShells[term.id] = 'active';
+      }
     }
-  }, [agentStateMap, project.id]);
+    syncProjectShells(project.id, activeShells);
+  }, [terminals, agentStateMap, project.id]);
 
-  // Clean up composite statuses on unmount
+  // 3. 组件卸载时清空该项目状态
   useEffect(() => {
     return () => {
-      for (const id of allTermIdsRef.current) {
-        removeShellStatus(project.id, id);
-      }
+      syncProjectShells(project.id, {});
     };
   }, [project.id]);
 
@@ -166,7 +157,6 @@ const closeActiveByShortcut = useCallback(() => {
 				setActiveTabId(tabs[next].id);
 			} else if (detail === "ctrl-w") {
 				if (activeTabId !== "overview" && activeTabId !== "agents-skills") {
-					removeShellStatus(project.id, activeTabId);
 					setAgentStateMap(prev => {
 						if (!(activeTabId in prev)) return prev;
 						const n = { ...prev };
@@ -299,7 +289,7 @@ const closeActiveByShortcut = useCallback(() => {
                 <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'inline-block', lineHeight: 1.3, transform: 'translateY(-0.06em)', minWidth: tab.type === 'terminal' ? '24px' : 0, maxWidth: tab.type === 'terminal' ? 'none' : '60px' }}>
                   {tab.title}
                 </span>
-                <span onClick={(e) => { if (!isActive) return; removeShellStatus(project.id, tab.id); setAgentStateMap(prev => { const n = { ...prev }; delete n[tab.id]; return n; }); closeTerminalTab(tab.id, e); }}
+                <span onClick={(e) => { if (!isActive) return; setAgentStateMap(prev => { const n = { ...prev }; delete n[tab.id]; return n; }); closeTerminalTab(tab.id, e); }}
                   style={{ marginLeft: '2px', cursor: 'pointer', display: 'inline-block', width: '12px', height: '12px', textAlign: 'center', lineHeight: '12px', fontSize: tab.isDirty ? '0.6rem' : '0.7rem', visibility: isActive ? 'visible' : 'hidden', pointerEvents: isActive ? 'auto' : 'none' }}
                   className={`tab-close-icon ${tab.isDirty ? 'dirty' : ''}`}
                   title={tab.isDirty ? '有未保存的更改' : undefined}

@@ -50,12 +50,50 @@ export function removeShellStatus(projectId: string, terminalId: string) {
   }
 }
 
+/**
+ * Synchronize the full active terminal snapshot for a project.
+ * Completely replaces the terminal status map for the project to prevent stale/ghost states.
+ */
+export function syncProjectShells(
+  projectId: string,
+  activeShells: Record<string, CompositeState>
+) {
+  const entries = Object.entries(activeShells);
+  if (entries.length === 0) {
+    if (shellMap.has(projectId)) {
+      shellMap.delete(projectId);
+      notify();
+    }
+    return;
+  }
+
+  const existing = shellMap.get(projectId);
+  let changed = false;
+
+  if (!existing || existing.size !== entries.length) {
+    changed = true;
+  } else {
+    for (const [id, state] of entries) {
+      if (existing.get(id) !== state) {
+        changed = true;
+        break;
+      }
+    }
+  }
+
+  if (changed) {
+    const nextMap = new Map<string, CompositeState>(entries);
+    shellMap.set(projectId, nextMap);
+    notify();
+  }
+}
+
 function computeComposite(projectId: string): CompositeState | null {
   const terminals = shellMap.get(projectId);
   if (!terminals || terminals.size === 0) return null;
 
-  let best: CompositeState = "active";
-  let bestP = PRIORITY["active"];
+  let best: CompositeState | null = null;
+  let bestP = -1;
   for (const s of terminals.values()) {
     const p = PRIORITY[s] ?? -1;
     if (p > bestP) {

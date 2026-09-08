@@ -4,6 +4,7 @@ import {
   useProjectCompositeStates,
   reportShellStatus,
   removeShellStatus,
+  syncProjectShells,
 } from "../hooks/useProjectCompositeStates";
 
 describe("useProjectCompositeStates", () => {
@@ -12,9 +13,8 @@ describe("useProjectCompositeStates", () => {
 
   beforeEach(() => {
     // Clean up statuses before each test
-    removeShellStatus(projA, "term-1");
-    removeShellStatus(projA, "term-2");
-    removeShellStatus(projB, "term-1");
+    syncProjectShells(projA, {});
+    syncProjectShells(projB, {});
   });
 
   test("returns empty map when no projects or no active shells", () => {
@@ -66,6 +66,30 @@ describe("useProjectCompositeStates", () => {
 
     act(() => {
       removeShellStatus(projA, "term-1");
+    });
+    expect(result.current[projA]).toBeUndefined();
+  });
+
+  test("syncProjectShells completely replaces active terminals snapshot and reflects waiting blue light", () => {
+    const { result } = renderHook(() =>
+      useProjectCompositeStates([{ id: projA }])
+    );
+
+    // Initial state: old terminal was running (green pulse)
+    act(() => {
+      syncProjectShells(projA, { "term-old": "running" });
+    });
+    expect(result.current[projA]).toBe("running");
+
+    // Replace snapshot: old terminal closed, only new waiting terminal exists (blue light)
+    act(() => {
+      syncProjectShells(projA, { "term-new": "waiting" });
+    });
+    expect(result.current[projA]).toBe("waiting");
+
+    // Cleared snapshot
+    act(() => {
+      syncProjectShells(projA, {});
     });
     expect(result.current[projA]).toBeUndefined();
   });
