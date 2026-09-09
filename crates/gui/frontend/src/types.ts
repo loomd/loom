@@ -127,7 +127,7 @@ export interface ScanResult {
   tool_id: string | null;
 }
 
-export type AgentState = 'idle' | 'running' | 'waiting' | 'error' | 'agent_call' | 'question';
+export type AgentState = 'running' | 'waiting' | 'error' | 'agent_call' | 'question';
 
 export interface AgentStateInfo {
   state: AgentState;

@@ -103,7 +103,7 @@ const closeActiveByShortcut = useCallback(() => {
     const activeShells: Record<string, CompositeState> = {};
     for (const term of terminals) {
       if (term.isOpencode) {
-        activeShells[term.id] = (agentStateMap[term.id]?.state as CompositeState) || 'idle';
+        activeShells[term.id] = (agentStateMap[term.id]?.state as CompositeState) || 'waiting';
       } else {
         activeShells[term.id] = 'active';
       }
@@ -281,8 +281,8 @@ const closeActiveByShortcut = useCallback(() => {
                 {tab.type === 'editor' && <span style={{ fontSize: '0.8rem', opacity: 0.8 }}>📄</span>}
                 {tab.type === 'terminal' && tab.isOpencode && (
                   <span
-                    className={`agent-status-dot ${agentStateMap[tab.id]?.state || 'idle'}`}
-                    title={t(`agent.status.${agentStateMap[tab.id]?.state || 'idle'}`)}
+                    className={`agent-status-dot ${agentStateMap[tab.id]?.state || 'waiting'}`}
+                    title={t(`agent.status.${agentStateMap[tab.id]?.state || 'waiting'}`)}
                     style={{ marginRight: '4px' }}
                   />
                 )}

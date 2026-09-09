@@ -25,7 +25,7 @@ describe("useProjectCompositeStates", () => {
     expect(result.current[projB]).toBeUndefined();
   });
 
-  test("shows active (blue light) when a raw terminal or idle opencode exists", () => {
+  test("shows active or waiting (blue light) when a raw terminal or waiting opencode exists", () => {
     const { result } = renderHook(() =>
       useProjectCompositeStates([{ id: projA }])
     );
@@ -33,8 +33,12 @@ describe("useProjectCompositeStates", () => {
     act(() => {
       reportShellStatus(projA, "term-1", "active");
     });
-
     expect(result.current[projA]).toBe("active");
+
+    act(() => {
+      reportShellStatus(projA, "term-1", "waiting");
+    });
+    expect(result.current[projA]).toBe("waiting");
   });
 
   test("upgrades light to higher priority state (e.g. running, question, error)", () => {

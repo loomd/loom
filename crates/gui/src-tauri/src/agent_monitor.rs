@@ -68,7 +68,6 @@ fn now_ms() -> i64 {
 #[derive(Debug, Clone, Serialize, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub enum AgentState {
-    Idle,
     Running,
     Waiting,
     Error,
@@ -108,24 +107,24 @@ impl AgentMonitor {
     }
 
     pub fn poll_state(&self, workspace_dir: &str) -> Option<AgentStateInfo> {
-        let idle = || AgentStateInfo {
-            state: AgentState::Idle,
+        let waiting = || AgentStateInfo {
+            state: AgentState::Waiting,
             session_id: String::new(),
         };
 
-        // If DB doesn't exist or can't open, return Idle (purple)
+        // If DB doesn't exist or can't open, return Waiting (blue light)
         let db_path = match Self::get_db_path() {
             Some(p) => p,
             None => {
-                eprintln!("[AgentPoll] no DB path, Idle");
-                return Some(idle());
+                eprintln!("[AgentPoll] no DB path, Waiting");
+                return Some(waiting());
             }
         };
         let conn = match Connection::open(&db_path) {
             Ok(c) => c,
             Err(e) => {
-                eprintln!("[AgentPoll] open DB failed: {}, Idle", e);
-                return Some(idle());
+                eprintln!("[AgentPoll] open DB failed: {}, Waiting", e);
+                return Some(waiting());
             }
         };
 
@@ -136,14 +135,14 @@ impl AgentMonitor {
             let mut stmt = match conn.prepare("SELECT id, time_created FROM session WHERE directory LIKE ?1 AND (parent_id IS NULL OR parent_id = '') ORDER BY time_created DESC LIMIT 1") {
                 Ok(s) => s,
                 Err(e) => {
-                    eprintln!("[AgentPoll] session prepare failed: {}, Idle", e);
+                    eprintln!("[AgentPoll] session prepare failed: {}, Waiting", e);
                     break 'outer None;
                 }
             };
             let mut rows = match stmt.query(rusqlite::params![pattern]) {
                 Ok(r) => r,
                 Err(e) => {
-                    eprintln!("[AgentPoll] session query failed: {}, Idle", e);
+                    eprintln!("[AgentPoll] session query failed: {}, Waiting", e);
                     break 'outer None;
                 }
             };
@@ -151,13 +150,13 @@ impl AgentMonitor {
                 Ok(Some(r)) => match r.get::<_, String>(0) {
                     Ok(id) => Some(id),
                     Err(e) => {
-                        eprintln!("[AgentPoll] session row get failed: {}, Idle", e);
+                        eprintln!("[AgentPoll] session row get failed: {}, Waiting", e);
                         None
                     }
                 },
                 Ok(None) => None,
                 Err(e) => {
-                    eprintln!("[AgentPoll] session next failed: {}, Idle", e);
+                    eprintln!("[AgentPoll] session next failed: {}, Waiting", e);
                     None
                 }
             }
@@ -165,8 +164,8 @@ impl AgentMonitor {
 
         match session_id {
             None => {
-                eprintln!("[AgentPoll] no session for workspace, Idle");
-                Some(idle())
+                eprintln!("[AgentPoll] no session for workspace, Waiting");
+                Some(waiting())
             }
             Some(sid) => self.poll_parts(&conn, &sid),
         }
@@ -177,23 +176,23 @@ impl AgentMonitor {
     /// the PTY was spawned belongs to a previous application run and won't
     /// be claimed — keeping the indicator dark until a new conversation starts.
     pub fn poll_state_for_pty(&self, workspace_dir: &str, pty_session_id: &str) -> Option<AgentStateInfo> {
-        let idle = || AgentStateInfo {
-            state: AgentState::Idle,
+        let waiting = || AgentStateInfo {
+            state: AgentState::Waiting,
             session_id: String::new(),
         };
 
         let db_path = match Self::get_db_path() {
             Some(p) => p,
             None => {
-                eprintln!("[AgentPoll:pty={}] no DB path, Idle", pty_session_id);
-                return Some(idle());
+                eprintln!("[AgentPoll:pty={}] no DB path, Waiting", pty_session_id);
+                return Some(waiting());
             }
         };
         let conn = match Connection::open(&db_path) {
             Ok(c) => c,
             Err(e) => {
-                eprintln!("[AgentPoll:pty={}] open DB failed: {}, Idle", pty_session_id, e);
-                return Some(idle());
+                eprintln!("[AgentPoll:pty={}] open DB failed: {}, Waiting", pty_session_id, e);
+                return Some(waiting());
             }
         };
 
@@ -219,8 +218,8 @@ impl AgentMonitor {
         let (latest_sid, session_time) = match latest_info {
             Some(info) => info,
             None => {
-                eprintln!("[AgentPoll:pty={}] no session for workspace, Idle", pty_session_id);
-                return Some(idle());
+                eprintln!("[AgentPoll:pty={}] no session for workspace, Waiting", pty_session_id);
+                return Some(waiting());
             }
         };
 
@@ -237,8 +236,8 @@ impl AgentMonitor {
                     eprintln!("[AgentPoll:pty={}] not active, polling cached session {}", pty_session_id, cached);
                     return self.poll_parts(&conn, cached);
                 }
-                eprintln!("[AgentPoll:pty={}] not active, Idle", pty_session_id);
-                return Some(idle());
+                eprintln!("[AgentPoll:pty={}] not active, Waiting", pty_session_id);
+                return Some(waiting());
             }
         }
 
@@ -260,7 +259,7 @@ impl AgentMonitor {
         if let Some(spawn_time) = spawn_time_opt {
             if session_time < spawn_time {
                 eprintln!("[AgentPoll:pty={}] session {} created before PTY spawn ({} < {}), not claiming", pty_session_id, latest_sid, session_time, spawn_time);
-                return Some(idle());
+                return Some(waiting());
             }
         }
 
@@ -274,7 +273,7 @@ impl AgentMonitor {
                     if let Some((cached, _)) = cache_guard.get(pty_session_id) {
                         return self.poll_parts(&conn, cached);
                     }
-                    return Some(idle());
+                    return Some(waiting());
                 }
             }
         }
@@ -296,15 +295,15 @@ impl AgentMonitor {
         let mut stmt = match conn.prepare("SELECT data, time_created FROM part WHERE session_id = ?1 ORDER BY time_created DESC") {
             Ok(s) => s,
             Err(_) => {
-                eprintln!("[AgentPoll] parts query prepare failed, Idle");
-                return Some(AgentStateInfo { state: AgentState::Idle, session_id: session_id.to_string() });
+                eprintln!("[AgentPoll] parts query prepare failed, Waiting");
+                return Some(AgentStateInfo { state: AgentState::Waiting, session_id: session_id.to_string() });
             }
         };
         let mut rows = match stmt.query(rusqlite::params![session_id]) {
             Ok(r) => r,
             Err(_) => {
-                eprintln!("[AgentPoll] parts query failed, Idle");
-                return Some(AgentStateInfo { state: AgentState::Idle, session_id: session_id.to_string() });
+                eprintln!("[AgentPoll] parts query failed, Waiting");
+                return Some(AgentStateInfo { state: AgentState::Waiting, session_id: session_id.to_string() });
             }
         };
 
@@ -322,8 +321,8 @@ impl AgentMonitor {
         }
 
         if parts.is_empty() {
-            eprintln!("[AgentPoll] no parts, Idle, session: {}", session_id);
-            return Some(AgentStateInfo { state: AgentState::Idle, session_id: session_id.to_string() });
+            eprintln!("[AgentPoll] no parts, Waiting, session: {}", session_id);
+            return Some(AgentStateInfo { state: AgentState::Waiting, session_id: session_id.to_string() });
         }
 
         // Scan parts for active tool status

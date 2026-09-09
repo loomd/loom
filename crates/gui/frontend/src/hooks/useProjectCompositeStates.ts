@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 
 export type CompositeState =
-  | "idle"
   | "active"
   | "waiting"
   | "running"
@@ -10,7 +9,6 @@ export type CompositeState =
   | "error";
 
 const PRIORITY: Record<string, number> = {
-  idle: 1,
   active: 2,
   waiting: 3,
   running: 4,
