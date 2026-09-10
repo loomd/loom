@@ -38,16 +38,19 @@ function LayoutOption({ active, label, cols, rows, areas, onClick }: LayoutOptio
 
 interface LayoutSelectorProps {
   layoutMode: GridLayout | null;
+  pendingLayout?: GridLayout | null;
+  onRestorePending?: () => void;
   onSelect: (layout: GridLayout | null) => void;
   projectId?: string;
 }
 
-export function LayoutSelector({ layoutMode, onSelect, projectId }: LayoutSelectorProps) {
+export function LayoutSelector({ layoutMode, pendingLayout, onRestorePending, onSelect, projectId }: LayoutSelectorProps) {
   const { t } = useI18n();
   const [open, setOpen] = useState(false);
   const [dirtyLayouts, setDirtyLayouts] = useState<Set<string>>(() => new Set());
   const containerRef = useRef<HTMLDivElement>(null);
-  const btnRef = useRef<HTMLButtonElement>(null);
+  const btnRef = useRef<HTMLDivElement>(null);
+  const effectiveMode = layoutMode ?? pendingLayout ?? null;
 
   useEffect(() => {
     const onDirty = (e: Event) => {
@@ -66,14 +69,22 @@ export function LayoutSelector({ layoutMode, onSelect, projectId }: LayoutSelect
   }, [projectId]);
 
   const handleReset = () => {
-    if (!layoutMode) return;
-    window.dispatchEvent(new CustomEvent('loom-reset-splits', { detail: { projectId, layout: layoutMode } }));
+    if (!effectiveMode) return;
+    window.dispatchEvent(new CustomEvent('loom-reset-splits', { detail: { projectId, layout: effectiveMode } }));
     setDirtyLayouts(prev => {
       const next = new Set(prev);
-      next.delete(layoutMode);
+      next.delete(effectiveMode);
       return next;
     });
     setOpen(false);
+  };
+
+  const handleClick = () => {
+    if (!layoutMode && pendingLayout && onRestorePending) {
+      onRestorePending();
+      return;
+    }
+    setOpen(o => !o);
   };
 
   useEffect(() => {
@@ -92,64 +103,76 @@ export function LayoutSelector({ layoutMode, onSelect, projectId }: LayoutSelect
   }, [open]);
 
   return (
-    <div ref={containerRef} style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', gap: '4px', alignSelf: 'center' }}>
-      {layoutMode && dirtyLayouts.has(layoutMode) && (
-        <button
-          onClick={handleReset}
-          title={t('proj.layout.reset')}
-          style={{
-            display: 'inline-flex', alignItems: 'center', alignSelf: 'center', lineHeight: 1, padding: '4px 4px',
-            fontSize: '0.82rem', borderRadius: 'var(--radius-sm, 4px)', cursor: 'pointer',
-            backgroundColor: 'var(--bg-elevated, #18181b)',
-            border: '1px solid var(--border-subtle, #27272a)',
-            color: 'var(--text-primary, #fff)', fontWeight: 500, userSelect: 'none',
-          }}
-        >
-          {t('proj.layout.reset')}
-        </button>
-      )}
-      <button
+    <div ref={containerRef} style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', gap: '2px' }}>
+      <div
         ref={btnRef}
-        onClick={() => setOpen(o => !o)}
+        onClick={handleClick}
+        className={`workspace-tab-item ${effectiveMode ? 'active' : ''}`}
+        title={t('proj.layout.title')}
         style={{
-          display: 'inline-flex', alignItems: 'center', alignSelf: 'center', lineHeight: 1, padding: '4px 4px',
-          fontSize: '0.82rem', borderRadius: 'var(--radius-sm, 4px)', cursor: 'pointer',
-          backgroundColor: layoutMode ? 'var(--accent-emerald, #10b981)' : 'var(--bg-elevated, #18181b)',
-          border: '1px solid var(--border-subtle, #27272a)',
-          color: layoutMode ? '#fff' : 'var(--text-primary, #fff)', fontWeight: 500, userSelect: 'none',
+          gap: '6px', padding: '4px 4px', cursor: 'pointer',
         }}
       >
-        {layoutMode ? layoutMode : t('proj.layout.multi')}
-      </button>
+        <span style={{ display: 'inline-grid', gridTemplateAreas: '"content"', placeItems: 'center' }}>
+          <span
+            style={{
+              gridArea: 'content',
+              visibility: 'hidden',
+              userSelect: 'none',
+              whiteSpace: 'nowrap',
+            }}
+            aria-hidden="true"
+          >
+            {t('proj.layout.multi')}
+          </span>
+          <span
+            style={{
+              gridArea: 'content',
+              whiteSpace: 'nowrap',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              textAlign: 'center',
+            }}
+          >
+            {effectiveMode ? effectiveMode : t('proj.layout.multi')}
+          </span>
+        </span>
+      </div>
       {open && (
         <div style={{
-          position: 'absolute', top: 'calc(100% + 6px)', right: 0, zIndex: 100,
+          position: 'absolute', top: 'calc(100% + 6px)', left: 0, zIndex: 100,
           backgroundColor: 'var(--bg-modal, #1c1917)', border: '1px solid var(--border-subtle, #27272a)',
           borderRadius: 'var(--radius-md, 8px)', padding: '8px', boxShadow: '0 8px 24px rgba(0, 0, 0, 0.4)',
         }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '2px 4px 6px', userSelect: 'none' }}>
             <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>{t('proj.layout.title')}</span>
-            {layoutMode && (
-              <button
-                onClick={handleReset}
-                title={t('proj.layout.reset')}
-                style={{
-                  fontSize: '0.68rem', color: 'var(--text-secondary, #a1a1aa)', cursor: 'pointer', padding: '2px 6px',
-                  borderRadius: 'var(--radius-sm, 4px)', border: '1px solid var(--border-subtle, #27272a)',
-                  backgroundColor: 'var(--bg-elevated, #18181b)', userSelect: 'none',
-                }}
-              >
-                {t('proj.layout.reset')}
-              </button>
-            )}
+            <button
+              onClick={handleReset}
+              title={t('proj.layout.reset')}
+              disabled={!effectiveMode}
+              style={{
+                fontSize: '0.68rem',
+                color: effectiveMode ? 'var(--text-secondary, #a1a1aa)' : 'var(--text-tertiary, #52525b)',
+                cursor: effectiveMode ? 'pointer' : 'default',
+                padding: '2px 6px',
+                borderRadius: 'var(--radius-sm, 4px)',
+                border: '1px solid',
+                borderColor: (effectiveMode && dirtyLayouts.has(effectiveMode)) ? 'var(--accent-purple, #a855f7)' : 'var(--border-subtle, #27272a)',
+                backgroundColor: 'var(--bg-elevated, #18181b)',
+                opacity: effectiveMode ? 1 : 0.5,
+                userSelect: 'none',
+              }}
+            >
+              {t('proj.layout.reset')}
+            </button>
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, auto)', gap: '6px' }}>
-            <LayoutOption active={layoutMode === null} label={t('proj.layout.single')} {...layoutPreview(null)}
+            <LayoutOption active={effectiveMode === null} label={t('proj.layout.single')} {...layoutPreview(null)}
               onClick={() => { onSelect(null); setOpen(false); }} />
             {GRID_LAYOUTS.map(l => {
               const { cols, rows, areas } = layoutPreview(l);
               return (
-                <LayoutOption key={l} active={layoutMode === l} label={isCompositeLayout(l) ? l : `${cols}×${rows}`} cols={cols} rows={rows} areas={areas}
+                <LayoutOption key={l} active={effectiveMode === l} label={isCompositeLayout(l) ? l : `${cols}×${rows}`} cols={cols} rows={rows} areas={areas}
                   onClick={() => { onSelect(l); setOpen(false); }} />
               );
             })}

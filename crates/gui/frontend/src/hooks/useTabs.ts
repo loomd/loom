@@ -110,8 +110,7 @@ export function splitLines(areas: string): GridSplitLine[] {
 export function useTabs(projectRoot: string) {
   const dialog = useDialog();
   const [tabs, setTabs] = useState<ConsoleTab[]>([
-    { id: 'overview', title: '概览', type: 'overview', cwd: projectRoot },
-    { id: 'agents-skills', title: '技能管理', type: 'agents-skills', cwd: projectRoot }
+    { id: 'overview', title: '概览', type: 'overview', cwd: projectRoot }
   ]);
   const [activeTabId, setActiveTabId] = useState<string>('overview');
   const [layoutMode, setLayoutMode] = useState<GridLayout | null>(null);
@@ -144,7 +143,7 @@ export function useTabs(projectRoot: string) {
     let nextActive: string | null = null;
     if (id === activeTabId) {
       const idx = tabs.findIndex(t => t.id === id);
-      if (idx > 0 && tabs[idx - 1].id !== 'agents-skills') {
+      if (idx > 0) {
         nextActive = tabs[idx - 1].id;
       } else if (idx < tabs.length - 1) {
         nextActive = tabs[idx + 1].id;
@@ -184,7 +183,7 @@ export function useTabs(projectRoot: string) {
 		let nextActive: string | null = null;
 		if (id === activeTabId) {
 			const idx = tabs.findIndex(t => t.id === id);
-			if (idx > 0 && tabs[idx - 1].id !== 'agents-skills') {
+			if (idx > 0) {
 				nextActive = tabs[idx - 1].id;
 			} else if (idx < tabs.length - 1) {
 				nextActive = tabs[idx + 1].id;

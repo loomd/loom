@@ -36,7 +36,7 @@ export default function ProjectWorkspace({ project, isVisible, onUnregisterProje
 	const tabsState = useTabs(project.root_path);	const {
 		tabs, activeTabId, setActiveTabId, layoutMode, setLayoutMode,
 		terminals, showGrid, handleAddRawTerminal, handleCloseTerminal,
-		handleOpenFile, updateTabDirty, removeTabById, moveTab,
+		handleOpenFile, updateTabDirty, removeTabById, moveTab, addTab,
 	} = tabsState;
 const opencodeTerms = useMemo(() => terminals.filter(t => t.isOpencode), [terminals]);
 const [agentStateMap, setAgentStateMap] = useState<Record<string, AgentStateInfo>>({});
@@ -52,6 +52,27 @@ const handleAddTerminal = useCallback(() => {
   if (showGrid && layoutMode) setPendingGridMode(layoutMode);
   handleAddRawTerminal();
 }, [showGrid, layoutMode, gridCount, terminals.length, handleAddRawTerminal, setPendingGridMode]);
+
+const handleAddAgentsSkills = useCallback(() => {
+  const existingTab = tabs.find(t => t.type === 'agents-skills');
+  if (existingTab) {
+    if (showGrid && layoutMode) setPendingGridMode(layoutMode);
+    setLayoutMode(null);
+    setActiveTabId(existingTab.id);
+    return;
+  }
+  const tabId = crypto.randomUUID();
+  const newTab = {
+    id: tabId,
+    title: t('proj.tab.skills') || '技能管理',
+    type: 'agents-skills' as const,
+    cwd: project.root_path
+  };
+  if (showGrid && layoutMode) setPendingGridMode(layoutMode);
+  setLayoutMode(null);
+  addTab(newTab);
+  setActiveTabId(tabId);
+}, [tabs, showGrid, layoutMode, setPendingGridMode, setLayoutMode, addTab, setActiveTabId, project.root_path, t]);
 const openSpawnPanel = () => window.dispatchEvent(new CustomEvent("loom-open-spawn"));
 
 const maybeRestoreGrid = useCallback((closedId: string, nextActive: string | null) => {
@@ -63,6 +84,15 @@ const maybeRestoreGrid = useCallback((closedId: string, nextActive: string | nul
     setPendingGridMode(null);
   }
 }, [layoutMode, pendingGridMode, terminals, setLayoutMode, setPendingGridMode]);
+const handleRestoreGrid = useCallback(() => {
+  if (!pendingGridMode) return;
+  const targetMode = pendingGridMode;
+  setPendingGridMode(null);
+  setLayoutMode(targetMode);
+  if (terminals.length > 0 && !terminals.some(t => t.id === activeTabId)) {
+    setActiveTabId(terminals[0].id);
+  }
+}, [pendingGridMode, terminals, activeTabId, setActiveTabId, setLayoutMode, setPendingGridMode]);
 const closeTerminalTab = useCallback(async (id: string, e: React.MouseEvent) => {
   const next = await handleCloseTerminal(id, e);
   if (next !== null) maybeRestoreGrid(id, next);
@@ -126,12 +156,13 @@ const closeActiveByShortcut = useCallback(() => {
 	});
 
 	const loadSkillsAndDocs = data.loadSkillsAndDocs;
+	const isActiveSkillsTab = tabs.find(t => t.id === activeTabId)?.type === 'agents-skills';
 
 	useEffect(() => {
-		if (activeTabId === 'agents-skills') {
+		if (isActiveSkillsTab) {
 			loadSkillsAndDocs();
 		}
-	}, [activeTabId, loadSkillsAndDocs]);
+	}, [isActiveSkillsTab, loadSkillsAndDocs]);
 
 	useEffect(() => {
 		if (!isVisible) return;
@@ -156,7 +187,8 @@ const closeActiveByShortcut = useCallback(() => {
 				setLayoutMode(null);
 				setActiveTabId(tabs[next].id);
 			} else if (detail === "ctrl-w") {
-				if (activeTabId !== "overview" && activeTabId !== "agents-skills") {
+				const activeTab = tabs.find(t => t.id === activeTabId);
+				if (activeTab?.type !== "overview") {
 					setAgentStateMap(prev => {
 						if (!(activeTabId in prev)) return prev;
 						const n = { ...prev };
@@ -185,7 +217,7 @@ const closeActiveByShortcut = useCallback(() => {
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
         padding: '2px 0px 0px 0px', gap: '0px', height: '30px', minHeight: '30px'
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0px', alignSelf: 'stretch' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0px', alignSelf: 'stretch', marginRight: '2px' }}>
           {onToggleSidebar && (
             <button onClick={onToggleSidebar} className="sidebar-toggle-mini-btn"
               title={isSidebarCollapsed ? t("proj.sidebar.expand") : t("proj.sidebar.collapse")}
@@ -193,50 +225,41 @@ const closeActiveByShortcut = useCallback(() => {
               {isSidebarCollapsed ? "▶" : "◀"}
             </button>
           )}
-          {tabs.filter(tab => tab.id === 'overview' || tab.id === 'agents-skills').map(tab => (
+          {tabs.filter(tab => tab.id === 'overview').map(tab => (
             <div key={tab.id}
               onClick={() => { if (showGrid && layoutMode) setPendingGridMode(layoutMode); setLayoutMode(null); setActiveTabId(tab.id); }}
-              data-tauri-drag-region
+              className={`workspace-tab-item ${tab.id === activeTabId && !showGrid ? 'active' : ''}`}
               style={{
-                display: 'flex', alignItems: 'center', lineHeight: 1, gap: '6px', padding: '4px 4px',
-                flexShrink: 0,
-                backgroundColor: tab.id === activeTabId ? 'var(--bg-elevated, #27272a)' : 'transparent',
-                border: '1px solid',
-                borderColor: tab.id === activeTabId ? 'var(--border-subtle, #3e3e42)' : 'transparent',
-                borderRadius: 'var(--radius-md, 6px)', cursor: 'pointer',
-                color: tab.id === activeTabId ? 'var(--text-primary, #ffffff)' : 'var(--text-secondary, #a1a1aa)',
-                fontSize: '0.82rem', fontWeight: 400, whiteSpace: 'nowrap', userSelect: 'none',
+                gap: '6px', padding: '4px 4px', cursor: 'pointer',
               }}>
-              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'inline-block', maxWidth: tab.id === 'overview' ? '80px' : '60px' }}>
+              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'inline-block', lineHeight: 1.3, transform: 'translateY(-0.06em)', maxWidth: tab.id === 'overview' ? '80px' : '60px' }}>
                 {tab.title}
               </span>
             </div>
           ))}
           <div
-            onClick={handleAddTerminal}
-            data-tauri-drag-region
+            onClick={openSpawnPanel}
+            className="workspace-tab-item"
+            title={t('proj.btn.spawn') || '派生'}
             style={{
-              display: 'flex', alignItems: 'center', lineHeight: 1, gap: '6px', padding: '4px 4px',
-              flexShrink: 0,
-              backgroundColor: 'transparent',
-              border: '1px solid',
-              borderColor: 'transparent',
-              borderRadius: 'var(--radius-md, 6px)', cursor: 'pointer',
-              color: 'var(--text-secondary, #a1a1aa)',
-              fontSize: '0.82rem', fontWeight: 400, whiteSpace: 'nowrap', userSelect: 'none',
+              gap: '6px', padding: '4px 4px', cursor: 'pointer',
             }}>
-            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'inline-block' }}>
-              {t('proj.newTerminal')}
+            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'inline-block', lineHeight: 1.3, transform: 'translateY(-0.06em)' }}>
+              {t('proj.btn.spawn') || '派生'}
             </span>
           </div>
-          {tabs.filter(tab => tab.id !== 'overview' && tab.id !== 'agents-skills').length > 0 && (
-            <div style={{ width: '1px', alignSelf: 'stretch', backgroundColor: 'var(--border-subtle, #27272a)', flexShrink: 0, margin: '6px 0' }} />
-          )}
+          <LayoutSelector
+            layoutMode={layoutMode}
+            pendingLayout={pendingGridMode}
+            onRestorePending={handleRestoreGrid}
+            projectId={project.id}
+            onSelect={(l) => { setPendingGridMode(null); setLayoutMode(l); }}
+          />
         </div>
         <div data-tauri-drag-region onWheel={(e) => { e.currentTarget.scrollLeft += e.deltaY; }}
-          style={{ display: 'flex', gap: '2px', overflowX: 'auto', flex: 1, scrollbarWidth: 'none', msOverflowStyle: 'none' }} className="titlebar-tabs-scroll"
+          style={{ display: 'flex', alignItems: 'center', gap: '2px', overflowX: 'auto', flex: 1, scrollbarWidth: 'none', msOverflowStyle: 'none' }} className="titlebar-tabs-scroll"
         >
-          {tabs.filter(tab => tab.id !== 'overview' && tab.id !== 'agents-skills').map(tab => {
+          {tabs.filter(tab => tab.id !== 'overview').map(tab => {
             const isActive = showGrid
               ? tab.type === 'terminal' && terminals.findIndex(t => t.id === tab.id) < gridCount
               : tab.id === activeTabId;
@@ -267,16 +290,11 @@ const closeActiveByShortcut = useCallback(() => {
                   }
                   setActiveTabId(tab.id);
                 }}
+                className={`workspace-tab-item ${isActive ? 'active' : ''}`}
                 style={{
-                  display: 'flex', alignItems: 'center', lineHeight: 1, gap: '0px', padding: '4px 4px',
-                  flexShrink: 0,
+                  gap: '0px', padding: '4px 4px',
                   opacity: dragTabId === tab.id ? 0.35 : 1,
-                  backgroundColor: isActive ? 'var(--bg-elevated, #27272a)' : 'transparent',
-                  border: '1px solid',
-                  borderColor: isActive ? 'var(--border-subtle, #3e3e42)' : 'transparent',
-                  borderRadius: 'var(--radius-md, 6px)', cursor: 'grab',
-                  color: isActive ? 'var(--text-primary, #ffffff)' : 'var(--text-secondary, #a1a1aa)',
-                  fontSize: '0.82rem', fontWeight: 400, whiteSpace: 'nowrap', userSelect: 'none',
+                  cursor: 'grab',
                 }}>
                 {tab.type === 'editor' && <span style={{ fontSize: '0.8rem', opacity: 0.8 }}>📄</span>}
                 {tab.type === 'terminal' && tab.isOpencode && (
@@ -301,7 +319,6 @@ const closeActiveByShortcut = useCallback(() => {
         <div data-tauri-drag-region onDoubleClick={() => { document.querySelector('.titlebar-tabs-scroll')?.scrollTo({ left: 0, behavior: 'smooth' }); }}
           style={{ width: '24px', flexShrink: 0, alignSelf: 'stretch', cursor: 'grab' }} title="拖拽窗口 / 双击回到起始位置" />
         <div style={{ display: 'flex', gap: '2px', alignItems: 'stretch', alignSelf: 'stretch' }}>
-          <LayoutSelector layoutMode={layoutMode} projectId={project.id} onSelect={(l) => { setPendingGridMode(null); setLayoutMode(l); }} />
           <WindowControlButtons />
         </div>
       </div>
@@ -314,22 +331,37 @@ const closeActiveByShortcut = useCallback(() => {
 					{t('proj.launcher.title') || 'Quick Spawn'}
               </h3>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', width: '100%' }}>
-                <button type="button"
-                  onClick={handleAddTerminal}
-                  className="btn btn-ghost"
-                  style={{
-                    display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 14px',
-                    borderRadius: 'var(--radius-sm, 6px)', border: '1px dashed var(--border-mid, #3f3f46)',
-                    backgroundColor: 'var(--bg-elevated, rgba(255,255,255,0.04))',
-                    cursor: 'pointer', fontSize: '0.85rem', fontWeight: 600, width: '100%',
-                    minWidth: 0, overflow: 'hidden', textAlign: 'left', justifyContent: 'flex-start',
-                    transition: 'background-color 0.2s, border-color 0.2s',
-                  }}>
-                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flexGrow: 1 }}>
-                    空白终端
-                  </span>
-                </button>
-                {data.templates.map((tpl, i) => {
+                 <button type="button"
+                   onClick={handleAddTerminal}
+                   className="btn btn-ghost"
+                   style={{
+                     display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 14px',
+                     borderRadius: 'var(--radius-sm, 6px)', border: '1px dashed var(--border-mid, #3f3f46)',
+                     backgroundColor: 'var(--bg-elevated, rgba(255,255,255,0.04))',
+                     cursor: 'pointer', fontSize: '0.85rem', fontWeight: 600, width: '100%',
+                     minWidth: 0, overflow: 'hidden', textAlign: 'left', justifyContent: 'flex-start',
+                     transition: 'background-color 0.2s, border-color 0.2s',
+                   }}>
+                   <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flexGrow: 1 }}>
+                     {t('proj.launcher.blankTerminal') || '空白终端'}
+                   </span>
+                 </button>
+                  <button type="button"
+                    onClick={handleAddAgentsSkills}
+                    className="btn btn-ghost"
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 14px',
+                      borderRadius: 'var(--radius-sm, 6px)', border: '1px dashed var(--border-mid, #3f3f46)',
+                      backgroundColor: 'var(--bg-elevated, rgba(255,255,255,0.04))',
+                      cursor: 'pointer', fontSize: '0.85rem', fontWeight: 600, width: '100%',
+                      minWidth: 0, overflow: 'hidden', textAlign: 'left', justifyContent: 'flex-start',
+                      transition: 'background-color 0.2s, border-color 0.2s',
+                    }}>
+                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flexGrow: 1 }}>
+                      {t('proj.launcher.skills') || '技能管理'}
+                    </span>
+                  </button>
+                 {data.templates.map((tpl, i) => {
                   const isDragging = data.draggedIndex === i;
                   const isDragOver = data.dragOverIndex === i;
                   const showTopLine = isDragOver && data.draggedIndex !== null && data.draggedIndex > i;
@@ -407,7 +439,7 @@ const closeActiveByShortcut = useCallback(() => {
           </div>
         )}
 
-        {activeTabId === 'agents-skills' && (
+        {tabs.find(t => t.id === activeTabId)?.type === 'agents-skills' && !showGrid && (
           <div style={{ flexGrow: 1, minHeight: 0, display: 'flex', flexDirection: 'row', gap: '24px', padding: '12px 24px', overflow: 'hidden' }}>
             <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '16px', paddingTop: '2px', overflow: 'hidden' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -510,7 +542,7 @@ const closeActiveByShortcut = useCallback(() => {
 
         {tabs.map(tab => {
           if (tab.type !== 'editor' || !tab.filePath) return null;
-          const isTabVisible = tab.id === activeTabId;
+          const isTabVisible = !showGrid && tab.id === activeTabId;
           return (
             <div key={tab.id} style={{ display: isTabVisible ? 'flex' : 'none', flexDirection: 'column', flex: 1, minHeight: 0, width: '100%', height: '100%', boxSizing: 'border-box' }}>
               <Suspense fallback={<EditorPlaceholder />}>

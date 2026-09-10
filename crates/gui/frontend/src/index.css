@@ -281,15 +281,17 @@ body.theme-day {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  height: 24px;
+  box-sizing: border-box;
   background: transparent;
   border: 1px solid transparent;
   color: var(--text-secondary);
   cursor: pointer;
   padding: 4px 6px;
   font-size: 0.75rem;
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-sm, 4px);
   transition: background-color 200ms, color 200ms;
-  margin-right: 2px;
+  margin-right: 0;
   flex-shrink: 0;
   user-select: none;
   line-height: 1;
@@ -300,6 +302,32 @@ body.theme-day {
   background: var(--bg-elevated);
   color: var(--text-primary);
   border-color: var(--border-subtle);
+}
+
+/* ─── Workspace Titlebar Tabs ─── */
+.workspace-tab-item {
+  display: flex;
+  align-items: center;
+  line-height: 1;
+  height: 24px;
+  box-sizing: border-box;
+  flex-shrink: 0;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm, 4px);
+  color: var(--text-secondary, #a1a1aa);
+  font-size: 0.82rem;
+  font-weight: 400;
+  white-space: nowrap;
+  user-select: none;
+  transition: background-color 200ms, color 200ms, border-color 200ms;
+}
+
+.workspace-tab-item:hover,
+.workspace-tab-item.active {
+  background: var(--bg-elevated, #27272a);
+  color: var(--text-primary, #ffffff);
+  border-color: var(--border-subtle, #3e3e42);
 }
 
 /* ─── Ambient Background Orbs ────────────────────────────── */
