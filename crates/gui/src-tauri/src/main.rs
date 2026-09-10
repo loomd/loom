@@ -1782,8 +1782,6 @@ fn main() {
                         window.is_maximized().unwrap_or(false),
                         window.is_fullscreen().unwrap_or(false));
                 }
-
-                crash_shield::install_webview_shield(&window);
             }
 
             #[cfg(target_os = "windows")]
