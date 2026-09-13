@@ -6,7 +6,7 @@ const MIN_WINDOW_HEIGHT: u32 = 560;
 use loom_core::agent_config::{discover_agents, fetch_models, write_opencode_config, DiscoveryOverview, FetchedModel};
 use loom_core::cli_install::{self as cli_install, CliInstallStatus};
 use loom_core::skills::{get_existing_skill_paths, inject_loom_skills, LOOM_SKILL_VERSION};
-use loom_core::storage::{self as cstore, AgentDoc, AgentInstance, Category, CliTool, GlobalDocTemplate, GlobalEnvVar, GlobalSkillTemplate, Project, ProjectSkill, ScanResult, Template};
+use loom_core::storage::{self as cstore, AgentDoc, AgentInstance, Category, CliTool, GlobalDocTemplate, GlobalEnvVar, GlobalSkillTemplate, PersistedTerminal, Project, ProjectSkill, ScanResult, Template};
 use std::collections::HashMap;
 use std::sync::OnceLock;
 
@@ -835,6 +835,31 @@ fn get_agent_skill_map() -> Result<HashMap<String, String>, String> {
 #[tauri::command]
 fn set_agent_skill_map(skill_map: HashMap<String, String>) -> Result<(), String> {
     cstore::set_agent_skill_map(skill_map)
+}
+
+#[tauri::command]
+fn get_project_terminals(project_id: String) -> Result<Vec<PersistedTerminal>, String> {
+    Ok(cstore::get_project_terminals(&project_id))
+}
+
+#[tauri::command]
+fn save_project_terminals(project_id: String, terminals: Vec<PersistedTerminal>) -> Result<(), String> {
+    cstore::save_project_terminals(&project_id, terminals).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn clear_project_terminals(project_id: String) -> Result<(), String> {
+    cstore::clear_project_terminals(&project_id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn get_restore_terminals() -> Result<bool, String> {
+    cstore::get_restore_terminals().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn set_restore_terminals(enabled: bool) -> Result<(), String> {
+    cstore::set_restore_terminals(enabled).map_err(|e| e.to_string())
 }
 
 fn execute_test_command(cmd: &str, args_json: &str) -> Result<String, String> {
@@ -2026,7 +2051,12 @@ fn main() {
             get_loom_skill_version,
             get_agent_discovery_status,
             fetch_provider_models,
-            configure_opencode_provider
+            configure_opencode_provider,
+            get_project_terminals,
+            save_project_terminals,
+            clear_project_terminals,
+            get_restore_terminals,
+            set_restore_terminals
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

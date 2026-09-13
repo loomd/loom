@@ -164,3 +164,16 @@ export interface FetchedModel {
   id: string;
   name: string;
 }
+
+export interface PersistedTerminal {
+  id: string;
+  title: string;
+  cwd: string;
+  command?: string;
+  args?: string[];
+  env?: Record<string, string>;
+  is_opencode?: boolean;
+  opencode_session_id?: string;
+  initial_command?: string;
+}
+

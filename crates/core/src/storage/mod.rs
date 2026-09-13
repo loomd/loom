@@ -17,6 +17,9 @@ pub use manager::{
     get_floating_sidebar_position, set_floating_sidebar_position,
     get_sidebar_width, set_sidebar_width,
     get_bottom_panel_mode, set_bottom_panel_mode,
+    get_restore_terminals, set_restore_terminals,
+    get_current_state_path, get_current_state, save_current_state,
+    get_project_terminals, save_project_terminals, clear_project_terminals,
     import_cli_tool, import_global_doc_to_project,
     import_global_skill_to_project, kill_cli_instance, parse_local_skill_dir, read_agent_logs,
     reorder_cli_tools, reorder_projects, reorder_templates, run_cli_template, scan_and_classify_agents, create_agent_templates, scan_directory, toggle_cli_tool_agent,
@@ -27,8 +30,8 @@ pub use manager::{
     update_global_skill, update_cli_alias, update_template, StorageManager, ScanResult,
 };
 pub use models::{
-    AgentDoc, AgentInstance, AppConfig, Category, CliTool, GlobalDocTemplate, GlobalEnvVar,
-    GlobalSkillTemplate, LoomStorage, Project, ProjectSkill, Template,
+    AgentDoc, AgentInstance, AppConfig, Category, CliTool, CurrentState, GlobalDocTemplate, GlobalEnvVar,
+    GlobalSkillTemplate, LoomStorage, PersistedTerminal, Project, ProjectSkill, Template,
 };
 
 #[cfg(test)]

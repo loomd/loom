@@ -15,6 +15,7 @@ import type {
 	ScanResult,
 	AgentDiscoveryStatus,
 	FetchedModel,
+	PersistedTerminal,
 } from "./types";
 
 // ─── CLI Tools ────────────────────────────────────────────
@@ -476,3 +477,19 @@ export const configureOpencodeProvider = (
 	protocol?: string,
 ): Promise<void> =>
 	invoke("configure_opencode_provider", { providerId, baseUrl, apiKey, selectedModels, protocol });
+
+export const getProjectTerminals = (projectId: string): Promise<PersistedTerminal[]> =>
+	invoke("get_project_terminals", { projectId });
+
+export const saveProjectTerminals = (projectId: string, terminals: PersistedTerminal[]): Promise<void> =>
+	invoke("save_project_terminals", { projectId, terminals });
+
+export const clearProjectTerminals = (projectId: string): Promise<void> =>
+	invoke("clear_project_terminals", { projectId });
+
+export const getRestoreTerminals = (): Promise<boolean> =>
+	invoke("get_restore_terminals");
+
+export const setRestoreTerminals = (enabled: boolean): Promise<void> =>
+	invoke("set_restore_terminals", { enabled });
+

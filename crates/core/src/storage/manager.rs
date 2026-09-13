@@ -1,7 +1,7 @@
 use crate::storage::error::{Result, StorageError};
 use crate::storage::models::{
-    AgentDoc, AgentInstance, AppConfig, Category, CliTool, GlobalDocTemplate, GlobalEnvVar,
-    GlobalSkillTemplate, LoomStorage, Project, ProjectSkill, Template,
+    AgentDoc, AgentInstance, AppConfig, Category, CliTool, CurrentState, GlobalDocTemplate, GlobalEnvVar,
+    GlobalSkillTemplate, LoomStorage, PersistedTerminal, Project, ProjectSkill, Template,
 };
 use std::collections::HashMap;
 use std::env;
@@ -61,6 +61,69 @@ pub fn save_active_instances_list(list: &[ActiveInstance]) {
         }
     }
 }
+
+pub fn get_current_state_path() -> PathBuf {
+    get_config_path().with_file_name("current.json")
+}
+
+pub fn get_current_state() -> CurrentState {
+    let path = get_current_state_path();
+    if !path.exists() {
+        return CurrentState::default();
+    }
+    let content = match fs::read_to_string(&path) {
+        Ok(c) => c,
+        Err(_) => return CurrentState::default(),
+    };
+    serde_json::from_str(&content).unwrap_or_default()
+}
+
+pub fn save_current_state(state: &CurrentState) -> Result<()> {
+    let path = get_current_state_path();
+    if let Some(parent) = path.parent() {
+        let _ = fs::create_dir_all(parent);
+    }
+    let content = serde_json::to_string_pretty(state)?;
+    let temp_path = path.with_extension("tmp");
+    let write_and_rename = (|| {
+        use std::io::Write;
+        let mut file = fs::File::create(&temp_path)?;
+        file.write_all(content.as_bytes())?;
+        file.sync_all()?;
+        drop(file);
+        fs::rename(&temp_path, &path)?;
+        Ok::<(), std::io::Error>(())
+    })();
+    if let Err(e) = write_and_rename {
+        let _ = fs::remove_file(&temp_path);
+        return Err(StorageError::IoError(e));
+    }
+    Ok(())
+}
+
+pub fn get_project_terminals(project_id: &str) -> Vec<PersistedTerminal> {
+    let state = get_current_state();
+    state.project_terminals.get(project_id).cloned().unwrap_or_default()
+}
+
+pub fn save_project_terminals(project_id: &str, terminals: Vec<PersistedTerminal>) -> Result<()> {
+    let mut state = get_current_state();
+    if terminals.is_empty() {
+        state.project_terminals.remove(project_id);
+    } else {
+        state.project_terminals.insert(project_id.to_string(), terminals);
+    }
+    save_current_state(&state)
+}
+
+pub fn clear_project_terminals(project_id: &str) -> Result<()> {
+    let mut state = get_current_state();
+    if state.project_terminals.remove(project_id).is_some() {
+        save_current_state(&state)?;
+    }
+    Ok(())
+}
+
 
 // ─── AI Agent Classification ────────────────────────────────────────────────
 
@@ -2136,6 +2199,18 @@ pub fn get_bottom_panel_mode() -> Result<String> {
 pub fn set_bottom_panel_mode(mode: String) -> Result<()> {
     let mut config = load_config()?;
     config.bottom_panel_mode = mode;
+    save_config(&config)?;
+    Ok(())
+}
+
+pub fn get_restore_terminals() -> Result<bool> {
+    let config = load_config()?;
+    Ok(config.restore_terminals)
+}
+
+pub fn set_restore_terminals(enabled: bool) -> Result<()> {
+    let mut config = load_config()?;
+    config.restore_terminals = enabled;
     save_config(&config)?;
     Ok(())
 }

@@ -214,6 +214,10 @@ const zhDict: Dictionary = {
 	"settings.system.desc": "管理 Loom 的系统级行为。",
 	"settings.system.autostart": "开机自启动",
 	"settings.system.autostartDesc": "在系统启动时自动运行 Loom",
+	"settings.system.restoreTerminals": "重启后自动恢复终端",
+	"settings.system.restoreTerminalsDesc": "启动应用或重新打开项目时，自动恢复上次未关闭的终端会话与 Agent 状态",
+	"settings.toast.restoreTerminalsSaved": "恢复终端设置已保存",
+	"settings.toast.restoreTerminalsSaveFailed": "保存恢复终端设置失败",
 	"settings.system.reopenOnboarding": "重新打开引导",
 	"settings.system.reopenOnboardingDesc": "重新启动 AI 引导向导，检测和配置 Agent",
 	"settings.toast.autostartSaved": "开机自启动设置已更新",
@@ -418,6 +422,11 @@ const zhDict: Dictionary = {
 	"proj.bottomPanel.floating": "悬浮",
 	"proj.bottomPanel.mode": "面板模式",
 	"proj.sidebar.collapse.enable": "启用左侧侧边栏折叠",
+	"proj.restore.banner": "检测到上次会话有 {count} 个未关闭终端",
+	"proj.restore.withAgents": "（包含 {agentCount} 个 Agent 会话）",
+	"proj.restore.btn.restore": "恢复终端",
+	"proj.restore.btn.dismiss": "忽略",
+	"proj.restore.toast.success": "已恢复 {count} 个终端会话",
 
 	// File Editor
 	"editor.loading": "正在加载文件内容...",
@@ -709,6 +718,11 @@ const enDict: Dictionary = {
 	"settings.system.autostart": "Auto-start on Boot",
 	"settings.system.autostartDesc":
 		"Automatically run Loom when the system starts",
+	"settings.system.restoreTerminals": "Auto Restore Terminals on Restart",
+	"settings.system.restoreTerminalsDesc":
+		"Automatically restore unclosed terminal sessions and agent state on app restart or reopening projects",
+	"settings.toast.restoreTerminalsSaved": "Restore terminals setting saved",
+	"settings.toast.restoreTerminalsSaveFailed": "Failed to save restore terminals setting",
 	"settings.system.reopenOnboarding": "Re-open Onboarding",
 	"settings.system.reopenOnboardingDesc":
 		"Restart the AI onboarding wizard to detect and configure agents",
@@ -923,6 +937,11 @@ const enDict: Dictionary = {
 	"proj.bottomPanel.floating": "Floating",
 	"proj.bottomPanel.mode": "Panel Mode",
 	"proj.sidebar.collapse.enable": "Enable Left Sidebar Collapse",
+	"proj.restore.banner": "Detected {count} unclosed terminal(s) from previous session",
+	"proj.restore.withAgents": " (including {agentCount} Agent session(s))",
+	"proj.restore.btn.restore": "Restore Terminals",
+	"proj.restore.btn.dismiss": "Dismiss",
+	"proj.restore.toast.success": "Restored {count} terminal session(s)",
 
 	// File Editor
 	"editor.loading": "Loading file contents...",

@@ -581,7 +581,47 @@ describe("api - File Explorer", () => {
     mockInvoke.mockResolvedValueOnce(undefined);
     const { setUpdateCheckInterval } = await import("../api");
     await setUpdateCheckInterval("30min");
-    expect(mockInvoke).toHaveBeenCalledWith("set_update_check_interval", { interval: "30min" });
+    expect(mockInvoke).toHaveBeenCalledWith("setUpdateCheckInterval" in mockInvoke ? "set_update_check_interval" : "set_update_check_interval", { interval: "30min" });
+  });
+
+  it("getProjectTerminals calls invoke with projectId", async () => {
+    mockInvoke.mockResolvedValueOnce([]);
+    const { getProjectTerminals } = await import("../api");
+    const res = await getProjectTerminals("proj-1");
+    expect(mockInvoke).toHaveBeenCalledWith("get_project_terminals", { projectId: "proj-1" });
+    expect(res).toEqual([]);
+  });
+
+  it("saveProjectTerminals calls invoke with projectId and terminals", async () => {
+    mockInvoke.mockResolvedValueOnce(undefined);
+    const { saveProjectTerminals } = await import("../api");
+    const terminals = [
+      { id: "t1", title: "Terminal 1", cwd: "/test", is_opencode: false },
+    ];
+    await saveProjectTerminals("proj-1", terminals);
+    expect(mockInvoke).toHaveBeenCalledWith("save_project_terminals", { projectId: "proj-1", terminals });
+  });
+
+  it("clearProjectTerminals calls invoke with projectId", async () => {
+    mockInvoke.mockResolvedValueOnce(undefined);
+    const { clearProjectTerminals } = await import("../api");
+    await clearProjectTerminals("proj-1");
+    expect(mockInvoke).toHaveBeenCalledWith("clear_project_terminals", { projectId: "proj-1" });
+  });
+
+  it("getRestoreTerminals calls invoke", async () => {
+    mockInvoke.mockResolvedValueOnce(true);
+    const { getRestoreTerminals } = await import("../api");
+    const res = await getRestoreTerminals();
+    expect(mockInvoke).toHaveBeenCalledWith("get_restore_terminals");
+    expect(res).toBe(true);
+  });
+
+  it("setRestoreTerminals calls invoke with enabled", async () => {
+    mockInvoke.mockResolvedValueOnce(undefined);
+    const { setRestoreTerminals } = await import("../api");
+    await setRestoreTerminals(false);
+    expect(mockInvoke).toHaveBeenCalledWith("set_restore_terminals", { enabled: false });
   });
 });
 

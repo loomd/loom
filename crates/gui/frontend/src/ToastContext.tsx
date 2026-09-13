@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useCallback } from 'react';
+import React, { createContext, useContext, useState, useCallback, useMemo } from 'react';
 import type { ReactNode } from 'react';
 
 interface Toast {
@@ -29,11 +29,11 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     }, 3500);
   }, []);
 
-  const toast = {
+  const toast = useMemo(() => ({
     success: (msg: string) => addToast('success', msg),
     error: (msg: string) => addToast('error', msg),
     info: (msg: string) => addToast('info', msg),
-  };
+  }), [addToast]);
 
   return (
     <ToastContext.Provider value={{ toasts, toast }}>

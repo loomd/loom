@@ -9,11 +9,11 @@ import { useToast } from '../ToastContext';
 import { useI18n } from '../I18nContext';
 import { TemplateModal } from './TemplatesPage';
 import { EditorPlaceholder } from '../components/EditorPlaceholder';
-import { pollAgentState } from '../api';
+import { clearProjectTerminals, getProjectTerminals, getRestoreTerminals, pollAgentState, saveProjectTerminals } from '../api';
 import { syncProjectShells } from '../hooks/useProjectCompositeStates';
 import type { CompositeState } from '../hooks/useProjectCompositeStates';
-import type { Project, AgentStateInfo } from '../types';
-import type { GridLayout } from '../hooks/useTabs';
+import type { Project, AgentStateInfo, PersistedTerminal } from '../types';
+import type { ConsoleTab, GridLayout } from '../hooks/useTabs';
 import { gridCellCount } from '../hooks/useTabs';
 const FileEditor = React.lazy(() => import('../components/FileEditor').then(m => ({ default: m.FileEditor })));
 
@@ -33,8 +33,9 @@ export default function ProjectWorkspace({ project, isVisible, onUnregisterProje
   const { t } = useI18n();
   const toast = useToast();
 
-	const tabsState = useTabs(project.root_path);	const {
-		tabs, activeTabId, setActiveTabId, layoutMode, setLayoutMode,
+	const tabsState = useTabs(project.root_path);
+	const {
+		tabs, setTabs, activeTabId, setActiveTabId, layoutMode, setLayoutMode,
 		terminals, showGrid, handleAddRawTerminal, handleCloseTerminal,
 		handleOpenFile, updateTabDirty, removeTabById, moveTab, addTab,
 	} = tabsState;
@@ -42,7 +43,128 @@ const opencodeTerms = useMemo(() => terminals.filter(t => t.isOpencode), [termin
 const [agentStateMap, setAgentStateMap] = useState<Record<string, AgentStateInfo>>({});
 const [pendingGridMode, setPendingGridMode] = useState<GridLayout | null>(null);
 const [dragTabId, setDragTabId] = useState<string | null>(null);
+const [pendingRestoreTerminals, setPendingRestoreTerminals] = useState<PersistedTerminal[] | null>(null);
+const [restoreReady, setRestoreReady] = useState(false);
 const gridCount = layoutMode ? gridCellCount(layoutMode) : 0;
+
+const performRestore = useCallback((list: PersistedTerminal[], notify = true) => {
+  if (!list || list.length === 0) return;
+  const newTabs: ConsoleTab[] = [];
+  for (const p of list) {
+    const newId = crypto.randomUUID();
+    let args = p.args ? [...p.args] : undefined;
+    if (p.is_opencode && p.opencode_session_id) {
+      const cleanArgs = args ? [...args] : [];
+      const sIdx = cleanArgs.indexOf('-s');
+      if (sIdx !== -1 && sIdx + 1 < cleanArgs.length) {
+        cleanArgs[sIdx + 1] = p.opencode_session_id;
+      } else {
+        cleanArgs.push('-s', p.opencode_session_id);
+      }
+      args = cleanArgs;
+    }
+    newTabs.push({
+      id: newId,
+      title: p.title,
+      type: 'terminal',
+      cwd: p.cwd,
+      command: p.command,
+      args,
+      env: p.env,
+      isOpencode: p.is_opencode,
+      opencodeSessionId: p.opencode_session_id,
+      initialCommand: p.initial_command,
+    });
+  }
+  setTabs(prev => {
+    const hasExistingTerminals = prev.some(t => t.type === 'terminal');
+    if (hasExistingTerminals) {
+      return prev;
+    }
+    return [...prev, ...newTabs];
+  });
+  if (newTabs.length > 0) {
+    setActiveTabId(newTabs[0].id);
+  }
+  if (notify) {
+    toast.success(t('proj.restore.toast.success', { count: newTabs.length }));
+  }
+  setPendingRestoreTerminals(null);
+}, [setTabs, setActiveTabId, toast, t]);
+
+const performRestoreRef = React.useRef(performRestore);
+performRestoreRef.current = performRestore;
+
+useEffect(() => {
+  let isCancelled = false;
+  setRestoreReady(false);
+
+  Promise.all([
+    getProjectTerminals(project.id),
+    getRestoreTerminals().catch(() => true),
+  ]).then(([saved, autoRestore]) => {
+    if (isCancelled) return;
+    if (!saved || saved.length === 0) {
+      setRestoreReady(true);
+      return;
+    }
+    if (autoRestore) {
+      performRestoreRef.current(saved, false);
+      setRestoreReady(true);
+    } else {
+      setPendingRestoreTerminals(saved);
+      setRestoreReady(true);
+    }
+  }).catch((err) => {
+    console.error('Failed to get saved project terminals:', err);
+    if (!isCancelled) {
+      setRestoreReady(true);
+    }
+  });
+
+  return () => {
+    isCancelled = true;
+  };
+}, [project.id]);
+
+const handleRestoreSavedTerminals = useCallback(() => {
+  if (pendingRestoreTerminals) {
+    performRestore(pendingRestoreTerminals, true);
+  }
+}, [pendingRestoreTerminals, performRestore]);
+
+const handleDismissRestore = useCallback(() => {
+  clearProjectTerminals(project.id).catch((e) => console.error('Failed to clear terminals:', e));
+  setPendingRestoreTerminals(null);
+}, [project.id]);
+
+// Auto-save terminals to current.json when tabs or agent sessions change
+useEffect(() => {
+  if (!restoreReady || pendingRestoreTerminals !== null) return;
+
+  const timer = setTimeout(() => {
+    const list: PersistedTerminal[] = terminals.map(t => {
+      const opencodeSessionId = t.isOpencode
+        ? (agentStateMap[t.id]?.session_id || t.opencodeSessionId || undefined)
+        : undefined;
+      return {
+        id: t.id,
+        title: t.title,
+        cwd: t.cwd,
+        command: t.command,
+        args: t.args,
+        env: t.env,
+        is_opencode: !!t.isOpencode,
+        opencode_session_id: opencodeSessionId,
+        initial_command: t.initialCommand,
+      };
+    });
+    saveProjectTerminals(project.id, list).catch((e) => {
+      console.error('Failed to save project terminals:', e);
+    });
+  }, 1000);
+  return () => clearTimeout(timer);
+}, [restoreReady, terminals, agentStateMap, project.id, pendingRestoreTerminals]);
 
 const handleAddTerminal = useCallback(() => {
   if (showGrid && layoutMode && terminals.length < gridCount) {
@@ -324,6 +446,48 @@ const closeActiveByShortcut = useCallback(() => {
       </div>
 
       <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', height: '100%', paddingBottom: bottomPanelEmbedded ? `${bottomPanelHeight}px` : 0, overflow: 'hidden' }}>
+        {pendingRestoreTerminals && pendingRestoreTerminals.length > 0 && (
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            padding: '6px 16px',
+            backgroundColor: 'var(--bg-elevated, rgba(255, 255, 255, 0.04))',
+            borderBottom: '1px solid var(--border-subtle, rgba(255, 255, 255, 0.1))',
+            fontSize: '0.84rem',
+            gap: '12px',
+            flexShrink: 0,
+            zIndex: 10,
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--text-secondary)' }}>
+              <span style={{ color: 'var(--accent-primary, #3b82f6)', fontWeight: 600 }}>⚡</span>
+              <span>
+                {t('proj.restore.banner', { count: pendingRestoreTerminals.length })}
+                {pendingRestoreTerminals.some(t => t.is_opencode) && (
+                  <span style={{ color: 'var(--accent-primary, #3b82f6)', marginLeft: '4px' }}>
+                    {t('proj.restore.withAgents', { agentCount: pendingRestoreTerminals.filter(t => t.is_opencode).length })}
+                  </span>
+                )}
+              </span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={handleRestoreSavedTerminals}
+                style={{ padding: '3px 10px', fontSize: '0.78rem', height: '26px' }}>
+                {t('proj.restore.btn.restore')}
+              </button>
+              <button
+                type="button"
+                className="btn btn-ghost"
+                onClick={handleDismissRestore}
+                style={{ padding: '3px 10px', fontSize: '0.78rem', height: '26px', opacity: 0.8 }}>
+                {t('proj.restore.btn.dismiss')}
+              </button>
+            </div>
+          </div>
+        )}
         {activeTabId === 'overview' && !showGrid && (
           <div style={{ flexGrow: 1, minHeight: 0, display: 'flex', flexDirection: 'row', gap: '24px', padding: '12px 24px', position: 'relative', overflow: 'hidden' }}>
 <div data-tour-target="templates-section" style={{ flex: 1, minWidth: '180px', display: 'flex', flexDirection: 'column', gap: '16px', paddingTop: '2px', overflowY: 'auto', scrollbarWidth: 'none', msOverflowStyle: 'none' }}>

@@ -9,6 +9,7 @@ export interface ConsoleTab {
   cwd: string;
   command?: string;
   isOpencode?: boolean;
+  opencodeSessionId?: string;
   args?: string[];
   env?: Record<string, string>;
   filePath?: string;

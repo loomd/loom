@@ -88,6 +88,7 @@ let original = AppConfig {
 		has_onboarded: false,
 		sidebar_width: 170,
 		bottom_panel_mode: "embedded".to_string(),
+		restore_terminals: true,
 		agent_skill_map: HashMap::new(),
 		floating_sidebar_enabled: true,
 		floating_sidebar_position: "right".to_string(),
@@ -480,3 +481,78 @@ fn test_template_cli_management() {
         assert!(delete_template_by_name(&tool.id, "MODEL-A").is_err());
     });
 }
+
+#[test]
+fn test_current_state_persistence() {
+    run_test_with_temp_config(|_config_path| {
+        use super::manager::{
+            clear_project_terminals, get_current_state_path, get_project_terminals,
+            save_project_terminals,
+        };
+        use super::models::PersistedTerminal;
+
+        let proj_id = "proj_test_123";
+        // Initially empty
+        let initial = get_project_terminals(proj_id);
+        assert!(initial.is_empty());
+
+        let t1 = PersistedTerminal {
+            id: "term_1".to_string(),
+            title: "Terminal 1".to_string(),
+            cwd: "/path/to/project".to_string(),
+            command: None,
+            args: None,
+            env: None,
+            is_opencode: false,
+            opencode_session_id: None,
+            initial_command: None,
+        };
+
+        let t2 = PersistedTerminal {
+            id: "term_2".to_string(),
+            title: "opencode mini".to_string(),
+            cwd: "/path/to/project".to_string(),
+            command: Some("opencode".to_string()),
+            args: Some(vec!["--model".to_string(), "gpt-4o".to_string()]),
+            env: None,
+            is_opencode: true,
+            opencode_session_id: Some("ses_abc456".to_string()),
+            initial_command: None,
+        };
+
+        // Save terminals
+        save_project_terminals(proj_id, vec![t1.clone(), t2.clone()]).unwrap();
+        assert!(get_current_state_path().exists());
+
+        // Read terminals
+        let loaded = get_project_terminals(proj_id);
+        assert_eq!(loaded.len(), 2);
+        assert_eq!(loaded[0].id, "term_1");
+        assert_eq!(loaded[1].opencode_session_id, Some("ses_abc456".to_string()));
+        assert!(loaded[1].is_opencode);
+
+        // Clear terminals
+        clear_project_terminals(proj_id).unwrap();
+        let after_clear = get_project_terminals(proj_id);
+        assert!(after_clear.is_empty());
+    });
+}
+
+#[test]
+fn test_restore_terminals_setting() {
+    run_test_with_temp_config(|_config_path| {
+        use super::manager::{get_restore_terminals, set_restore_terminals};
+
+        // Default should be true
+        assert!(get_restore_terminals().unwrap());
+
+        // Update to false
+        set_restore_terminals(false).unwrap();
+        assert!(!get_restore_terminals().unwrap());
+
+        // Update back to true
+        set_restore_terminals(true).unwrap();
+        assert!(get_restore_terminals().unwrap());
+    });
+}
+

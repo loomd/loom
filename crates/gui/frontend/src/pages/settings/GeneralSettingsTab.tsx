@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { useI18n } from "../../I18nContext";
 import { useToast } from "../../ToastContext";
-import { getAutostart, setAutostart, getUpdateCheckInterval, setUpdateCheckInterval } from "../../api";
+import { getAutostart, setAutostart, getUpdateCheckInterval, setUpdateCheckInterval, getRestoreTerminals, setRestoreTerminals } from "../../api";
 
 interface Props {
 	theme: "dark" | "day" | "gray";
@@ -72,6 +72,7 @@ export default function GeneralSettingsTab({
 	const toast = useToast();
 	const [appVersion, setAppVersion] = useState<string>("0.1.5");
 	const [autostartEnabled, setAutostartEnabled] = useState<boolean>(false);
+	const [restoreTerminalsEnabled, setRestoreTerminalsEnabled] = useState<boolean>(true);
 	const [isChecking, setIsChecking] = useState<boolean>(false);
 	const [checkInterval, setCheckInterval] = useState<string>("");
 
@@ -93,6 +94,10 @@ export default function GeneralSettingsTab({
 		getAutostart()
 			.then((enabled) => setAutostartEnabled(enabled))
 			.catch((err) => console.error("Failed to fetch autostart status:", err));
+
+		getRestoreTerminals()
+			.then((enabled) => setRestoreTerminalsEnabled(enabled))
+			.catch((err) => console.error("Failed to fetch restore terminals status:", err));
 
 		getUpdateCheckInterval()
 			.then((interval) => setCheckInterval(interval || ""))
@@ -131,6 +136,17 @@ export default function GeneralSettingsTab({
 		} catch (err) {
 			console.error("Failed to set autostart status:", err);
 			toast.error(t("settings.toast.autostartSaveFailed"));
+		}
+	};
+
+	const handleRestoreTerminalsToggle = async (enabled: boolean) => {
+		try {
+			await setRestoreTerminals(enabled);
+			setRestoreTerminalsEnabled(enabled);
+			toast.success(t("settings.toast.restoreTerminalsSaved"));
+		} catch (err) {
+			console.error("Failed to set restore terminals status:", err);
+			toast.error(t("settings.toast.restoreTerminalsSaveFailed"));
 		}
 	};
 
@@ -1206,6 +1222,71 @@ export default function GeneralSettingsTab({
 									position: "absolute",
 									top: "2px",
 									left: autostartEnabled ? "26px" : "3px",
+									transition: "all 200ms ease",
+								}}
+							/>
+						</button>
+					</div>
+
+					{/* Auto Restore Terminals */}
+					<div
+						style={{
+							display: "flex",
+							alignItems: "center",
+							justifyContent: "space-between",
+							paddingTop: "16px",
+							borderTop: "1px solid var(--border-subtle)",
+						}}
+					>
+						<div>
+							<div
+								style={{
+									fontSize: "14px",
+									fontWeight: 500,
+									color: "var(--text-primary)",
+								}}
+							>
+								{t("settings.system.restoreTerminals")}
+							</div>
+							<div
+								style={{
+									fontSize: "12px",
+									color: "var(--text-secondary)",
+									marginTop: "4px",
+								}}
+							>
+								{t("settings.system.restoreTerminalsDesc")}
+							</div>
+						</div>
+						<button
+							onClick={() => handleRestoreTerminalsToggle(!restoreTerminalsEnabled)}
+							style={{
+								background: restoreTerminalsEnabled
+									? "var(--accent-purple)"
+									: "var(--bg-elevated)",
+								border: restoreTerminalsEnabled
+									? "1px solid var(--accent-purple)"
+									: "1px solid var(--border-mid)",
+								borderRadius: "20px",
+								width: "48px",
+								height: "24px",
+								position: "relative",
+								cursor: "pointer",
+								transition: "all 200ms ease",
+								padding: 0,
+							}}
+						>
+							<div
+								style={{
+									width: "18px",
+									height: "18px",
+									borderRadius: "50%",
+									background: restoreTerminalsEnabled
+										? "#ffffff"
+										: "var(--text-secondary)",
+									position: "absolute",
+									top: "2px",
+									left: restoreTerminalsEnabled ? "26px" : "3px",
 									transition: "all 200ms ease",
 								}}
 							/>

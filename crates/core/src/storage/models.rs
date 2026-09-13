@@ -102,6 +102,10 @@ pub fn default_bottom_panel_mode() -> String {
     "embedded".to_string()
 }
 
+pub fn default_restore_terminals() -> bool {
+    true
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Project {
     pub id: String,
@@ -196,6 +200,8 @@ pub struct LoomStorage {
     pub sidebar_width: u32,
     #[serde(default = "default_bottom_panel_mode")]
     pub bottom_panel_mode: String,
+    #[serde(default = "default_restore_terminals")]
+    pub restore_terminals: bool,
     #[serde(default)]
     pub agent_skill_map: HashMap<String, String>,
 }
@@ -226,6 +232,7 @@ impl Default for LoomStorage {
             floating_sidebar_position: default_floating_sidebar_position(),
             sidebar_width: default_sidebar_width(),
             bottom_panel_mode: default_bottom_panel_mode(),
+            restore_terminals: default_restore_terminals(),
             agent_skill_map: HashMap::new(),
         }
     }
@@ -248,3 +255,29 @@ pub struct AgentDoc {
     pub absolute_path: PathBuf,
     pub file_name: String,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct PersistedTerminal {
+    pub id: String,
+    pub title: String,
+    pub cwd: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub command: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub args: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub env: Option<HashMap<String, String>>,
+    #[serde(default)]
+    pub is_opencode: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub opencode_session_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub initial_command: Option<String>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct CurrentState {
+    #[serde(default)]
+    pub project_terminals: HashMap<String, Vec<PersistedTerminal>>,
+}
+
