@@ -9,6 +9,8 @@ interface Props {
 	entries: Entry[];
 	t: (key: string, params?: Record<string, string>) => string;
 	onClose: () => void;
+	title?: string;
+	closeOnBackdrop?: boolean;
 }
 
 function renderInline(text: string): React.ReactNode[] {
@@ -127,7 +129,7 @@ function renderEntry(entry: Entry, key: number): React.ReactNode {
 	);
 }
 
-export default function WhatsNewDialog({ entries, t, onClose }: Props) {
+export default function WhatsNewDialog({ entries, t, onClose, title, closeOnBackdrop = false }: Props) {
 	const body = useMemo(() => entries.map(renderEntry), [entries]);
 
 	return (
@@ -146,6 +148,7 @@ export default function WhatsNewDialog({ entries, t, onClose }: Props) {
 				justifyContent: "center",
 				zIndex: 1000,
 			}}
+			onClick={closeOnBackdrop ? onClose : undefined}
 		>
 			<div
 				className="modal-content"
@@ -161,9 +164,10 @@ export default function WhatsNewDialog({ entries, t, onClose }: Props) {
 					flexDirection: "column",
 					gap: "12px",
 				}}
+				onClick={closeOnBackdrop ? (e) => e.stopPropagation() : undefined}
 			>
 				<h3 style={{ margin: 0, fontSize: "1.1rem", fontWeight: 600, color: "var(--text-primary)" }}>
-					{t("whatsnew.title")}
+					{title ?? t("whatsnew.title")}
 				</h3>
 				<div style={{ overflowY: "auto", minHeight: 0, display: "flex", flexDirection: "column", gap: "14px" }}>
 					{body}

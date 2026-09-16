@@ -107,4 +107,25 @@ describe("WhatsNewDialog", () => {
     fireEvent.click(container.querySelector(".modal-content")!);
     expect(onClose).not.toHaveBeenCalled();
   });
+
+  it("calls onClose when closeOnBackdrop is true and backdrop is clicked", async () => {
+    const onClose = vi.fn();
+    const { container } = await renderDialog({ onClose, closeOnBackdrop: true });
+
+    fireEvent.click(container.querySelector(".modal-backdrop")!);
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not close when closeOnBackdrop is true and dialog content is clicked", async () => {
+    const onClose = vi.fn();
+    const { container } = await renderDialog({ onClose, closeOnBackdrop: true });
+
+    fireEvent.click(container.querySelector(".modal-content")!);
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it("renders custom title if provided", async () => {
+    await renderDialog({ title: "Custom Changelog" });
+    expect(screen.getByText("Custom Changelog")).toBeInTheDocument();
+  });
 });

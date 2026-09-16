@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from "react";
 import { useI18n } from "../../I18nContext";
 import { useToast } from "../../ToastContext";
-import { getAutostart, setAutostart, getUpdateCheckInterval, setUpdateCheckInterval, getRestoreTerminals, setRestoreTerminals } from "../../api";
+import WhatsNewDialog from "../../components/WhatsNewDialog";
+import { getAutostart, setAutostart, getUpdateCheckInterval, setUpdateCheckInterval, getRestoreTerminals, setRestoreTerminals, getWhatsNewAll } from "../../api";
 
 interface Props {
 	theme: "dark" | "day" | "gray";
@@ -75,6 +76,19 @@ export default function GeneralSettingsTab({
 	const [restoreTerminalsEnabled, setRestoreTerminalsEnabled] = useState<boolean>(true);
 	const [isChecking, setIsChecking] = useState<boolean>(false);
 	const [checkInterval, setCheckInterval] = useState<string>("");
+	const [showChangelog, setShowChangelog] = useState<boolean>(false);
+	const [changelogEntries, setChangelogEntries] = useState<Array<{ version: string; content: string }>>([]);
+
+	const handleOpenChangelog = async () => {
+		try {
+			const raw = await getWhatsNewAll();
+			setChangelogEntries(raw.map(([version, content]) => ({ version, content })));
+			setShowChangelog(true);
+		} catch (e) {
+			console.error("Failed to load changelog entries:", e);
+			toast.error("Failed to load changelog");
+		}
+	};
 
 	useEffect(() => {
 		import("@tauri-apps/api/app")
@@ -1301,13 +1315,35 @@ export default function GeneralSettingsTab({
 				<div className="card-inner" style={{ padding: "24px" }}>
 					<div
 						style={{
-							fontSize: "15px",
-							fontWeight: 600,
-							color: "var(--text-primary)",
+							display: "flex",
+							alignItems: "center",
+							justifyContent: "space-between",
 							marginBottom: "4px",
 						}}
 					>
-						{t("settings.version.title")}
+						<div
+							style={{
+								fontSize: "15px",
+								fontWeight: 600,
+								color: "var(--text-primary)",
+							}}
+						>
+							{t("settings.version.title")}
+						</div>
+						<button
+							type="button"
+							className="btn btn-ghost"
+							onClick={handleOpenChangelog}
+							style={{
+								padding: "3px 10px",
+								fontSize: "12px",
+								height: "26px",
+								color: "var(--accent-primary, #3b82f6)",
+								cursor: "pointer",
+							}}
+						>
+							{t("settings.version.changelogBtn")}
+						</button>
 					</div>
 					<div
 						style={{
@@ -1571,6 +1607,16 @@ export default function GeneralSettingsTab({
 					</div>
 				</div>
 			</div>
+
+			{showChangelog && (
+				<WhatsNewDialog
+					entries={changelogEntries}
+					t={t}
+					title={t("whatsnew.historyTitle")}
+					closeOnBackdrop={true}
+					onClose={() => setShowChangelog(false)}
+				/>
+			)}
 		</div>
 	);
 }
