@@ -1,4 +1,4 @@
-﻿use rusqlite::Connection;
+﻿use rusqlite::{Connection, OpenFlags};
 use serde::Serialize;
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -106,6 +106,15 @@ impl AgentMonitor {
         None
     }
 
+    fn open_readonly_conn(db_path: &PathBuf) -> Result<Connection, rusqlite::Error> {
+        let flags = OpenFlags::SQLITE_OPEN_READ_ONLY
+            | OpenFlags::SQLITE_OPEN_NO_MUTEX
+            | OpenFlags::SQLITE_OPEN_URI;
+        let conn = Connection::open_with_flags(db_path, flags)?;
+        let _ = conn.execute_batch("PRAGMA query_only = ON;");
+        Ok(conn)
+    }
+
     pub fn poll_state(&self, workspace_dir: &str) -> Option<AgentStateInfo> {
         let waiting = || AgentStateInfo {
             state: AgentState::Waiting,
@@ -119,7 +128,7 @@ impl AgentMonitor {
                 return Some(waiting());
             }
         };
-        let conn = match Connection::open(&db_path) {
+        let conn = match Self::open_readonly_conn(&db_path) {
             Ok(c) => c,
             Err(e) => {
                 eprintln!("[AgentPoll] open DB failed: {}, Waiting", e);
@@ -203,7 +212,7 @@ impl AgentMonitor {
                 return Some(waiting());
             }
         };
-        let conn = match Connection::open(&db_path) {
+        let conn = match Self::open_readonly_conn(&db_path) {
             Ok(c) => c,
             Err(e) => {
                 eprintln!("[AgentPoll:pty={}] open DB failed: {}, Waiting", pty_session_id, e);

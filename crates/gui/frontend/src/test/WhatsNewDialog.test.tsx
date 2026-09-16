@@ -84,11 +84,19 @@ describe("WhatsNewDialog", () => {
     expect(screen.getByText("多开窗口支持任意拖拽调节大小")).toBeInTheDocument();
   });
 
-  it("calls onClose when backdrop clicked", async () => {
+  it("does not call onClose when backdrop clicked", async () => {
     const onClose = vi.fn();
     const { container } = await renderDialog({ onClose });
 
     fireEvent.click(container.querySelector(".modal-backdrop")!);
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it("calls onClose when close button clicked", async () => {
+    const onClose = vi.fn();
+    await renderDialog({ onClose });
+
+    fireEvent.click(screen.getByText(/whatsnew.close/));
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 

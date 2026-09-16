@@ -146,7 +146,6 @@ export default function WhatsNewDialog({ entries, t, onClose }: Props) {
 				justifyContent: "center",
 				zIndex: 1000,
 			}}
-			onClick={onClose}
 		>
 			<div
 				className="modal-content"
@@ -162,7 +161,6 @@ export default function WhatsNewDialog({ entries, t, onClose }: Props) {
 					flexDirection: "column",
 					gap: "12px",
 				}}
-				onClick={(e) => e.stopPropagation()}
 			>
 				<h3 style={{ margin: 0, fontSize: "1.1rem", fontWeight: 600, color: "var(--text-primary)" }}>
 					{t("whatsnew.title")}
