@@ -486,8 +486,9 @@ fn test_template_cli_management() {
 fn test_current_state_persistence() {
     run_test_with_temp_config(|_config_path| {
         use super::manager::{
-            clear_project_terminals, get_current_state_path, get_project_terminals,
-            save_project_terminals,
+            clear_project_terminals, get_current_state_path, get_project_layout,
+            get_project_terminals, get_selected_project_id, save_project_layout,
+            save_project_terminals, save_selected_project_id,
         };
         use super::models::PersistedTerminal;
 
@@ -495,6 +496,12 @@ fn test_current_state_persistence() {
         // Initially empty
         let initial = get_project_terminals(proj_id);
         assert!(initial.is_empty());
+        assert_eq!(get_project_layout(proj_id), None);
+        assert_eq!(get_selected_project_id(), None);
+
+        // Save selected project id
+        save_selected_project_id(Some(proj_id.to_string())).unwrap();
+        assert_eq!(get_selected_project_id(), Some(proj_id.to_string()));
 
         let t1 = PersistedTerminal {
             id: "term_1".to_string(),
@@ -520,21 +527,24 @@ fn test_current_state_persistence() {
             initial_command: None,
         };
 
-        // Save terminals
+        // Save terminals and layout
         save_project_terminals(proj_id, vec![t1.clone(), t2.clone()]).unwrap();
+        save_project_layout(proj_id, Some("1x2".to_string())).unwrap();
         assert!(get_current_state_path().exists());
 
-        // Read terminals
+        // Read terminals and layout
         let loaded = get_project_terminals(proj_id);
         assert_eq!(loaded.len(), 2);
         assert_eq!(loaded[0].id, "term_1");
         assert_eq!(loaded[1].opencode_session_id, Some("ses_abc456".to_string()));
         assert!(loaded[1].is_opencode);
+        assert_eq!(get_project_layout(proj_id), Some("1x2".to_string()));
 
-        // Clear terminals
+        // Clear terminals and layout
         clear_project_terminals(proj_id).unwrap();
         let after_clear = get_project_terminals(proj_id);
         assert!(after_clear.is_empty());
+        assert_eq!(get_project_layout(proj_id), None);
     });
 }
 

@@ -584,6 +584,21 @@ describe("api - File Explorer", () => {
     expect(mockInvoke).toHaveBeenCalledWith("setUpdateCheckInterval" in mockInvoke ? "set_update_check_interval" : "set_update_check_interval", { interval: "30min" });
   });
 
+  it("getSelectedProjectId calls invoke", async () => {
+    mockInvoke.mockResolvedValueOnce("proj-1");
+    const { getSelectedProjectId } = await import("../api");
+    const res = await getSelectedProjectId();
+    expect(mockInvoke).toHaveBeenCalledWith("get_selected_project_id");
+    expect(res).toBe("proj-1");
+  });
+
+  it("saveSelectedProjectId calls invoke with projectId", async () => {
+    mockInvoke.mockResolvedValueOnce(undefined);
+    const { saveSelectedProjectId } = await import("../api");
+    await saveSelectedProjectId("proj-1");
+    expect(mockInvoke).toHaveBeenCalledWith("save_selected_project_id", { projectId: "proj-1" });
+  });
+
   it("getProjectTerminals calls invoke with projectId", async () => {
     mockInvoke.mockResolvedValueOnce([]);
     const { getProjectTerminals } = await import("../api");
@@ -600,6 +615,21 @@ describe("api - File Explorer", () => {
     ];
     await saveProjectTerminals("proj-1", terminals);
     expect(mockInvoke).toHaveBeenCalledWith("save_project_terminals", { projectId: "proj-1", terminals });
+  });
+
+  it("getProjectLayout calls invoke with projectId", async () => {
+    mockInvoke.mockResolvedValueOnce("1x2");
+    const { getProjectLayout } = await import("../api");
+    const res = await getProjectLayout("proj-1");
+    expect(mockInvoke).toHaveBeenCalledWith("get_project_layout", { projectId: "proj-1" });
+    expect(res).toBe("1x2");
+  });
+
+  it("saveProjectLayout calls invoke with projectId and layout", async () => {
+    mockInvoke.mockResolvedValueOnce(undefined);
+    const { saveProjectLayout } = await import("../api");
+    await saveProjectLayout("proj-1", "1x2");
+    expect(mockInvoke).toHaveBeenCalledWith("save_project_layout", { projectId: "proj-1", layout: "1x2" });
   });
 
   it("clearProjectTerminals calls invoke with projectId", async () => {

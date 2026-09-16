@@ -277,7 +277,11 @@ pub struct PersistedTerminal {
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct CurrentState {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub selected_project_id: Option<String>,
     #[serde(default)]
     pub project_terminals: HashMap<String, Vec<PersistedTerminal>>,
+    #[serde(default)]
+    pub project_layouts: HashMap<String, String>,
 }
 

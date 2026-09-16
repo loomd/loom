@@ -540,4 +540,18 @@ describe("TerminalPanel", () => {
 
     window.removeEventListener("loom-splits-dirty", onDirty);
   });
+
+  it("freshly rendered layout initializes with default equal weights without requiring stored sizes", async () => {
+    const { TerminalPanel } = await import("../components/TerminalPanel");
+    const t1 = makeTerminal("t1");
+    const t2 = makeTerminal("t2");
+
+    const { container } = render(
+      <TerminalPanel terminals={[t1, t2]} activeTabId="t1" layoutMode="1x2" showGrid={true} isVisible={true} projectId="proj-restored" />
+    );
+
+    const grid = container.querySelector(".grid-pane-container")!;
+    expect(grid.getAttribute("style")).toContain("grid-template-rows: 1fr 1fr");
+    expect(grid.getAttribute("style")).toContain("grid-template-columns: 1fr");
+  });
 });

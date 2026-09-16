@@ -838,6 +838,16 @@ fn set_agent_skill_map(skill_map: HashMap<String, String>) -> Result<(), String>
 }
 
 #[tauri::command]
+fn get_selected_project_id() -> Result<Option<String>, String> {
+    Ok(cstore::get_selected_project_id())
+}
+
+#[tauri::command]
+fn save_selected_project_id(project_id: Option<String>) -> Result<(), String> {
+    cstore::save_selected_project_id(project_id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 fn get_project_terminals(project_id: String) -> Result<Vec<PersistedTerminal>, String> {
     Ok(cstore::get_project_terminals(&project_id))
 }
@@ -845,6 +855,16 @@ fn get_project_terminals(project_id: String) -> Result<Vec<PersistedTerminal>, S
 #[tauri::command]
 fn save_project_terminals(project_id: String, terminals: Vec<PersistedTerminal>) -> Result<(), String> {
     cstore::save_project_terminals(&project_id, terminals).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn get_project_layout(project_id: String) -> Result<Option<String>, String> {
+    Ok(cstore::get_project_layout(&project_id))
+}
+
+#[tauri::command]
+fn save_project_layout(project_id: String, layout: Option<String>) -> Result<(), String> {
+    cstore::save_project_layout(&project_id, layout).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -1427,6 +1447,73 @@ fn execute_test_command(cmd: &str, args_json: &str) -> Result<String, String> {
             };
             let res = write_opencode_config(provider_id, protocol, base_url, api_key, &selected_models).map_err(|e| e.to_string())?;
             serde_json::to_string(&res).map_err(|e| e.to_string())
+        }
+        "get_selected_project_id" => {
+            let res = get_selected_project_id()?;
+            serde_json::to_string(&res).map_err(|e| e.to_string())
+        }
+        "save_selected_project_id" => {
+            let project_id = args.get("projectId")
+                .or_else(|| args.get("project_id"))
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
+            save_selected_project_id(project_id)?;
+            Ok("null".to_string())
+        }
+        "get_project_terminals" => {
+            let project_id = args["project_id"]
+                .as_str()
+                .or_else(|| args["projectId"].as_str())
+                .ok_or_else(|| "Missing argument 'projectId'".to_string())?;
+            let res = get_project_terminals(project_id.to_string())?;
+            serde_json::to_string(&res).map_err(|e| e.to_string())
+        }
+        "save_project_terminals" => {
+            let project_id = args["project_id"]
+                .as_str()
+                .or_else(|| args["projectId"].as_str())
+                .ok_or_else(|| "Missing argument 'projectId'".to_string())?;
+            let terminals_val = &args["terminals"];
+            let terminals: Vec<PersistedTerminal> = serde_json::from_value(terminals_val.clone())
+                .map_err(|e| format!("Invalid terminals array: {}", e))?;
+            save_project_terminals(project_id.to_string(), terminals)?;
+            Ok("null".to_string())
+        }
+        "get_project_layout" => {
+            let project_id = args["project_id"]
+                .as_str()
+                .or_else(|| args["projectId"].as_str())
+                .ok_or_else(|| "Missing argument 'projectId'".to_string())?;
+            let res = get_project_layout(project_id.to_string())?;
+            serde_json::to_string(&res).map_err(|e| e.to_string())
+        }
+        "save_project_layout" => {
+            let project_id = args["project_id"]
+                .as_str()
+                .or_else(|| args["projectId"].as_str())
+                .ok_or_else(|| "Missing argument 'projectId'".to_string())?;
+            let layout = args.get("layout").and_then(|v| v.as_str()).map(|s| s.to_string());
+            save_project_layout(project_id.to_string(), layout)?;
+            Ok("null".to_string())
+        }
+        "clear_project_terminals" => {
+            let project_id = args["project_id"]
+                .as_str()
+                .or_else(|| args["projectId"].as_str())
+                .ok_or_else(|| "Missing argument 'projectId'".to_string())?;
+            clear_project_terminals(project_id.to_string())?;
+            Ok("null".to_string())
+        }
+        "get_restore_terminals" => {
+            let res = get_restore_terminals()?;
+            serde_json::to_string(&res).map_err(|e| e.to_string())
+        }
+        "set_restore_terminals" => {
+            let enabled = args["enabled"]
+                .as_bool()
+                .ok_or_else(|| "Missing argument 'enabled'".to_string())?;
+            set_restore_terminals(enabled)?;
+            Ok("null".to_string())
         }
         _ => Err(format!("Unknown command '{}'", cmd)),
     }
@@ -2052,8 +2139,12 @@ fn main() {
             get_agent_discovery_status,
             fetch_provider_models,
             configure_opencode_provider,
+            get_selected_project_id,
+            save_selected_project_id,
             get_project_terminals,
             save_project_terminals,
+            get_project_layout,
+            save_project_layout,
             clear_project_terminals,
             get_restore_terminals,
             set_restore_terminals

@@ -5,6 +5,8 @@ import {
 	deleteProject,
 	selectDirectory,
 	reorderProjects,
+	getSelectedProjectId,
+	saveSelectedProjectId,
 } from "../api";
 import type { Project } from "../types";
 import { useDialog } from "../DialogContext";
@@ -23,17 +25,36 @@ export function useProjects(
 	const [newProjPath, setNewProjPath] = useState("");
 	const [creating, setCreating] = useState(false);
 
+	const selectProject = useCallback((id: string) => {
+		setSelectedProjectId(id);
+		saveSelectedProjectId(id || null).catch((err) =>
+			console.error("Failed to persist selected project id:", err)
+		);
+	}, []);
+
 	const fetchProjects = useCallback(async () => {
 		try {
-			const projs = await getProjects();
+			const [projs, savedId] = await Promise.all([
+				getProjects(),
+				getSelectedProjectId().catch(() => null),
+			]);
 			setProjects(projs);
-			if (projs.length > 0 && !selectedProjectId) {
-				setSelectedProjectId(projs[0].id);
-			}
+			setSelectedProjectId((prev) => {
+				if (prev && projs.some((p) => p.id === prev)) {
+					return prev;
+				}
+				if (savedId && projs.some((p) => p.id === savedId)) {
+					return savedId;
+				}
+				if (projs.length > 0) {
+					return projs[0].id;
+				}
+				return "";
+			});
 		} catch (e) {
 			toast.error(String(e) || "Failed to fetch projects");
 		}
-	}, [selectedProjectId, toast]);
+	}, [toast]);
 
 	useEffect(() => {
 		const timer = setTimeout(() => {
@@ -139,7 +160,7 @@ export function useProjects(
 			setNewProjName("");
 			setNewProjPath("");
 			setProjects((prev) => [...prev, proj]);
-			setSelectedProjectId(proj.id);
+			selectProject(proj.id);
 			onNavigate("workspace");
 		} catch (e) {
 			toast.error(String(e) || t("proj.toast.createFailed"));
@@ -161,11 +182,8 @@ export function useProjects(
 			setProjects((prev) => {
 				const updated = prev.filter((p) => p.id !== proj.id);
 				if (selectedProjectId === proj.id) {
-					if (updated.length > 0) {
-						setSelectedProjectId(updated[0].id);
-					} else {
-						setSelectedProjectId("");
-					}
+					const nextId = updated.length > 0 ? updated[0].id : "";
+					selectProject(nextId);
 				}
 				return updated;
 			});
@@ -177,7 +195,7 @@ export function useProjects(
 	return {
 		projects,
 		selectedProjectId,
-		setSelectedProjectId,
+		setSelectedProjectId: selectProject,
 		draggedIndex,
 		dragOverIndex,
 		showModal,

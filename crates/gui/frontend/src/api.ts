@@ -478,11 +478,23 @@ export const configureOpencodeProvider = (
 ): Promise<void> =>
 	invoke("configure_opencode_provider", { providerId, baseUrl, apiKey, selectedModels, protocol });
 
+export const getSelectedProjectId = (): Promise<string | null> =>
+	invoke("get_selected_project_id");
+
+export const saveSelectedProjectId = (projectId: string | null): Promise<void> =>
+	invoke("save_selected_project_id", { projectId });
+
 export const getProjectTerminals = (projectId: string): Promise<PersistedTerminal[]> =>
 	invoke("get_project_terminals", { projectId });
 
 export const saveProjectTerminals = (projectId: string, terminals: PersistedTerminal[]): Promise<void> =>
 	invoke("save_project_terminals", { projectId, terminals });
+
+export const getProjectLayout = (projectId: string): Promise<string | null> =>
+	invoke("get_project_layout", { projectId });
+
+export const saveProjectLayout = (projectId: string, layout: string | null): Promise<void> =>
+	invoke("save_project_layout", { projectId, layout });
 
 export const clearProjectTerminals = (projectId: string): Promise<void> =>
 	invoke("clear_project_terminals", { projectId });

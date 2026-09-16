@@ -101,6 +101,17 @@ pub fn save_current_state(state: &CurrentState) -> Result<()> {
     Ok(())
 }
 
+pub fn get_selected_project_id() -> Option<String> {
+    let state = get_current_state();
+    state.selected_project_id
+}
+
+pub fn save_selected_project_id(project_id: Option<String>) -> Result<()> {
+    let mut state = get_current_state();
+    state.selected_project_id = project_id.filter(|s| !s.is_empty());
+    save_current_state(&state)
+}
+
 pub fn get_project_terminals(project_id: &str) -> Vec<PersistedTerminal> {
     let state = get_current_state();
     state.project_terminals.get(project_id).cloned().unwrap_or_default()
@@ -116,9 +127,29 @@ pub fn save_project_terminals(project_id: &str, terminals: Vec<PersistedTerminal
     save_current_state(&state)
 }
 
+pub fn get_project_layout(project_id: &str) -> Option<String> {
+    let state = get_current_state();
+    state.project_layouts.get(project_id).cloned()
+}
+
+pub fn save_project_layout(project_id: &str, layout: Option<String>) -> Result<()> {
+    let mut state = get_current_state();
+    match layout {
+        Some(l) if !l.is_empty() => {
+            state.project_layouts.insert(project_id.to_string(), l);
+        }
+        _ => {
+            state.project_layouts.remove(project_id);
+        }
+    }
+    save_current_state(&state)
+}
+
 pub fn clear_project_terminals(project_id: &str) -> Result<()> {
     let mut state = get_current_state();
-    if state.project_terminals.remove(project_id).is_some() {
+    let r1 = state.project_terminals.remove(project_id).is_some();
+    let r2 = state.project_layouts.remove(project_id).is_some();
+    if r1 || r2 {
         save_current_state(&state)?;
     }
     Ok(())

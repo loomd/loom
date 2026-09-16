@@ -9,7 +9,7 @@ import { useToast } from '../ToastContext';
 import { useI18n } from '../I18nContext';
 import { TemplateModal } from './TemplatesPage';
 import { EditorPlaceholder } from '../components/EditorPlaceholder';
-import { clearProjectTerminals, getProjectTerminals, getRestoreTerminals, pollAgentState, saveProjectTerminals } from '../api';
+import { clearProjectTerminals, getProjectLayout, getProjectTerminals, getRestoreTerminals, pollAgentState, saveProjectLayout, saveProjectTerminals } from '../api';
 import { syncProjectShells } from '../hooks/useProjectCompositeStates';
 import type { CompositeState } from '../hooks/useProjectCompositeStates';
 import type { Project, AgentStateInfo, PersistedTerminal } from '../types';
@@ -44,10 +44,11 @@ const [agentStateMap, setAgentStateMap] = useState<Record<string, AgentStateInfo
 const [pendingGridMode, setPendingGridMode] = useState<GridLayout | null>(null);
 const [dragTabId, setDragTabId] = useState<string | null>(null);
 const [pendingRestoreTerminals, setPendingRestoreTerminals] = useState<PersistedTerminal[] | null>(null);
+const [pendingRestoreLayout, setPendingRestoreLayout] = useState<GridLayout | null>(null);
 const [restoreReady, setRestoreReady] = useState(false);
 const gridCount = layoutMode ? gridCellCount(layoutMode) : 0;
 
-const performRestore = useCallback((list: PersistedTerminal[], notify = true) => {
+const performRestore = useCallback((list: PersistedTerminal[], layout: GridLayout | null = null, notify = true) => {
   if (!list || list.length === 0) return;
   const newTabs: ConsoleTab[] = [];
   for (const p of list) {
@@ -86,33 +87,41 @@ const performRestore = useCallback((list: PersistedTerminal[], notify = true) =>
   if (newTabs.length > 0) {
     setActiveTabId(newTabs[0].id);
   }
+  if (layout) {
+    setLayoutMode(layout);
+  }
   if (notify) {
     toast.success(t('proj.restore.toast.success', { count: newTabs.length }));
   }
   setPendingRestoreTerminals(null);
-}, [setTabs, setActiveTabId, toast, t]);
+  setPendingRestoreLayout(null);
+}, [setTabs, setActiveTabId, setLayoutMode, toast, t]);
 
 const performRestoreRef = React.useRef(performRestore);
-performRestoreRef.current = performRestore;
+useEffect(() => {
+  performRestoreRef.current = performRestore;
+}, [performRestore]);
 
 useEffect(() => {
   let isCancelled = false;
-  setRestoreReady(false);
 
   Promise.all([
     getProjectTerminals(project.id),
+    getProjectLayout(project.id).catch(() => null),
     getRestoreTerminals().catch(() => true),
-  ]).then(([saved, autoRestore]) => {
+  ]).then(([saved, savedLayout, autoRestore]) => {
     if (isCancelled) return;
     if (!saved || saved.length === 0) {
       setRestoreReady(true);
       return;
     }
+    const layout = (savedLayout as GridLayout | null) || null;
     if (autoRestore) {
-      performRestoreRef.current(saved, false);
+      performRestoreRef.current(saved, layout, false);
       setRestoreReady(true);
     } else {
       setPendingRestoreTerminals(saved);
+      setPendingRestoreLayout(layout);
       setRestoreReady(true);
     }
   }).catch((err) => {
@@ -129,16 +138,17 @@ useEffect(() => {
 
 const handleRestoreSavedTerminals = useCallback(() => {
   if (pendingRestoreTerminals) {
-    performRestore(pendingRestoreTerminals, true);
+    performRestore(pendingRestoreTerminals, pendingRestoreLayout, true);
   }
-}, [pendingRestoreTerminals, performRestore]);
+}, [pendingRestoreTerminals, pendingRestoreLayout, performRestore]);
 
 const handleDismissRestore = useCallback(() => {
   clearProjectTerminals(project.id).catch((e) => console.error('Failed to clear terminals:', e));
   setPendingRestoreTerminals(null);
+  setPendingRestoreLayout(null);
 }, [project.id]);
 
-// Auto-save terminals to current.json when tabs or agent sessions change
+// Auto-save terminals to current.json when tabs, agent sessions or layout change
 useEffect(() => {
   if (!restoreReady || pendingRestoreTerminals !== null) return;
 
@@ -162,9 +172,12 @@ useEffect(() => {
     saveProjectTerminals(project.id, list).catch((e) => {
       console.error('Failed to save project terminals:', e);
     });
+    saveProjectLayout(project.id, layoutMode).catch((e) => {
+      console.error('Failed to save project layout:', e);
+    });
   }, 1000);
   return () => clearTimeout(timer);
-}, [restoreReady, terminals, agentStateMap, project.id, pendingRestoreTerminals]);
+}, [restoreReady, terminals, agentStateMap, project.id, pendingRestoreTerminals, layoutMode]);
 
 const handleAddTerminal = useCallback(() => {
   if (showGrid && layoutMode && terminals.length < gridCount) {
