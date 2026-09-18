@@ -16,6 +16,8 @@ interface TerminalTabProps {
   initialCommand?: string;
   spawnDelay?: number;
   isVisible: boolean;
+  isFocused?: boolean;
+  onFocus?: () => void;
   theme?: 'dark' | 'day' | 'gray';
   fontSize?: string | number;
 }
@@ -100,7 +102,7 @@ const getTerminalTheme = (theme?: 'dark' | 'day' | 'gray') => {
   }
 };
 
-export function TerminalTab({ sessionId, cwd, command, args, env, initialCommand, spawnDelay, isVisible, theme, fontSize }: TerminalTabProps) {
+export function TerminalTab({ sessionId, cwd, command, args, env, initialCommand, spawnDelay, isVisible, isFocused, onFocus, theme, fontSize }: TerminalTabProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const outerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
@@ -118,6 +120,16 @@ export function TerminalTab({ sessionId, cwd, command, args, env, initialCommand
   useEffect(() => {
     isVisibleRef.current = isVisible;
   }, [isVisible]);
+
+  const isFocusedRef = useRef(isFocused);
+  useEffect(() => {
+    isFocusedRef.current = isFocused;
+  }, [isFocused]);
+
+  const onFocusRef = useRef(onFocus);
+  useEffect(() => {
+    onFocusRef.current = onFocus;
+  }, [onFocus]);
 
   useEffect(() => {
     if (!containerRef.current || initialized.current) return;
@@ -324,8 +336,9 @@ export function TerminalTab({ sessionId, cwd, command, args, env, initialCommand
           textarea.scrollLeft = 0;
           textarea.scrollTop = 0;
         };
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars
-        const handleFocus = (_e: FocusEvent) => {};
+        const handleFocus = () => {
+          onFocusRef.current?.();
+        };
         // eslint-disable-next-line @typescript-eslint/no-unused-vars
         const handleBlur = (_e: FocusEvent) => {};
         const handleKey = (e: KeyboardEvent) => {
@@ -488,8 +501,11 @@ export function TerminalTab({ sessionId, cwd, command, args, env, initialCommand
           return () => {};
         }
 
-        // Focus terminal so keyboard input immediately works
-        term.focus();
+        // Focus terminal so keyboard input immediately works if marked as focused
+        const shouldFocus = isFocusedRef.current !== undefined ? isFocusedRef.current : isVisibleRef.current;
+        if (shouldFocus) {
+          term.focus();
+        }
 
         return () => {
           dataSub.dispose();
@@ -588,7 +604,10 @@ export function TerminalTab({ sessionId, cwd, command, args, env, initialCommand
                 rows: currentRows
               }).catch((err) => console.warn('Failed to resize PTY:', err));
             }
-            termRef.current.focus();
+            const shouldFocus = isFocused !== undefined ? isFocused : true;
+            if (shouldFocus) {
+              termRef.current.focus();
+            }
             if (termRef.current.rows > 0) {
               termRef.current.refresh(0, termRef.current.rows - 1);
             }
@@ -599,7 +618,14 @@ export function TerminalTab({ sessionId, cwd, command, args, env, initialCommand
       }, 50);
       return () => clearTimeout(timer);
     }
-  }, [isVisible, sessionId]);
+  }, [isVisible, isFocused, sessionId]);
+
+  // Focus when isFocused becomes true while already visible
+  useEffect(() => {
+    if (isVisible && isFocused && termRef.current && spawnSuccessRef.current) {
+      termRef.current.focus();
+    }
+  }, [isVisible, isFocused]);
 
   // Dynamically update terminal font size when fontSize prop changes
   useEffect(() => {
@@ -644,6 +670,9 @@ export function TerminalTab({ sessionId, cwd, command, args, env, initialCommand
   return (
     <div
       ref={outerRef}
+      onPointerDownCapture={() => {
+        onFocusRef.current?.();
+      }}
       style={{
         width: '100%',
         height: '100%',

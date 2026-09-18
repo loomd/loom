@@ -24,7 +24,12 @@ export function TerminalPanel({ terminals, activeTabId, layoutMode, showGrid, is
   const areas = showGrid && layoutMode ? (gridCellAreas(layoutMode) ?? layoutPreview(layoutMode).areas) : null;
   const cellCount = dims ? gridCellCount(layoutMode!) : 0;
 
-  const renderTerminal = (tab: ConsoleTab, visible: boolean) => (
+  const visibleTerminals = dims ? terminals.slice(0, cellCount) : terminals.filter(t => t.id === activeTabId);
+  const effectiveFocusTabId = visibleTerminals.some(t => t.id === activeTabId)
+    ? activeTabId
+    : (visibleTerminals[0]?.id ?? null);
+
+  const renderTerminal = (tab: ConsoleTab, visible: boolean, isTabFocused: boolean) => (
     <Suspense fallback={<TerminalPlaceholder />}>
       <TerminalTab
         sessionId={tab.id}
@@ -34,6 +39,8 @@ export function TerminalPanel({ terminals, activeTabId, layoutMode, showGrid, is
         env={tab.env}
         initialCommand={tab.initialCommand}
         isVisible={isVisible && visible}
+        isFocused={isVisible && visible && isTabFocused}
+        onFocus={() => onPaneFocus?.(tab.id)}
         theme={theme}
         fontSize={fontSize}
       />
@@ -42,8 +49,9 @@ export function TerminalPanel({ terminals, activeTabId, layoutMode, showGrid, is
 
   const panes = terminals.map((tab, idx) => {
     const isTabVisible = dims ? idx < cellCount : tab.id === activeTabId;
+    const isTabFocused = isTabVisible && tab.id === effectiveFocusTabId;
     return (
-      <div key={tab.id} data-testid={`pane-${tab.id}`} onClick={() => { if (dims) onPaneFocus?.(tab.id); }} style={{
+      <div key={tab.id} data-testid={`pane-${tab.id}`} onClick={() => { onPaneFocus?.(tab.id); }} style={{
         display: isTabVisible ? 'flex' : 'none',
         flexDirection: 'column',
         minWidth: 0,
@@ -53,7 +61,7 @@ export function TerminalPanel({ terminals, activeTabId, layoutMode, showGrid, is
         gridArea: areas ? String.fromCharCode(97 + idx) : undefined,
         ...(dims ? {} : { flex: 1 }),
       }}>
-        {renderTerminal(tab, isTabVisible)}
+        {renderTerminal(tab, isTabVisible, isTabFocused)}
       </div>
     );
   });

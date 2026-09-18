@@ -262,4 +262,43 @@ describe("TerminalTab", () => {
 
     expect(mockInvoke).not.toHaveBeenCalledWith("pty_resize", expect.anything());
   });
+
+  it("does not focus terminal on mount or visibility change if isFocused is false", async () => {
+    const { TerminalTab } = await import("../components/TerminalTab");
+    const { rerender } = render(
+      <TerminalTab sessionId="s-unfocused" cwd="/tmp" isVisible={true} isFocused={false} />
+    );
+    await vi.advanceTimersByTimeAsync(100);
+
+    expect(mockTerminalInstance.focus).not.toHaveBeenCalled();
+
+    // Toggle visibility
+    rerender(
+      <TerminalTab sessionId="s-unfocused" cwd="/tmp" isVisible={false} isFocused={false} />
+    );
+    await vi.advanceTimersByTimeAsync(100);
+    rerender(
+      <TerminalTab sessionId="s-unfocused" cwd="/tmp" isVisible={true} isFocused={false} />
+    );
+    await vi.advanceTimersByTimeAsync(100);
+
+    expect(mockTerminalInstance.focus).not.toHaveBeenCalled();
+  });
+
+  it("triggers onFocus callback when terminal receives focus or is clicked", async () => {
+    const { TerminalTab } = await import("../components/TerminalTab");
+    const onFocus = vi.fn();
+    const { container } = render(
+      <TerminalTab sessionId="s-focused" cwd="/tmp" isVisible={true} onFocus={onFocus} />
+    );
+    await vi.advanceTimersByTimeAsync(100);
+
+    const outer = container.firstChild as HTMLElement;
+    outer.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true }));
+    expect(onFocus).toHaveBeenCalled();
+
+    const textarea = (mockTerminalInstance.textarea as HTMLTextAreaElement);
+    textarea.dispatchEvent(new FocusEvent("focus"));
+    expect(onFocus).toHaveBeenCalledTimes(2);
+  });
 });

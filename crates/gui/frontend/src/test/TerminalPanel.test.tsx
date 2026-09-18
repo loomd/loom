@@ -554,4 +554,19 @@ describe("TerminalPanel", () => {
     expect(grid.getAttribute("style")).toContain("grid-template-rows: 1fr 1fr");
     expect(grid.getAttribute("style")).toContain("grid-template-columns: 1fr");
   });
+
+  it("passes active focused tab state in grid mode correctly", async () => {
+    const { TerminalPanel } = await import("../components/TerminalPanel");
+    const t1 = makeTerminal("t1");
+    const t2 = makeTerminal("t2");
+    const onPaneFocus = vi.fn();
+
+    const { getByTestId } = render(
+      <TerminalPanel terminals={[t1, t2]} activeTabId="t2" layoutMode="1x2" showGrid={true} isVisible={true} onPaneFocus={onPaneFocus} />
+    );
+
+    const pane1 = getByTestId("pane-t1");
+    fireEvent.click(pane1);
+    expect(onPaneFocus).toHaveBeenCalledWith("t1");
+  });
 });
