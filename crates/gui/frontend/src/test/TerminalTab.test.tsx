@@ -16,6 +16,7 @@ function FakeTerminal(this: Record<string, unknown>, opts?: Record<string, unkno
     write: vi.fn(),
     focus: vi.fn(),
     dispose: vi.fn(),
+    refresh: vi.fn(),
     attachCustomKeyEventHandler: vi.fn(),
     hasSelection: vi.fn(() => false),
     textarea,
@@ -208,5 +209,57 @@ describe("TerminalTab", () => {
     await vi.waitFor(() => {
       expect((mockTerminalInstance.options as { fontSize: number }).fontSize).toBe(18);
     });
+  });
+
+  it("respects spawnDelay before calling pty_spawn", async () => {
+    const { invoke } = await import("@tauri-apps/api/core");
+    const mockInvoke = invoke as ReturnType<typeof vi.fn>;
+    mockInvoke.mockResolvedValue(undefined);
+
+    const { TerminalTab } = await import("../components/TerminalTab");
+    render(
+      <TerminalTab sessionId="s-delayed" cwd="/tmp" isVisible={true} spawnDelay={200} />
+    );
+
+    // Initial check before delay elapses
+    expect(mockInvoke).not.toHaveBeenCalledWith("pty_spawn", expect.objectContaining({ sessionId: "s-delayed" }));
+
+    // Fast-forward timer by 200ms
+    await vi.advanceTimersByTimeAsync(200);
+
+    await vi.waitFor(() => {
+      expect(mockInvoke).toHaveBeenCalledWith("pty_spawn", expect.objectContaining({ sessionId: "s-delayed" }));
+    });
+  });
+
+  it("does not trigger pty_resize on visibility toggle if terminal dimensions remain unchanged", async () => {
+    const { invoke } = await import("@tauri-apps/api/core");
+    const mockInvoke = invoke as ReturnType<typeof vi.fn>;
+    mockInvoke.mockResolvedValue(undefined);
+
+    const { TerminalTab } = await import("../components/TerminalTab");
+    const { rerender } = render(
+      <TerminalTab sessionId="s-vis" cwd="/tmp" isVisible={true} />
+    );
+
+    await vi.waitFor(() => {
+      expect(mockInvoke).toHaveBeenCalledWith("pty_spawn", expect.objectContaining({ sessionId: "s-vis" }));
+    });
+
+    mockInvoke.mockClear();
+
+    // Toggle to hidden
+    rerender(
+      <TerminalTab sessionId="s-vis" cwd="/tmp" isVisible={false} />
+    );
+    await vi.advanceTimersByTimeAsync(100);
+
+    // Toggle back to visible
+    rerender(
+      <TerminalTab sessionId="s-vis" cwd="/tmp" isVisible={true} />
+    );
+    await vi.advanceTimersByTimeAsync(100);
+
+    expect(mockInvoke).not.toHaveBeenCalledWith("pty_resize", expect.anything());
   });
 });

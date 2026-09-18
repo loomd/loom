@@ -14,6 +14,7 @@ interface TerminalTabProps {
   args?: string[];
   env?: Record<string, string>;
   initialCommand?: string;
+  spawnDelay?: number;
   isVisible: boolean;
   theme?: 'dark' | 'day' | 'gray';
   fontSize?: string | number;
@@ -99,13 +100,15 @@ const getTerminalTheme = (theme?: 'dark' | 'day' | 'gray') => {
   }
 };
 
-export function TerminalTab({ sessionId, cwd, command, args, env, initialCommand, isVisible, theme, fontSize }: TerminalTabProps) {
+export function TerminalTab({ sessionId, cwd, command, args, env, initialCommand, spawnDelay, isVisible, theme, fontSize }: TerminalTabProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const outerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
   const initialized = useRef<boolean>(false);
   const spawnSuccessRef = useRef<boolean>(false);
+  const lastColsRef = useRef<number>(-1);
+  const lastRowsRef = useRef<number>(-1);
   const fontSizeRef = useRef(fontSize);
   useEffect(() => {
     fontSizeRef.current = fontSize;
@@ -259,8 +262,14 @@ export function TerminalTab({ sessionId, cwd, command, args, env, initialCommand
 
     document.addEventListener('scroll', preventGlobalScroll, true);
 
-    const startInit = () => {
+    const startInit = async () => {
       if (!active || !containerRef.current) return;
+
+      // 1. 如果存在错峰延迟，先等待指定时间
+      if (spawnDelay && spawnDelay > 0) {
+        await new Promise(resolve => setTimeout(resolve, spawnDelay));
+        if (!active || !containerRef.current) return;
+      }
 
       // Ensure the container is truly mounted in the active document body
       if (!containerRef.current.isConnected) {
@@ -367,8 +376,13 @@ export function TerminalTab({ sessionId, cwd, command, args, env, initialCommand
 
       // Load History Buffer & attach events
       const initShell = async () => {
-        // 1. Initial fit check to get size
+        // 1. Initial fit check: 确保容器已具备准确尺寸
         const container = containerRef.current;
+        if (container && (container.clientWidth <= 0 || container.clientHeight <= 0) && isVisibleRef.current) {
+          await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
+          if (!active) return () => {};
+        }
+
         if (container && container.clientWidth > 0 && container.clientHeight > 0) {
           try {
             fitAddon.fit();
@@ -392,14 +406,22 @@ export function TerminalTab({ sessionId, cwd, command, args, env, initialCommand
           });
           if (!termRef.current) return () => {};
           spawnSuccessRef.current = true;
-          // Sync size right after spawn completes
+          lastColsRef.current = cols;
+          lastRowsRef.current = rows;
+          // Sync size right after spawn completes only if dimensions changed
           try {
             fitAddon.fit();
-            invoke('pty_resize', {
-              sessionId,
-              cols: term.cols,
-              rows: term.rows
-            }).catch(e => console.warn("Initial pty_resize failed:", e));
+            const currentCols = term.cols;
+            const currentRows = term.rows;
+            if (currentCols > 0 && currentRows > 0 && (currentCols !== cols || currentRows !== rows)) {
+              lastColsRef.current = currentCols;
+              lastRowsRef.current = currentRows;
+              invoke('pty_resize', {
+                sessionId,
+                cols: currentCols,
+                rows: currentRows
+              }).catch(e => console.warn("Initial pty_resize failed:", e));
+            }
           } catch (e) {
             console.warn("Initial fit failed:", e);
           }
@@ -499,11 +521,15 @@ export function TerminalTab({ sessionId, cwd, command, args, env, initialCommand
         if (container && container.clientWidth > 0 && container.clientHeight > 0) {
           try {
             fitAddonRef.current.fit();
-            if (spawnSuccessRef.current) {
+            const currentCols = termRef.current.cols;
+            const currentRows = termRef.current.rows;
+            if (spawnSuccessRef.current && currentCols > 0 && currentRows > 0 && (currentCols !== lastColsRef.current || currentRows !== lastRowsRef.current)) {
+              lastColsRef.current = currentCols;
+              lastRowsRef.current = currentRows;
               invoke('pty_resize', {
                 sessionId,
-                cols: termRef.current.cols,
-                rows: termRef.current.rows
+                cols: currentCols,
+                rows: currentRows
               }).catch(err => console.warn("Resize update failed:", err));
             }
           } catch (e) {
@@ -551,12 +577,21 @@ export function TerminalTab({ sessionId, cwd, command, args, env, initialCommand
         if (container && container.clientWidth > 0 && container.clientHeight > 0) {
           try {
             fitAddonRef.current.fit();
-            invoke('pty_resize', {
-              sessionId,
-              cols: termRef.current.cols,
-              rows: termRef.current.rows
-            }).catch((err) => console.warn('Failed to resize PTY:', err));
+            const currentCols = termRef.current.cols;
+            const currentRows = termRef.current.rows;
+            if (currentCols > 0 && currentRows > 0 && (currentCols !== lastColsRef.current || currentRows !== lastRowsRef.current)) {
+              lastColsRef.current = currentCols;
+              lastRowsRef.current = currentRows;
+              invoke('pty_resize', {
+                sessionId,
+                cols: currentCols,
+                rows: currentRows
+              }).catch((err) => console.warn('Failed to resize PTY:', err));
+            }
             termRef.current.focus();
+            if (termRef.current.rows > 0) {
+              termRef.current.refresh(0, termRef.current.rows - 1);
+            }
           } catch (e) {
             console.warn("Visibility resize failed", e);
           }
@@ -577,11 +612,17 @@ export function TerminalTab({ sessionId, cwd, command, args, env, initialCommand
           if (!termRef.current || !fitAddonRef.current || !spawnSuccessRef.current) return;
           try {
             fitAddonRef.current.fit();
-            invoke('pty_resize', {
-              sessionId,
-              cols: termRef.current.cols,
-              rows: termRef.current.rows
-            }).catch((err) => console.warn('Failed to resize PTY on font size change:', err));
+            const currentCols = termRef.current.cols;
+            const currentRows = termRef.current.rows;
+            if (currentCols > 0 && currentRows > 0 && (currentCols !== lastColsRef.current || currentRows !== lastRowsRef.current)) {
+              lastColsRef.current = currentCols;
+              lastRowsRef.current = currentRows;
+              invoke('pty_resize', {
+                sessionId,
+                cols: currentCols,
+                rows: currentRows
+              }).catch((err) => console.warn('Failed to resize PTY on font size change:', err));
+            }
           } catch (e) {
             console.warn('Resize error on font size change:', e);
           }

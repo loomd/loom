@@ -94,6 +94,10 @@ Execute the following commands from the project root directory:
 ### 5. Code Quality & Mod Rules
 - **Surgical Code Updates**: Minimize diff size. Match single/double quoting and naming styles of surrounding files. Clean up unused imports or variables introduced by your own changes. Avoid full-file reformats.
 - **Simplicity**: Prevent premature abstractions. Write direct execution paths. Avoid configurations for variables that will not change.
+- **Code Rollback Policy (回退代码规范)**:
+  - **禁止粗暴回退**: 严禁使用 `git reset --hard`、`git checkout .`、`git restore .` 或对整个文件进行无差别的一键回退。
+  - **多 Agent 并发感知**: 必须意识到当前代码库随时可能有多个 Agent 或开发者在并发工作，各自的目标和未提交修改可能混杂在同一文件或工作区中。
+  - **阅读后精准重写**: 回退自身改动时，必须先通过 `read` / `grep` 细致分析每段代码的上下文与意图，**只能通过阅读后针对性重写/局部编辑（Edit）的方式精确撤销属于自己的那部分代码**，绝对不可冲掉其他 Agent 或用户的并存修改。
 
 ---
 
