@@ -154,84 +154,6 @@ export function TerminalTab({ sessionId, cwd, command, args, env, initialCommand
       }
     };
 
-    const getCellDimensions = () => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const core = (termRef.current as any)?._core;
-      if (core?._renderService?.dimensions?.css?.cell) {
-        const cell = core._renderService.dimensions.css.cell;
-        if (cell.width > 0 && cell.height > 0) {
-          return { width: cell.width, height: cell.height };
-        }
-      }
-      const measureEl = containerRef.current?.querySelector('.xterm-char-measure-element');
-      if (measureEl) {
-        const rect = measureEl.getBoundingClientRect();
-        const text = measureEl.textContent || '';
-        const charCount = text.length || 1;
-        const width = rect.width / charCount;
-        if (width > 0 && rect.height > 0) {
-          return { width, height: rect.height };
-        }
-      }
-      return { width: 7.8, height: 15.17 };
-    };
-
-    const syncTextareaPosition = () => {
-      const term = termRef.current;
-      const textarea = term?.textarea;
-      const container = containerRef.current;
-      if (term && textarea && container) {
-        const { width, height } = getCellDimensions();
-        
-        // Custom single-row virtual cursor detection logic
-        const getTargetCursorPosition = (t: Terminal) => {
-          const defaultX = t.buffer.active.cursorX;
-          const defaultY = t.buffer.active.cursorY;
-          const isHidden = !!((t as Terminal & { _core?: { coreService?: { isCursorHidden?: boolean } } })?._core?.coreService?.isCursorHidden);
-
-          if (!isHidden) {
-            return { x: defaultX, y: defaultY };
-          }
-
-          // If cursor is hidden (e.g. in pwsh with PSReadLine), scan from right to left
-          // on the active row to find the first cell representing the virtual cursor.
-          const buffer = t.buffer.active;
-          const line = buffer.getLine(buffer.viewportY + defaultY);
-          if (line) {
-            const cols = t.cols;
-            const startX = Math.min(defaultX, cols - 1);
-            for (let x = startX; x >= 0; x--) {
-              const cell = line.getCell(x);
-              if (!cell) continue;
-
-              const isInverse = cell.isInverse() !== 0;
-              const isCustomBg = !cell.isBgDefault() || cell.isBgRGB() || cell.isBgPalette();
-              
-              if (isInverse || isCustomBg) {
-                return { x, y: defaultY };
-              }
-            }
-          }
-
-          return { x: defaultX, y: defaultY };
-        };
-
-        const target = getTargetCursorPosition(term);
-        
-        // Calculate coordinates relative to the terminal container (.xterm-helpers)
-        // using absolute positioning to avoid viewport/transform mismatch issues.
-        const leftPx = `${target.x * width}px`;
-        const topPx = `${target.y * height}px`;
-        
-        // Set CSS variables on the container wrapping the terminal to prevent 
-        // xterm.js internal updates from wiping them out.
-        container.style.setProperty('--ime-left', leftPx);
-        container.style.setProperty('--ime-top', topPx);
-        textarea.style.left = leftPx;
-        textarea.style.top = topPx;
-      }
-    };
-
     const preventGlobalScroll = (e: Event) => {
       if (!isVisibleRef.current) return;
 
@@ -312,8 +234,29 @@ export function TerminalTab({ sessionId, cwd, command, args, env, initialCommand
       const textarea = term.textarea;
       const termEl = term.element;
       if (textarea && termEl) {
+        // Compatibility with xterm 6.0.0: mirror upstream #5759 and #5761.
+        // Remove this private-API adapter after the stable upgrade in spec 062.
+        // Let xterm own cell geometry and viewport checks; styled cells are not
+        // a reliable way to distinguish an application's cursor from its UI.
+        const core = (term as Terminal & {
+          _core?: {
+            _syncTextArea?: () => void;
+            _compositionHelper?: { updateCompositionElements: () => void };
+          };
+        })._core;
+        const syncTextareaPosition = () => {
+          core?._syncTextArea?.();
+          // Keep the composing CSS override on the same coordinates that xterm
+          // uses for both the helper textarea and the visible preedit layer.
+          const container = containerRef.current;
+          if (container && textarea.style.left && textarea.style.top) {
+            container.style.setProperty('--ime-left', textarea.style.left);
+            container.style.setProperty('--ime-top', textarea.style.top);
+          }
+        };
         const handleStart = () => {
           isComposing = true;
+          core?._compositionHelper?.updateCompositionElements();
           termEl.classList.add('is-composing');
           textarea.scrollLeft = 0;
           textarea.scrollTop = 0;
@@ -355,6 +298,8 @@ export function TerminalTab({ sessionId, cwd, command, args, env, initialCommand
           }
         };
 
+        // Capture runs before xterm's listener sets its isComposing guard.
+        textarea.addEventListener('compositionstart', syncTextareaPosition, true);
         textarea.addEventListener('compositionstart', handleStart);
         textarea.addEventListener('compositionend', handleEnd);
         textarea.addEventListener('compositionupdate', handleUpdate);
@@ -362,7 +307,12 @@ export function TerminalTab({ sessionId, cwd, command, args, env, initialCommand
         textarea.addEventListener('keydown', handleKey, true);
         textarea.addEventListener('focus', handleFocus, true);
         textarea.addEventListener('blur', handleBlur, true);
+        const resizeSync = term.onResize(syncTextareaPosition);
+        const renderSync = term.onRender(syncTextareaPosition);
         cleanupComposition = () => {
+          resizeSync.dispose();
+          renderSync.dispose();
+          textarea.removeEventListener('compositionstart', syncTextareaPosition, true);
           textarea.removeEventListener('compositionstart', handleStart);
           textarea.removeEventListener('compositionend', handleEnd);
           textarea.removeEventListener('compositionupdate', handleUpdate);
