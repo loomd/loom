@@ -39,7 +39,13 @@ export default function ProjectWorkspace({ project, isVisible, onUnregisterProje
 		terminals, showGrid, handleAddRawTerminal, handleCloseTerminal,
 		handleOpenFile, updateTabDirty, removeTabById, moveTab, addTab,
 	} = tabsState;
-const opencodeTerms = useMemo(() => terminals.filter(t => t.isOpencode), [terminals]);
+	const isAgentTerminal = useCallback((t: { isOpencode?: boolean; title?: string; command?: string }) => {
+		if (t.isOpencode) return true;
+		const str = `${t.title || ''} ${t.command || ''}`.toLowerCase();
+		return str.includes('opencode') || str.includes('mcode') || str.includes('minimax');
+	}, []);
+
+	const opencodeTerms = useMemo(() => terminals.filter(t => isAgentTerminal(t)), [terminals, isAgentTerminal]);
 const [agentStateMap, setAgentStateMap] = useState<Record<string, AgentStateInfo>>({});
 const [pendingGridMode, setPendingGridMode] = useState<GridLayout | null>(null);
 const [dragTabId, setDragTabId] = useState<string | null>(null);
@@ -54,27 +60,70 @@ const performRestore = useCallback((list: PersistedTerminal[], layout: GridLayou
   for (const p of list) {
     const newId = crypto.randomUUID();
     let args = p.args ? [...p.args] : undefined;
-    if (p.is_opencode && p.opencode_session_id) {
-      const cleanArgs = args ? [...args] : [];
-      const sIdx = cleanArgs.indexOf('-s');
-      if (sIdx !== -1 && sIdx + 1 < cleanArgs.length) {
-        cleanArgs[sIdx + 1] = p.opencode_session_id;
+    let initialCommand = p.initial_command;
+    let command = p.command;
+    const sessionId = p.opencode_session_id;
+    const isAgent = Boolean(
+      p.is_opencode ||
+      (sessionId != null && sessionId.length > 0) ||
+      (p.title && (p.title.toLowerCase().includes('mcode') || p.title.toLowerCase().includes('opencode') || p.title.toLowerCase().includes('minimax'))) ||
+      (initialCommand && (initialCommand.toLowerCase().includes('mcode') || initialCommand.toLowerCase().includes('opencode') || initialCommand.toLowerCase().includes('minimax')))
+    );
+
+    if (isAgent) {
+      const isMcode = (sessionId && sessionId.startsWith('mvs_')) ||
+        (p.title && (p.title.toLowerCase().includes('mcode') || p.title.toLowerCase().includes('minimax'))) ||
+        (command && (command.toLowerCase().includes('mcode') || command.toLowerCase().includes('minimax'))) ||
+        (initialCommand && (initialCommand.toLowerCase().includes('mcode') || initialCommand.toLowerCase().includes('minimax')));
+
+      if (isMcode) {
+        if (sessionId) {
+          if (command && (command.toLowerCase().includes('mcode') || command.toLowerCase().includes('minimax'))) {
+            const cleanArgs = args ? [...args] : [];
+            const sIdx = cleanArgs.indexOf('--session');
+            if (sIdx !== -1 && sIdx + 1 < cleanArgs.length) {
+              cleanArgs[sIdx + 1] = sessionId;
+            } else {
+              cleanArgs.push('--session', sessionId);
+            }
+            args = cleanArgs;
+          } else {
+            initialCommand = `mcode --session ${sessionId}`;
+          }
+        } else if (!command && !initialCommand) {
+          initialCommand = 'mcode';
+        }
       } else {
-        cleanArgs.push('-s', p.opencode_session_id);
+        if (sessionId) {
+          if (command && command.toLowerCase().includes('opencode')) {
+            const cleanArgs = args ? [...args] : [];
+            const sIdx = cleanArgs.indexOf('-s');
+            if (sIdx !== -1 && sIdx + 1 < cleanArgs.length) {
+              cleanArgs[sIdx + 1] = sessionId;
+            } else {
+              cleanArgs.push('-s', sessionId);
+            }
+            args = cleanArgs;
+          } else {
+            initialCommand = `opencode -s ${sessionId}`;
+          }
+        } else if (!command && !initialCommand) {
+          initialCommand = 'opencode';
+        }
       }
-      args = cleanArgs;
     }
+
     newTabs.push({
       id: newId,
       title: p.title,
       type: 'terminal',
       cwd: p.cwd,
-      command: p.command,
+      command,
       args,
       env: p.env,
-      isOpencode: p.is_opencode,
-      opencodeSessionId: p.opencode_session_id,
-      initialCommand: p.initial_command,
+      isOpencode: isAgent,
+      opencodeSessionId: sessionId,
+      initialCommand,
     });
   }
   setTabs(prev => {
@@ -154,9 +203,28 @@ useEffect(() => {
 
   const timer = setTimeout(() => {
     const list: PersistedTerminal[] = terminals.map(t => {
-      const opencodeSessionId = t.isOpencode
+      const isAgent = isAgentTerminal(t);
+      const agentSessionId = isAgent
         ? (agentStateMap[t.id]?.session_id || t.opencodeSessionId || undefined)
         : undefined;
+
+      let initCmd = t.initialCommand;
+      if (isAgent && !t.command) {
+        if (agentSessionId) {
+          if (agentSessionId.startsWith('mvs_') || (t.title && (t.title.toLowerCase().includes('mcode') || t.title.toLowerCase().includes('minimax')))) {
+            initCmd = `mcode --session ${agentSessionId}`;
+          } else {
+            initCmd = `opencode -s ${agentSessionId}`;
+          }
+        } else if (!initCmd) {
+          if (t.title && (t.title.toLowerCase().includes('mcode') || t.title.toLowerCase().includes('minimax'))) {
+            initCmd = 'mcode';
+          } else if (t.title && t.title.toLowerCase().includes('opencode')) {
+            initCmd = 'opencode';
+          }
+        }
+      }
+
       return {
         id: t.id,
         title: t.title,
@@ -164,9 +232,9 @@ useEffect(() => {
         command: t.command,
         args: t.args,
         env: t.env,
-        is_opencode: !!t.isOpencode,
-        opencode_session_id: opencodeSessionId,
-        initial_command: t.initialCommand,
+        is_opencode: isAgent,
+        opencode_session_id: agentSessionId,
+        initial_command: initCmd,
       };
     });
     saveProjectTerminals(project.id, list).catch((e) => {
@@ -177,7 +245,7 @@ useEffect(() => {
     });
   }, 1000);
   return () => clearTimeout(timer);
-}, [restoreReady, terminals, agentStateMap, project.id, pendingRestoreTerminals, layoutMode]);
+}, [restoreReady, terminals, agentStateMap, project.id, pendingRestoreTerminals, layoutMode, isAgentTerminal]);
 
 const handleAddTerminal = useCallback(() => {
   if (showGrid && layoutMode && terminals.length < gridCount) {
@@ -432,7 +500,7 @@ const closeActiveByShortcut = useCallback(() => {
                   cursor: 'grab',
                 }}>
                 {tab.type === 'editor' && <span style={{ fontSize: '0.8rem', opacity: 0.8 }}>📄</span>}
-                {tab.type === 'terminal' && tab.isOpencode && (
+                {tab.type === 'terminal' && isAgentTerminal(tab) && (
                   <span
                     className={`agent-status-dot ${agentStateMap[tab.id]?.state || 'waiting'}`}
                     title={t(`agent.status.${agentStateMap[tab.id]?.state || 'waiting'}`)}

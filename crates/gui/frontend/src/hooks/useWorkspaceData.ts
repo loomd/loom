@@ -283,7 +283,12 @@ export function useWorkspaceData(
         args: getMergedArgs(tool, tpl),
         env: customEnvs,
       };
-      const isOpencode = tool.name.toLowerCase().includes('opencode') || tool.path.toLowerCase().includes('opencode');
+      const isOpencode = 
+        tool.name.toLowerCase().includes('opencode') || tool.path.toLowerCase().includes('opencode') ||
+        tool.name.toLowerCase().includes('mcode') || tool.path.toLowerCase().includes('mcode') ||
+        tool.name.toLowerCase().includes('minimax') || tool.path.toLowerCase().includes('minimax') ||
+        tpl.name.toLowerCase().includes('opencode') || tpl.name.toLowerCase().includes('mcode') || tpl.name.toLowerCase().includes('minimax') ||
+        (tpl.args && tpl.args.some(a => a.toLowerCase().includes('opencode') || a.toLowerCase().includes('mcode') || a.toLowerCase().includes('minimax')));
       if (isOpencode) newTab.isOpencode = true;
       tabActions.addTab(newTab);
       tabActions.setActiveTabId(newSessionId);
