@@ -446,6 +446,7 @@ impl AgentMonitor {
     }
 
     /// Legacy single-connection helper (primarily used in tests)
+    #[cfg(test)]
     pub fn poll_state_for_pty_with_conn(&self, conn: &Connection, workspace_dir: &str, pty_session_id: &str) -> Option<AgentStateInfo> {
         self.poll_state_for_pty_with_conns(Some(conn), None, workspace_dir, pty_session_id)
     }
