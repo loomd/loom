@@ -2,6 +2,7 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, OnceLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -22,6 +23,9 @@ pub struct AgentStateInfo {
     pub session_id: String,
 }
 
+/// Monotonic counter to resolve sub-millisecond input ordering.
+static ACTIVE_SEQ: AtomicU64 = AtomicU64::new(1);
+
 /// Global tracking of active PTY and session ownership.
 ///
 /// Multi-PTY resolution rules:
@@ -34,6 +38,10 @@ pub struct AgentStateInfo {
 /// 6. A PTY that lost its claimed session automatically drops back to Waiting.
 /// 7. Sessions created before a PTY was spawned cannot be claimed by that PTY.
 static LAST_ACTIVE_PTY: OnceLock<Mutex<Option<(String, i64)>>> = OnceLock::new();
+/// Maps pty_session_id -> (last_input_timestamp_ms, seq)
+static PTY_LAST_ACTIVE: OnceLock<Mutex<HashMap<String, (i64, u64)>>> = OnceLock::new();
+/// Maps pty_session_id -> agent_type (e.g. "opencode" or "mcode")
+static PTY_AGENT_TYPE: OnceLock<Mutex<HashMap<String, String>>> = OnceLock::new();
 /// Maps pty_session_id -> (claimed_session_id, last_polled_ts)
 static SESSION_CACHE: OnceLock<Mutex<HashMap<String, (String, i64)>>> = OnceLock::new();
 /// Maps session_id -> owning_pty_session_id (exclusive ownership)
@@ -68,8 +76,12 @@ pub fn record_pty_spawn(pty_session_id: &str) {
 /// Call when user sends input to a PTY session.
 pub fn mark_pty_active(pty_session_id: &str) {
     let now = now_ms();
+    let seq = ACTIVE_SEQ.fetch_add(1, Ordering::SeqCst);
     let cell = LAST_ACTIVE_PTY.get_or_init(|| Mutex::new(None));
     *cell.lock().unwrap() = Some((pty_session_id.to_string(), now));
+
+    let active_map = PTY_LAST_ACTIVE.get_or_init(|| Mutex::new(HashMap::new()));
+    active_map.lock().unwrap().insert(pty_session_id.to_string(), (now, seq));
 
     // Also ensure it's registered in PTY_SPAWNS if not already
     let spawns = PTY_SPAWNS.get_or_init(|| Mutex::new(HashMap::new()));
@@ -81,6 +93,12 @@ pub fn mark_pty_active(pty_session_id: &str) {
 pub fn cleanup_pty(pty_session_id: &str) {
     if let Some(spawns) = PTY_SPAWNS.get() {
         spawns.lock().unwrap().remove(pty_session_id);
+    }
+    if let Some(active_map) = PTY_LAST_ACTIVE.get() {
+        active_map.lock().unwrap().remove(pty_session_id);
+    }
+    if let Some(types) = PTY_AGENT_TYPE.get() {
+        types.lock().unwrap().remove(pty_session_id);
     }
     if let Some(cache) = SESSION_CACHE.get() {
         if let Some((sess_id, _)) = cache.lock().unwrap().remove(pty_session_id) {
@@ -209,7 +227,7 @@ impl AgentMonitor {
         ).ok()
     }
 
-    pub fn poll_state(&self, workspace_dir: &str) -> Option<AgentStateInfo> {
+    pub fn poll_state(&self, workspace_dir: &str, agent_type: Option<&str>) -> Option<AgentStateInfo> {
         let waiting = || AgentStateInfo {
             state: AgentState::Waiting,
             session_id: String::new(),
@@ -223,7 +241,7 @@ impl AgentMonitor {
             return Some(waiting());
         }
 
-        self.poll_state_with_conns(opencode_conn.as_ref(), mcode_conn.as_ref(), workspace_dir)
+        self.poll_state_with_conns(opencode_conn.as_ref(), mcode_conn.as_ref(), workspace_dir, agent_type)
     }
 
     pub fn poll_state_with_conns(
@@ -231,20 +249,28 @@ impl AgentMonitor {
         opencode_conn: Option<&Connection>,
         mcode_conn: Option<&Connection>,
         workspace_dir: &str,
+        agent_type: Option<&str>,
     ) -> Option<AgentStateInfo> {
         let waiting = || AgentStateInfo {
             state: AgentState::Waiting,
             session_id: String::new(),
         };
 
+        let is_opencode = agent_type.is_none_or(|t| t.eq_ignore_ascii_case("opencode"));
+        let is_mcode = agent_type.is_none_or(|t| t.eq_ignore_ascii_case("mcode"));
+
         let mut latest_opencode = None;
-        if let Some(conn) = opencode_conn {
-            latest_opencode = Self::find_latest_opencode_session(conn, workspace_dir);
+        if is_opencode {
+            if let Some(conn) = opencode_conn {
+                latest_opencode = Self::find_latest_opencode_session(conn, workspace_dir);
+            }
         }
 
         let mut latest_mcode = None;
-        if let Some(conn) = mcode_conn {
-            latest_mcode = Self::find_latest_mcode_session(conn, workspace_dir);
+        if is_mcode {
+            if let Some(conn) = mcode_conn {
+                latest_mcode = Self::find_latest_mcode_session(conn, workspace_dir);
+            }
         }
 
         let chosen = match (latest_opencode, latest_mcode) {
@@ -285,11 +311,11 @@ impl AgentMonitor {
     /// Legacy single-connection helper (primarily used in tests)
     #[allow(dead_code)]
     pub fn poll_state_with_conn(&self, conn: &Connection, workspace_dir: &str) -> Option<AgentStateInfo> {
-        self.poll_state_with_conns(Some(conn), None, workspace_dir)
+        self.poll_state_with_conns(Some(conn), None, workspace_dir, None)
     }
 
     /// Poll agent state scoped to a specific PTY terminal.
-    pub fn poll_state_for_pty(&self, workspace_dir: &str, pty_session_id: &str) -> Option<AgentStateInfo> {
+    pub fn poll_state_for_pty(&self, workspace_dir: &str, pty_session_id: &str, agent_type: Option<&str>) -> Option<AgentStateInfo> {
         let waiting = || AgentStateInfo {
             state: AgentState::Waiting,
             session_id: String::new(),
@@ -303,7 +329,7 @@ impl AgentMonitor {
             return Some(waiting());
         }
 
-        self.poll_state_for_pty_with_conns(opencode_conn.as_ref(), mcode_conn.as_ref(), workspace_dir, pty_session_id)
+        self.poll_state_for_pty_with_conns(opencode_conn.as_ref(), mcode_conn.as_ref(), workspace_dir, pty_session_id, agent_type)
     }
 
     pub fn poll_state_for_pty_with_conns(
@@ -312,6 +338,7 @@ impl AgentMonitor {
         mcode_conn: Option<&Connection>,
         workspace_dir: &str,
         pty_session_id: &str,
+        agent_type: Option<&str>,
     ) -> Option<AgentStateInfo> {
         let waiting = || AgentStateInfo {
             state: AgentState::Waiting,
@@ -322,6 +349,9 @@ impl AgentMonitor {
         let cache = SESSION_CACHE.get_or_init(|| Mutex::new(HashMap::new()));
         let owners = SESSION_OWNER.get_or_init(|| Mutex::new(HashMap::new()));
         let spawns = PTY_SPAWNS.get_or_init(|| Mutex::new(HashMap::new()));
+
+        let is_opencode = agent_type.is_none_or(|t| t.eq_ignore_ascii_case("opencode"));
+        let is_mcode = agent_type.is_none_or(|t| t.eq_ignore_ascii_case("mcode"));
 
         let poll_by_sid = |sid: &str| -> Option<AgentStateInfo> {
             if sid.starts_with("mvs_") || opencode_conn.is_none() {
@@ -338,9 +368,40 @@ impl AgentMonitor {
             Some(waiting())
         };
 
-        // 1. Query the latest active session for this workspace (from opencode & mcode)
-        let opencode_latest = opencode_conn.and_then(|conn| Self::find_latest_opencode_session(conn, workspace_dir));
-        let mcode_latest = mcode_conn.and_then(|conn| Self::find_latest_mcode_session(conn, workspace_dir));
+        // If agent_type is specified, ensure any existing cached session matches that agent type.
+        if let Some(at) = agent_type {
+            let mut cache_guard = cache.lock().unwrap();
+            if let Some((cached, _)) = cache_guard.get(pty_session_id) {
+                let cached_is_mcode = cached.starts_with("mvs_");
+                let mismatch = if at.eq_ignore_ascii_case("opencode") {
+                    cached_is_mcode
+                } else if at.eq_ignore_ascii_case("mcode") {
+                    !cached_is_mcode
+                } else {
+                    false
+                };
+                if mismatch {
+                    let old_sid = cached.clone();
+                    cache_guard.remove(pty_session_id);
+                    let mut owners_guard = owners.lock().unwrap();
+                    if owners_guard.get(&old_sid).map(|s| s.as_str()) == Some(pty_session_id) {
+                        owners_guard.remove(&old_sid);
+                    }
+                }
+            }
+        }
+
+        // 1. Query the latest active session for this workspace (filtered by agent_type if specified)
+        let opencode_latest = if is_opencode {
+            opencode_conn.and_then(|conn| Self::find_latest_opencode_session(conn, workspace_dir))
+        } else {
+            None
+        };
+        let mcode_latest = if is_mcode {
+            mcode_conn.and_then(|conn| Self::find_latest_mcode_session(conn, workspace_dir))
+        } else {
+            None
+        };
 
         let latest_info = match (opencode_latest, mcode_latest) {
             (Some((oid, ots)), Some((mid, mts))) => {
@@ -358,16 +419,50 @@ impl AgentMonitor {
         let (latest_sid, last_active_time, latest_source) = match latest_info {
             Some(info) => info,
             None => {
-                eprintln!("[AgentPoll:pty={}] no session for workspace, Waiting", pty_session_id);
+                eprintln!("[AgentPoll:pty={}] no session for workspace ({:?}), Waiting", pty_session_id, agent_type);
                 return Some(waiting());
             }
         };
 
-        // 2. Input gate: only the globally last-active PTY can CLAIM / TRANSFER sessions.
+        // 2. Input gate: check if this PTY is active and is the latest active for this agent type.
         {
-            let guard = LAST_ACTIVE_PTY.get_or_init(|| Mutex::new(None))
-                .lock().unwrap();
-            let can_claim = matches!(&*guard, Some((id, ts)) if id == pty_session_id && now - *ts <= ACTIVE_WINDOW_MS);
+            if let Some(at) = agent_type {
+                let types = PTY_AGENT_TYPE.get_or_init(|| Mutex::new(HashMap::new()));
+                types.lock().unwrap().insert(pty_session_id.to_string(), at.to_string());
+            }
+
+            let (pty_last_active, my_seq) = PTY_LAST_ACTIVE.get_or_init(|| Mutex::new(HashMap::new()))
+                .lock().unwrap()
+                .get(pty_session_id)
+                .copied()
+                .unwrap_or((0, 0));
+
+            let is_recent = now - pty_last_active <= ACTIVE_WINDOW_MS;
+
+            let is_most_recent_for_type = {
+                let active_map = PTY_LAST_ACTIVE.get_or_init(|| Mutex::new(HashMap::new())).lock().unwrap();
+                let types_map = PTY_AGENT_TYPE.get_or_init(|| Mutex::new(HashMap::new())).lock().unwrap();
+                let my_type = agent_type.map(|s| s.to_string()).or_else(|| types_map.get(pty_session_id).cloned());
+
+                let mut more_recent_peer = false;
+                for (other_pty, (other_ts, other_seq)) in active_map.iter() {
+                    if other_pty != pty_session_id && (*other_ts, *other_seq) > (pty_last_active, my_seq) && now - *other_ts <= ACTIVE_WINDOW_MS {
+                        let other_type = types_map.get(other_pty).cloned();
+                        let is_peer = match (&my_type, &other_type) {
+                            (Some(t1), Some(t2)) => t1.eq_ignore_ascii_case(t2),
+                            (None, None) => true,
+                            _ => false,
+                        };
+                        if is_peer {
+                            more_recent_peer = true;
+                            break;
+                        }
+                    }
+                }
+                !more_recent_peer
+            };
+
+            let can_claim = is_recent && is_most_recent_for_type;
             if !can_claim {
                 let cache_guard = cache.lock().unwrap();
                 if let Some((cached, _)) = cache_guard.get(pty_session_id) {
@@ -448,7 +543,7 @@ impl AgentMonitor {
     /// Legacy single-connection helper (primarily used in tests)
     #[cfg(test)]
     pub fn poll_state_for_pty_with_conn(&self, conn: &Connection, workspace_dir: &str, pty_session_id: &str) -> Option<AgentStateInfo> {
-        self.poll_state_for_pty_with_conns(Some(conn), None, workspace_dir, pty_session_id)
+        self.poll_state_for_pty_with_conns(Some(conn), None, workspace_dir, pty_session_id, None)
     }
 
     fn poll_mcode_parts(&self, conn: &Connection, session_id: &str) -> Option<AgentStateInfo> {
@@ -704,7 +799,7 @@ mod tests {
 
     #[test]
     fn test_resumed_historical_session_is_claimed_and_tracked() {
-        let _lock = TEST_MUTEX.lock().unwrap();
+        let _lock = TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
         let conn = setup_test_db();
         let monitor = AgentMonitor::new();
         let ws_dir = "C:/test/workspace";
@@ -756,7 +851,7 @@ mod tests {
 
     #[test]
     fn test_mcode_session_lifecycle_and_states() {
-        let _lock = TEST_MUTEX.lock().unwrap();
+        let _lock = TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
         let mcode_conn = setup_test_mcode_db();
         let monitor = AgentMonitor::new();
         let ws_dir = "C:/test/mcode_workspace";
@@ -776,7 +871,7 @@ mod tests {
         ).unwrap();
 
         // 3. 轮询 -> 识别为 Running
-        let state1 = monitor.poll_state_for_pty_with_conns(None, Some(&mcode_conn), ws_dir, pty_id).unwrap();
+        let state1 = monitor.poll_state_for_pty_with_conns(None, Some(&mcode_conn), ws_dir, pty_id, Some("mcode")).unwrap();
         assert_eq!(state1.state, AgentState::Running);
         assert_eq!(state1.session_id, "mvs_test_001");
 
@@ -785,7 +880,7 @@ mod tests {
             "INSERT INTO questionnaire_requests (request_id, session_id, status) VALUES (?1, ?2, ?3)",
             rusqlite::params!["req_01", "mvs_test_001", "pending"],
         ).unwrap();
-        let state2 = monitor.poll_state_for_pty_with_conns(None, Some(&mcode_conn), ws_dir, pty_id).unwrap();
+        let state2 = monitor.poll_state_for_pty_with_conns(None, Some(&mcode_conn), ws_dir, pty_id, Some("mcode")).unwrap();
         assert_eq!(state2.state, AgentState::Question);
 
         // 5. 问题处理完毕，插入子 Agent 任务 (running)
@@ -797,7 +892,7 @@ mod tests {
             "INSERT INTO local_runtime_background_tasks (task_id, owner_session_id, status) VALUES (?1, ?2, ?3)",
             rusqlite::params!["task_01", "mvs_test_001", "running"],
         ).unwrap();
-        let state3 = monitor.poll_state_for_pty_with_conns(None, Some(&mcode_conn), ws_dir, pty_id).unwrap();
+        let state3 = monitor.poll_state_for_pty_with_conns(None, Some(&mcode_conn), ws_dir, pty_id, Some("mcode")).unwrap();
         assert_eq!(state3.state, AgentState::AgentCall);
 
         // 6. 任务完成，会话变为 idle -> 状态为 Waiting
@@ -809,7 +904,7 @@ mod tests {
             "UPDATE local_runtime_sessions SET status = 'idle' WHERE session_id = 'mvs_test_001'",
             [],
         ).unwrap();
-        let state4 = monitor.poll_state_for_pty_with_conns(None, Some(&mcode_conn), ws_dir, pty_id).unwrap();
+        let state4 = monitor.poll_state_for_pty_with_conns(None, Some(&mcode_conn), ws_dir, pty_id, Some("mcode")).unwrap();
         assert_eq!(state4.state, AgentState::Waiting);
 
         cleanup_pty(pty_id);
@@ -817,7 +912,7 @@ mod tests {
 
     #[test]
     fn test_session_transfer_between_ptys() {
-        let _lock = TEST_MUTEX.lock().unwrap();
+        let _lock = TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
         let conn = setup_test_db();
         let monitor = AgentMonitor::new();
         let ws_dir = "C:/test/workspace_transfer";
@@ -867,5 +962,99 @@ mod tests {
 
         cleanup_pty(pty_a);
         cleanup_pty(pty_b);
+    }
+
+    #[test]
+    fn test_concurrent_opencode_and_mcode_ptys_do_not_preempt() {
+        let _lock = TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+        let opencode_conn = setup_test_db();
+        let mcode_conn = setup_test_mcode_db();
+        let monitor = AgentMonitor::new();
+        let ws_dir = "C:/test/workspace_dual";
+        let pty_opencode = "pty_dual_opencode";
+        let pty_mcode = "pty_dual_mcode";
+
+        // 1. 同时注册两个 PTY (时间戳 1000)
+        PTY_SPAWNS.get_or_init(|| Mutex::new(HashMap::new()))
+            .lock().unwrap()
+            .insert(pty_opencode.to_string(), 1000);
+        PTY_SPAWNS.get_or_init(|| Mutex::new(HashMap::new()))
+            .lock().unwrap()
+            .insert(pty_mcode.to_string(), 1000);
+
+        // 2. 写入 opencode 会话 (时间戳 1500)
+        opencode_conn.execute(
+            "INSERT INTO session (id, directory, parent_id, time_created) VALUES (?1, ?2, ?3, ?4)",
+            rusqlite::params!["ses_opencode_1", ws_dir, "", 1500],
+        ).unwrap();
+        opencode_conn.execute(
+            "INSERT INTO part (id, session_id, data, time_created) VALUES (?1, ?2, ?3, ?4)",
+            rusqlite::params!["p_oc_1", "ses_opencode_1", r#"{"type":"reasoning"}"#, 1550],
+        ).unwrap();
+
+        // 3. 写入 mcode 会话 (时间戳 2000 > 1500)
+        mcode_conn.execute(
+            "INSERT INTO local_runtime_sessions (session_id, workspace_dir, project_workspace_dir, parent_session_id, status, error_message, updated_at_ms) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            rusqlite::params!["mvs_mcode_1", ws_dir, ws_dir, "", "started", "", 2000],
+        ).unwrap();
+
+        // 4. 用户在两个终端均触发输入活跃
+        mark_pty_active(pty_opencode);
+        mark_pty_active(pty_mcode);
+
+        // 5. 轮询 opencode 终端 (限定 agent_type = "opencode")
+        // 尽管 mcode 会话时间戳更新 (2000 > 1550)，opencode 终端仍应精准认领 ses_opencode_1
+        let state_oc = monitor.poll_state_for_pty_with_conns(
+            Some(&opencode_conn),
+            Some(&mcode_conn),
+            ws_dir,
+            pty_opencode,
+            Some("opencode"),
+        ).unwrap();
+        assert_eq!(state_oc.state, AgentState::Running);
+        assert_eq!(state_oc.session_id, "ses_opencode_1");
+
+        // 6. 轮询 mcode 终端 (限定 agent_type = "mcode")
+        let state_mc = monitor.poll_state_for_pty_with_conns(
+            Some(&opencode_conn),
+            Some(&mcode_conn),
+            ws_dir,
+            pty_mcode,
+            Some("mcode"),
+        ).unwrap();
+        assert_eq!(state_mc.state, AgentState::Running);
+        assert_eq!(state_mc.session_id, "mvs_mcode_1");
+
+        // 7. opencode 终端产生新动作 (时间戳 3000)，再次激活并轮询
+        mark_pty_active(pty_opencode);
+        opencode_conn.execute(
+            "INSERT INTO part (id, session_id, data, time_created) VALUES (?1, ?2, ?3, ?4)",
+            rusqlite::params!["p_oc_2", "ses_opencode_1", r#"{"type":"tool","tool":"question","state":{"status":"running"}}"#, 3000],
+        ).unwrap();
+
+        let state_oc2 = monitor.poll_state_for_pty_with_conns(
+            Some(&opencode_conn),
+            Some(&mcode_conn),
+            ws_dir,
+            pty_opencode,
+            Some("opencode"),
+        ).unwrap();
+        assert_eq!(state_oc2.state, AgentState::Question);
+        assert_eq!(state_oc2.session_id, "ses_opencode_1");
+
+        // 8. 验证 mcode 终端依然稳固拥有 mvs_mcode_1，未被 opencode 抢占或冲刷！
+        let state_mc2 = monitor.poll_state_for_pty_with_conns(
+            Some(&opencode_conn),
+            Some(&mcode_conn),
+            ws_dir,
+            pty_mcode,
+            Some("mcode"),
+        ).unwrap();
+        assert_eq!(state_mc2.state, AgentState::Running);
+        assert_eq!(state_mc2.session_id, "mvs_mcode_1");
+
+        cleanup_pty(pty_opencode);
+        cleanup_pty(pty_mcode);
     }
 }

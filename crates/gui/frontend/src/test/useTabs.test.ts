@@ -38,7 +38,7 @@ describe('useTabs slot allocation', () => {
       result.current.handleAddRawTerminal(true);
     });
 
-    const thirdTermId = result.current.terminals[2].id;
+    const thirdTermId = result.current.terminals.find(t => t.id !== firstTermId && t.id !== secondTermId)!.id;
     expect(result.current.terminalSlots).toEqual([firstTermId, thirdTermId, secondTermId, null]);
 
     // Close terminal at slot 0 -> slot 0 becomes null, other slots unaffected
@@ -53,7 +53,35 @@ describe('useTabs slot allocation', () => {
       result.current.handleAddRawTerminal(true);
     });
 
-    const fourthTermId = result.current.terminals[2].id;
+    const fourthTermId = result.current.terminals[0].id;
     expect(result.current.terminalSlots).toEqual([fourthTermId, thirdTermId, secondTermId, null]);
+  });
+
+  it('keeps tabs order aligned with slots when creating right slot then left slot in dual split', () => {
+    const { result } = renderHook(() => useTabs('/test/path'), { wrapper });
+
+    // Switch to 2x1 layout (2 slots)
+    act(() => {
+      result.current.setLayoutMode('2x1');
+    });
+
+    // Create terminal in right slot first (targetSlotIndex = 1)
+    act(() => {
+      result.current.handleAddRawTerminal(true, 'opencode', 1);
+    });
+
+    const opencodeId = result.current.terminals[0].id;
+    expect(result.current.terminalSlots).toEqual([null, opencodeId]);
+    expect(result.current.tabs.filter(t => t.type === 'terminal').map(t => t.id)).toEqual([opencodeId]);
+
+    // Create terminal in left slot next (targetSlotIndex = 0)
+    act(() => {
+      result.current.handleAddRawTerminal(true, 'shell', 0);
+    });
+
+    const shellId = result.current.terminalSlots[0];
+    expect(result.current.terminalSlots).toEqual([shellId, opencodeId]);
+    // Top tab bar order (tabs) must match grid slot order: [shell, opencode]
+    expect(result.current.tabs.filter(t => t.type === 'terminal').map(t => t.id)).toEqual([shellId, opencodeId]);
   });
 });

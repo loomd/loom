@@ -107,7 +107,7 @@ pub fn discover_agents() -> DiscoveryOverview {
         installed: mcode_installed,
         version: None,
         executable_path: mcode_path,
-        install_command: "npm install -g @minimax-ai/mcode".to_string(),
+        install_command: "irm https://filecdn.minimax.chat/public/install.ps1 | iex".to_string(),
         download_url: "https://www.minimaxi.com/".to_string(),
     });
 
@@ -713,6 +713,6 @@ mod tests {
         assert_eq!(overview.agents[0].name, "opencode");
         assert_eq!(overview.agents[0].install_command, "npm install -g opencode-ai");
         assert_eq!(overview.agents[1].name, "mcode");
-        assert_eq!(overview.agents[1].install_command, "npm install -g @minimax-ai/mcode");
+        assert_eq!(overview.agents[1].install_command, "irm https://filecdn.minimax.chat/public/install.ps1 | iex");
     }
 }

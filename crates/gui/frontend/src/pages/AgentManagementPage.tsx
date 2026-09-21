@@ -23,7 +23,7 @@ export const AgentManagementPage: React.FC<AgentManagementPageProps> = ({ onOpen
   const [refreshing, setRefreshing] = useState<boolean>(false);
   const [injectingSkill, setInjectingSkill] = useState<boolean>(false);
   const [injectedPaths, setInjectedPaths] = useState<string[]>([]);
-  const [skillVersion, setSkillVersion] = useState<string>('0.7.6');
+  const [skillVersion, setSkillVersion] = useState<string>('0.7.7');
   const [cliStatus, setCliStatus] = useState<CliInstallStatus | null>(null);
   const [installingCli, setInstallingCli] = useState<boolean>(false);
 
@@ -115,23 +115,49 @@ export const AgentManagementPage: React.FC<AgentManagementPageProps> = ({ onOpen
     }
   }, []);
 
+  const syncDiscoveredAgents = useCallback(async (agents: { name: string; executable_path?: string }[]) => {
+    try {
+      const cliTools = await getCliTools();
+      let hasNew = false;
+      for (const agent of agents) {
+        if (!agent.executable_path) continue;
+        const exists = cliTools.some(
+          t => t.path === agent.executable_path || t.name.toLowerCase() === agent.name.toLowerCase()
+        );
+        if (!exists) {
+          await importCliTool(agent.executable_path);
+          hasNew = true;
+        }
+      }
+      if (hasNew) {
+        window.dispatchEvent(new Event('loom-refresh-data'));
+      }
+    } catch {
+      // ignore
+    }
+  }, []);
+
   const loadDiscovery = useCallback(async () => {
     try {
       const res = await getAgentDiscoveryStatus();
       setDiscovery(res);
+      await syncDiscoveredAgents(res.agents);
     } catch (err) {
       toast.error(err?.toString() || '加载 Agent 发现状态失败');
     }
-  }, [toast]);
+  }, [toast, syncDiscoveredAgents]);
 
   useEffect(() => {
     let cancelled = false;
 
-    // 每次页面激活（含首次挂载）时重新检测环境，保证安装 node 后返回本页能实时刷新
+    // 每次页面激活（含首次挂载）时重新检测环境，保证安装 node/agent 后返回本页能实时刷新并自动注册
     if (active) {
       getAgentDiscoveryStatus()
-        .then(res => {
-          if (!cancelled) setDiscovery(res);
+        .then(async res => {
+          if (!cancelled) {
+            setDiscovery(res);
+            await syncDiscoveredAgents(res.agents);
+          }
         })
         .catch(err => {
           if (!cancelled) toast.error(err?.toString() || '加载 Agent 发现状态失败');
@@ -159,7 +185,7 @@ export const AgentManagementPage: React.FC<AgentManagementPageProps> = ({ onOpen
     return () => {
       cancelled = true;
     };
-  }, [active, toast]);
+  }, [active, toast, syncDiscoveredAgents]);
 
   const handleRefresh = async () => {
     setRefreshing(true);
@@ -505,7 +531,7 @@ export const AgentManagementPage: React.FC<AgentManagementPageProps> = ({ onOpen
                   </p>
                   <div style={{ display: 'flex', gap: '10px', marginTop: '12px' }}>
                     {!agent.installed && (
-                      discovery.npm_installed ? (
+                      (!agent.install_command.startsWith('npm') || discovery.npm_installed) ? (
                         <button
                           onClick={() => onOpenTerminal?.(agent.install_command)}
                           style={{

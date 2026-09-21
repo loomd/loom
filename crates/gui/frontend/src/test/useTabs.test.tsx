@@ -43,7 +43,7 @@ describe('useTabs slot allocation', () => {
       result.current.handleAddRawTerminal(true);
     });
 
-    const thirdTermId = result.current.terminals[2].id;
+    const thirdTermId = result.current.terminals.find(t => t.id !== firstTermId && t.id !== secondTermId)!.id;
     expect(result.current.terminalSlots).toEqual([firstTermId, thirdTermId, secondTermId, null]);
 
     // Close terminal at slot 0 -> slot 0 becomes null, other slots unaffected
@@ -58,7 +58,46 @@ describe('useTabs slot allocation', () => {
       result.current.handleAddRawTerminal(true);
     });
 
-    const fourthTermId = result.current.terminals[2].id;
+    const fourthTermId = result.current.terminals.find(t => t.id !== thirdTermId && t.id !== secondTermId)!.id;
     expect(result.current.terminalSlots).toEqual([fourthTermId, thirdTermId, secondTermId, null]);
+  });
+
+  it('updates terminalSlots when moving tabs in grid layout mode', () => {
+    const { result } = renderHook(() => useTabs('/test/path'), { wrapper });
+
+    // Switch to 2x1 layout (2 slots)
+    act(() => {
+      result.current.setLayoutMode('2x1');
+    });
+
+    // Add 3 terminals
+    act(() => {
+      result.current.handleAddRawTerminal(true);
+      result.current.handleAddRawTerminal(true);
+      result.current.handleAddRawTerminal(true);
+    });
+
+    const t1 = result.current.terminals[0].id;
+    const t2 = result.current.terminals[1].id;
+    const t3 = result.current.terminals[2].id;
+
+    // Initially slots should contain [t1, t2]
+    expect(result.current.terminalSlots).toEqual([t1, t2]);
+
+    // Drag t2 before t1
+    act(() => {
+      result.current.moveTab(t2, t1, false);
+    });
+
+    // Slots should update to [t2, t1]
+    expect(result.current.terminalSlots).toEqual([t2, t1]);
+
+    // Drag t3 before t2
+    act(() => {
+      result.current.moveTab(t3, t2, false);
+    });
+
+    // Slots should update to [t3, t2]
+    expect(result.current.terminalSlots).toEqual([t3, t2]);
   });
 });

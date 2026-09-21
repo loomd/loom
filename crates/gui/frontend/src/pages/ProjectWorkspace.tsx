@@ -45,8 +45,20 @@ export default function ProjectWorkspace({ project, isVisible, onUnregisterProje
 		return str.includes('opencode') || str.includes('mcode') || str.includes('minimax');
 	}, []);
 
+	const [agentStateMap, setAgentStateMap] = useState<Record<string, AgentStateInfo>>({});
+
+	const getTerminalAgentType = useCallback((t: ConsoleTab): 'opencode' | 'mcode' | undefined => {
+		const sessionId = t.opencodeSessionId || agentStateMap[t.id]?.session_id;
+		if (sessionId && sessionId.startsWith('mvs_')) return 'mcode';
+		if (sessionId && (sessionId.startsWith('ses_') || sessionId.startsWith('session_'))) return 'opencode';
+
+		const str = `${t.title || ''} ${t.command || ''} ${t.initialCommand || ''} ${(t.args || []).join(' ')}`.toLowerCase();
+		if (str.includes('mcode') || str.includes('minimax')) return 'mcode';
+		if (str.includes('opencode')) return 'opencode';
+		return undefined;
+	}, [agentStateMap]);
+
 	const opencodeTerms = useMemo(() => terminals.filter(t => isAgentTerminal(t)), [terminals, isAgentTerminal]);
-const [agentStateMap, setAgentStateMap] = useState<Record<string, AgentStateInfo>>({});
 const [pendingGridMode, setPendingGridMode] = useState<GridLayout | null>(null);
 const [dragTabId, setDragTabId] = useState<string | null>(null);
 const [pendingRestoreTerminals, setPendingRestoreTerminals] = useState<PersistedTerminal[] | null>(null);
@@ -306,7 +318,7 @@ const closeActiveByShortcut = useCallback(() => {
   if (next !== null) maybeRestoreGrid(activeTabId, next);
 }, [removeTabById, activeTabId, maybeRestoreGrid]);
 
-  // 1. 轮询存活的 opencode 终端状态，并保证仅保留当前有效终端的记录
+  // 1. 轮询存活的 opencode/mcode 终端状态，并保证仅保留当前有效终端的记录
   useEffect(() => {
     if (opencodeTerms.length === 0) return;
 
@@ -314,7 +326,8 @@ const closeActiveByShortcut = useCallback(() => {
       const activeIds = new Set(opencodeTerms.map(t => t.id));
       for (const term of opencodeTerms) {
         try {
-          const info = await pollAgentState(project.root_path, term.id);
+          const agentType = getTerminalAgentType(term);
+          const info = await pollAgentState(project.root_path, term.id, agentType);
           if (info) {
             setAgentStateMap(prev => {
               const next: Record<string, AgentStateInfo> = {};
@@ -330,7 +343,7 @@ const closeActiveByShortcut = useCallback(() => {
     }, 2000);
 
     return () => clearInterval(interval);
-  }, [project.root_path, opencodeTerms]);
+  }, [project.root_path, opencodeTerms, getTerminalAgentType]);
 
   // 2. 基于当前存活终端全量快照投影，同步项目综合状态
   useEffect(() => {

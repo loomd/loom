@@ -108,6 +108,60 @@ export function splitLines(areas: string): GridSplitLine[] {
   return lines;
 }
 
+function calculateNextSlots(
+  prevSlots: (string | null)[],
+  count: number,
+  newSessionId: string,
+  targetSlotIndex?: number
+): (string | null)[] {
+  const currentSlots: (string | null)[] = Array.from({ length: count }, (_, i) => prevSlots[i] ?? null);
+  if (targetSlotIndex !== undefined && targetSlotIndex >= 0 && targetSlotIndex < count) {
+    currentSlots[targetSlotIndex] = newSessionId;
+    return currentSlots;
+  }
+  const emptyIdx = currentSlots.findIndex(s => s === null);
+  if (emptyIdx !== -1) {
+    currentSlots[emptyIdx] = newSessionId;
+    return currentSlots;
+  }
+  return currentSlots;
+}
+
+function orderTabsWithSlots(allTabs: ConsoleTab[], slots: (string | null)[]): ConsoleTab[] {
+  const overviewTab = allTabs.find(t => t.id === 'overview');
+  const termMap = new Map<string, ConsoleTab>();
+  for (const t of allTabs) {
+    if (t.type === 'terminal') {
+      termMap.set(t.id, t);
+    }
+  }
+
+  const slotted: ConsoleTab[] = [];
+  for (const id of slots) {
+    if (id && termMap.has(id)) {
+      slotted.push(termMap.get(id)!);
+      termMap.delete(id);
+    }
+  }
+
+  const unslotted: ConsoleTab[] = [];
+  for (const t of allTabs) {
+    if (t.type === 'terminal' && termMap.has(t.id)) {
+      unslotted.push(t);
+      termMap.delete(t.id);
+    }
+  }
+
+  const otherTabs = allTabs.filter(t => t.id !== 'overview' && t.type !== 'terminal');
+
+  const result: ConsoleTab[] = [];
+  if (overviewTab) result.push(overviewTab);
+  result.push(...slotted);
+  result.push(...unslotted);
+  result.push(...otherTabs);
+  return result;
+}
+
 export function useTabs(projectRoot: string) {
   const dialog = useDialog();
   const [tabs, setTabs] = useState<ConsoleTab[]>([
@@ -149,27 +203,6 @@ export function useTabs(projectRoot: string) {
     });
   }, [tabs]);
 
-  const assignTerminalToSlot = useCallback((newSessionId: string, targetSlotIndex?: number) => {
-    if (!layoutMode) return;
-    const count = gridCellCount(layoutMode);
-    setTerminalSlots(prev => {
-      const currentSlots: (string | null)[] = Array.from({ length: count }, (_, i) => prev[i] ?? null);
-
-      if (targetSlotIndex !== undefined && targetSlotIndex >= 0 && targetSlotIndex < count) {
-        currentSlots[targetSlotIndex] = newSessionId;
-        return currentSlots;
-      }
-
-      const emptyIdx = currentSlots.findIndex(s => s === null);
-      if (emptyIdx !== -1) {
-        currentSlots[emptyIdx] = newSessionId;
-        return currentSlots;
-      }
-
-      return currentSlots;
-    });
-  }, [layoutMode]);
-
   const handleAddRawTerminal = useCallback((keepGrid = false, initialCmd?: string, targetSlotIndex?: number) => {
     const sessionId = crypto.randomUUID();
     const newTab: ConsoleTab = {
@@ -181,12 +214,19 @@ export function useTabs(projectRoot: string) {
     };
     if (!keepGrid) {
       setLayoutMode(null);
+      setTabs(prev => [...prev, newTab]);
     } else if (layoutMode) {
-      assignTerminalToSlot(sessionId, targetSlotIndex);
+      const count = gridCellCount(layoutMode);
+      setTerminalSlots(prevSlots => {
+        const nextSlots = calculateNextSlots(prevSlots, count, sessionId, targetSlotIndex);
+        setTabs(prevTabs => orderTabsWithSlots([...prevTabs, newTab], nextSlots));
+        return nextSlots;
+      });
+    } else {
+      setTabs(prev => [...prev, newTab]);
     }
-    setTabs(prev => [...prev, newTab]);
     setActiveTabId(sessionId);
-  }, [projectRoot, terminals.length, layoutMode, assignTerminalToSlot, setLayoutMode]);
+  }, [projectRoot, terminals.length, layoutMode, setLayoutMode]);
 
   const handleCloseTerminal = useCallback(async (id: string, e?: React.MouseEvent): Promise<string | null> => {
     e?.stopPropagation?.();
@@ -233,10 +273,16 @@ export function useTabs(projectRoot: string) {
 
   const addTab = useCallback((tab: ConsoleTab, targetSlotIndex?: number) => {
     if (tab.type === 'terminal' && layoutMode) {
-      assignTerminalToSlot(tab.id, targetSlotIndex);
+      const count = gridCellCount(layoutMode);
+      setTerminalSlots(prevSlots => {
+        const nextSlots = calculateNextSlots(prevSlots, count, tab.id, targetSlotIndex);
+        setTabs(prevTabs => orderTabsWithSlots([...prevTabs, tab], nextSlots));
+        return nextSlots;
+      });
+    } else {
+      setTabs(prev => [...prev, tab]);
     }
-    setTabs(prev => [...prev, tab]);
-  }, [layoutMode, assignTerminalToSlot]);
+  }, [layoutMode]);
 
 	const removeTabById = useCallback((id: string): string | null => {
 		const filtered = tabs.filter(t => t.id !== id);
@@ -271,9 +317,16 @@ export function useTabs(projectRoot: string) {
       if (toIdx > fromIdx) toIdx -= 1;
       if (after) toIdx += 1;
       next.splice(toIdx, 0, moved);
+
+      if (layoutMode) {
+        const count = gridCellCount(layoutMode);
+        const nextTerms = next.filter(t => t.type === 'terminal');
+        setTerminalSlots(Array.from({ length: count }, (_, i) => nextTerms[i]?.id ?? null));
+      }
+
       return next;
     });
-  }, []);
+  }, [layoutMode]);
 
   return {
     tabs,

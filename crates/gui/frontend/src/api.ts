@@ -441,7 +441,8 @@ import type { AgentStateInfo, CliInstallStatus } from "./types";
 export const pollAgentState = (
 	workspaceDir: string,
 	ptySessionId?: string,
-): Promise<AgentStateInfo | null> => invoke("poll_agent_state", { workspaceDir, ptySessionId: ptySessionId ?? null });
+	agentType?: string,
+): Promise<AgentStateInfo | null> => invoke("poll_agent_state", { workspaceDir, ptySessionId: ptySessionId ?? null, agentType: agentType ?? null });
 
 // ─── Agent Discovery & Skill Injection ─────────────────────
 export const triggerInjectLoomSkills = (): Promise<number> =>

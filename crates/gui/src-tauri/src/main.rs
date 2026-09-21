@@ -804,11 +804,11 @@ fn get_onboarded_status() -> Result<bool, String> {
 }
 
 #[tauri::command]
-fn poll_agent_state(workspace_dir: String, pty_session_id: Option<String>) -> Result<Option<agent_monitor::AgentStateInfo>, String> {
+fn poll_agent_state(workspace_dir: String, pty_session_id: Option<String>, agent_type: Option<String>) -> Result<Option<agent_monitor::AgentStateInfo>, String> {
     let monitor = agent_monitor::AgentMonitor::new();
     match pty_session_id {
-        Some(pid) => Ok(monitor.poll_state_for_pty(&workspace_dir, &pid)),
-        None => Ok(monitor.poll_state(&workspace_dir)),
+        Some(pid) => Ok(monitor.poll_state_for_pty(&workspace_dir, &pid, agent_type.as_deref())),
+        None => Ok(monitor.poll_state(&workspace_dir, agent_type.as_deref())),
     }
 }
 
