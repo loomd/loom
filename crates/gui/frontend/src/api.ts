@@ -478,6 +478,15 @@ export const configureOpencodeProvider = (
 ): Promise<void> =>
 	invoke("configure_opencode_provider", { providerId, baseUrl, apiKey, selectedModels, protocol });
 
+export const configureMcodeProvider = (
+	providerId: string,
+	baseUrl: string,
+	apiKey: string,
+	selectedModels: string[],
+	protocol?: string,
+): Promise<void> =>
+	invoke("configure_mcode_provider", { providerId, baseUrl, apiKey, selectedModels, protocol });
+
 export const getSelectedProjectId = (): Promise<string | null> =>
 	invoke("get_selected_project_id");
 

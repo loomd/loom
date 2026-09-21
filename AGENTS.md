@@ -46,9 +46,10 @@ graph TD
 Execute the following commands from the project root directory:
 
 ### Rust Crates (Core, CLI, Tauri)
+- **Check workspace (全量静态检查，必跑)**: `cargo check --all-targets`
 - **Compile workspace**: `cargo build`
-- **Lint Rust code**: `cargo clippy --all-targets`
-- **Run Rust tests**: `cargo test`
+- **Lint Rust code (全量 Lint)**: `cargo clippy --all-targets`
+- **Run Rust tests (全量测试)**: `cargo test --workspace`
 
 ### GUI Frontend
 - **Install dependencies**: `npm install` (within `crates/gui/frontend/`)
@@ -121,6 +122,7 @@ Execute the following commands from the project root directory:
 ---
 
 ## Testing & QA
+- **Mandatory Workspace Check**: 任何 Rust 代码修改后，必须运行 `cargo check --all-targets`、`cargo clippy --all-targets` 以及 `cargo test --workspace`，严禁仅跑单模块检查而遗漏 bin 目标的借用和生命周期校验。
 - **Unit Testing**: Rust unittests reside in `crates/core/src/storage/tests.rs`. Use the static sequence `TEST_MUTEX` to run tests sequentially, as environment variables (`LOOM_CONFIG_PATH`) are shared process-wide.
 - **E2E Integration Testing**: Run via Vitest in the `e2e/` folder. Uses `execa` to execute binary instances in isolated environments.
 - **Mockauri Execution**: During test runs, GUI Tauri execution does not spawn web views. Setting `TAURI_TEST_CMD` and `TAURI_TEST_ARGS` lets the binary run headless and print JSON structures to stdout for assertion parsing.

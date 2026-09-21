@@ -374,7 +374,18 @@ export function useWorkspaceData(
     e.preventDefault();
     e.stopPropagation();
     setTemplateContextMenu(null);
-    setContextMenu({ x: e.clientX, y: e.clientY, file });
+    const menuHeight = 160;
+    const menuWidth = 180;
+    const padding = 12;
+    const y =
+      typeof window !== "undefined" && e.clientY + menuHeight > window.innerHeight - padding
+        ? Math.max(padding, e.clientY - menuHeight)
+        : e.clientY;
+    const x =
+      typeof window !== "undefined" && e.clientX + menuWidth > window.innerWidth - padding
+        ? Math.max(padding, window.innerWidth - menuWidth - padding)
+        : e.clientX;
+    setContextMenu({ x, y, file });
   };
 
   const handleCloseContextMenu = () => setContextMenu(null);
@@ -383,7 +394,18 @@ export function useWorkspaceData(
     e.preventDefault();
     e.stopPropagation();
     setContextMenu(null);
-    setTemplateContextMenu({ x: e.clientX, y: e.clientY, tpl });
+    const menuHeight = 120;
+    const menuWidth = 140;
+    const padding = 12;
+    const y =
+      typeof window !== "undefined" && e.clientY + menuHeight > window.innerHeight - padding
+        ? Math.max(padding, e.clientY - menuHeight)
+        : e.clientY;
+    const x =
+      typeof window !== "undefined" && e.clientX + menuWidth > window.innerWidth - padding
+        ? Math.max(padding, window.innerWidth - menuWidth - padding)
+        : e.clientX;
+    setTemplateContextMenu({ x, y, tpl });
   };
 
   const handleCloseTemplateContextMenu = useCallback(() => setTemplateContextMenu(null), []);

@@ -16,6 +16,7 @@ async function callCmd(cmd: string, args: any = {}, envOverrides: any = {}) {
       TAURI_TEST_CMD: cmd,
       TAURI_TEST_ARGS: JSON.stringify(args),
       LOOM_CONFIG_PATH: CONFIG_PATH,
+      ...(envOverrides.PATH ? { Path: envOverrides.PATH, PATH: envOverrides.PATH } : {}),
       ...envOverrides
     }
   });

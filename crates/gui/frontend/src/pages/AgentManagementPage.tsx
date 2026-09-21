@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { getAgentDiscoveryStatus, fetchProviderModels, configureOpencodeProvider, triggerInjectLoomSkills, getInjectedSkillPaths, getLoomSkillVersion, installLoomCli, getLoomCliStatus, getTemplates, createTemplate, importCliTool, getCliTools, openUrl } from '../api';
+import { getAgentDiscoveryStatus, fetchProviderModels, configureOpencodeProvider, configureMcodeProvider, triggerInjectLoomSkills, getInjectedSkillPaths, getLoomSkillVersion, installLoomCli, getLoomCliStatus, getTemplates, createTemplate, importCliTool, getCliTools, openUrl } from '../api';
 import type { AgentDiscoveryStatus, CliInstallStatus, FetchedModel } from '../types';
 import { useToast } from '../ToastContext';
 
@@ -10,6 +10,7 @@ interface AgentManagementPageProps {
   active?: boolean;
 }
 
+const STORAGE_KEY_TARGET_AGENT = 'loom_auto_config_target_agent';
 const STORAGE_KEY_PROVIDER_ID = 'loom_opencode_provider_id';
 const STORAGE_KEY_PROTOCOL = 'loom_opencode_protocol';
 const STORAGE_KEY_BASE_URL = 'loom_opencode_base_url';
@@ -22,9 +23,22 @@ export const AgentManagementPage: React.FC<AgentManagementPageProps> = ({ onOpen
   const [refreshing, setRefreshing] = useState<boolean>(false);
   const [injectingSkill, setInjectingSkill] = useState<boolean>(false);
   const [injectedPaths, setInjectedPaths] = useState<string[]>([]);
-  const [skillVersion, setSkillVersion] = useState<string>('0.7.4');
+  const [skillVersion, setSkillVersion] = useState<string>('0.7.5');
   const [cliStatus, setCliStatus] = useState<CliInstallStatus | null>(null);
   const [installingCli, setInstallingCli] = useState<boolean>(false);
+
+  // Target Agent selection (opencode / mcode)
+  const [targetAgent, setTargetAgent] = useState<'opencode' | 'mcode'>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY_TARGET_AGENT);
+      if (saved === 'mcode' || saved === 'opencode') {
+        return saved;
+      }
+      return 'opencode';
+    } catch {
+      return 'opencode';
+    }
+  });
 
   // Provider config states with local persistence
   const [providerId, setProviderId] = useState<string>(() => {
@@ -63,6 +77,14 @@ export const AgentManagementPage: React.FC<AgentManagementPageProps> = ({ onOpen
   const [fetchingModels, setFetchingModels] = useState<boolean>(false);
   const [selectedModels, setSelectedModels] = useState<string[]>([]);
   const [configuring, setConfiguring] = useState<boolean>(false);
+
+  const handleSelectTargetAgent = (agentKey: 'opencode' | 'mcode') => {
+    setTargetAgent(agentKey);
+    try { localStorage.setItem(STORAGE_KEY_TARGET_AGENT, agentKey); } catch { /* ignore */ }
+    if (agentKey === 'mcode' && protocol === 'gemini') {
+      handleProtocolChange('openai');
+    }
+  };
 
   const handleProviderIdChange = (val: string) => {
     setProviderId(val);
@@ -216,31 +238,44 @@ export const AgentManagementPage: React.FC<AgentManagementPageProps> = ({ onOpen
       return;
     }
 
+    if (targetAgent === 'mcode' && protocol === 'gemini') {
+      toast.error('mcode 暂不支持 Gemini 协议，请选择 OpenAI 兼容或 Anthropic 协议');
+      return;
+    }
+
     setConfiguring(true);
     try {
-      await configureOpencodeProvider(providerId, baseUrl, apiKey, selectedModels, protocol);
-      toast.success(`已自动写入 opencode.json 配置文件！(协议: ${protocol}, 已配置 ${selectedModels.length} 个模型)`);
+      if (targetAgent === 'mcode') {
+        await configureMcodeProvider(providerId, baseUrl, apiKey, selectedModels, protocol);
+        toast.success(`已自动写入 config.yaml 配置文件！(协议: ${protocol}, 已配置 ${selectedModels.length} 个模型)`);
+      } else {
+        await configureOpencodeProvider(providerId, baseUrl, apiKey, selectedModels, protocol);
+        toast.success(`已自动写入 opencode.json 配置文件！(协议: ${protocol}, 已配置 ${selectedModels.length} 个模型)`);
+      }
 
       const cliTools = await getCliTools();
-      const opencodeAgent = discovery?.agents.find(a => a.name.toLowerCase().includes('opencode'));
-      if (opencodeAgent?.executable_path) {
-        const existingTool = cliTools.find(t => t.name.toLowerCase() === 'opencode' || t.path === opencodeAgent.executable_path);
+      const currentAgent = discovery?.agents.find(a => a.name.toLowerCase().includes(targetAgent));
+      if (currentAgent?.executable_path) {
+        const existingTool = cliTools.find(t => t.name.toLowerCase() === targetAgent || t.path === currentAgent.executable_path);
         let targetToolId = existingTool?.id;
 
         if (!targetToolId) {
-          const imported = await importCliTool(opencodeAgent.executable_path);
+          const imported = await importCliTool(currentAgent.executable_path);
           targetToolId = imported.id;
         }
 
         const existingTemplates = await getTemplates();
         for (const model of selectedModels) {
-          const tplName = `opencode ${model}`;
+          const tplName = `${targetAgent} ${model}`;
           const existing = existingTemplates.find(t => t.cli_id === targetToolId && t.name === tplName);
           if (!existing) {
+            const modelArg = targetAgent === 'mcode'
+              ? `custom_provider:${providerId}/${model}`
+              : `${providerId}/${model}`;
             await createTemplate(
               targetToolId,
               tplName,
-              ['--model', `${providerId}/${model}`],
+              ['--model', modelArg],
               {},
               [],
               undefined,
@@ -248,7 +283,7 @@ export const AgentManagementPage: React.FC<AgentManagementPageProps> = ({ onOpen
             );
           }
         }
-        toast.success(`已自动创建/同步 ${selectedModels.length} 个 Agent 运行模板！`);
+        toast.success(`已自动创建/同步 ${selectedModels.length} 个 ${targetAgent} 运行模板！`);
         window.dispatchEvent(new Event('loom-refresh-data'));
       }
     } catch (err: unknown) {
@@ -272,7 +307,7 @@ export const AgentManagementPage: React.FC<AgentManagementPageProps> = ({ onOpen
             style={{ margin: 0, fontSize: '24px', fontWeight: 600, color: 'var(--text-primary)', userSelect: 'none', cursor: 'default' }}
           >配置引导</h1>
           <p data-tauri-drag-region style={{ margin: '4px 0 0', color: 'var(--text-secondary)', fontSize: '14px' }}>
-            安装opencode 自动注入模型与配置agent
+            安装并配置 Agent（OpenCode / MiniMax Code）自动注入模型
           </p>
           {cliStatus?.installed && injectedPaths.length > 0 && (
             <div className="rainbow-wave-banner" style={{ marginTop: '10px' }}>
@@ -524,19 +559,131 @@ export const AgentManagementPage: React.FC<AgentManagementPageProps> = ({ onOpen
           )}
         </section>
 
-        {/* Right Column: opencode Model Configuration */}
+        {/* Right Column: Model Configuration */}
         <section style={{ background: 'var(--bg-card)', padding: '20px', borderRadius: 'var(--radius-md, 8px)', border: '1px solid var(--border-subtle)' }}>
-          <h2 style={{ fontSize: '18px', marginTop: 0, marginBottom: '16px', color: 'var(--text-primary)' }}>
-            <span style={{ color: 'var(--accent-primary, #3b82f6)', fontWeight: 600 }}>opencode</span> 模型自动配置
-          </h2>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+            <h2 style={{ fontSize: '18px', margin: 0, color: 'var(--text-primary)' }}>
+              <span style={{ color: 'var(--accent-primary, #3b82f6)', fontWeight: 600 }}>
+                {targetAgent === 'mcode' ? 'MiniMax Code (mcode)' : 'OpenCode'}
+              </span> 模型自动配置
+            </h2>
+          </div>
+
           <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            {/* Target Agent Selector with vertical scroll and fixed selection button */}
             <div>
-              <label style={{ display: 'block', fontSize: '14px', marginBottom: '6px', fontWeight: 500, color: 'var(--text-secondary)' }}>接口兼容性</label>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '6px', background: 'var(--bg-surface)', padding: '4px', borderRadius: 'var(--radius-sm, 6px)', border: '1px solid var(--border-subtle)' }}>
+              <label style={{ display: 'block', fontSize: '14px', marginBottom: '6px', fontWeight: 500, color: 'var(--text-secondary)' }}>
+                选择配置目标 Agent
+              </label>
+              <div
+                style={{
+                  maxHeight: '130px',
+                  overflowY: 'auto',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '8px',
+                  padding: '6px',
+                  borderRadius: 'var(--radius-sm, 6px)',
+                  background: 'var(--bg-surface)',
+                  border: '1px solid var(--border-subtle)'
+                }}
+              >
+                {[
+                  {
+                    key: 'opencode' as const,
+                    name: 'OpenCode',
+                    installed: discovery?.agents.find(a => a.name.toLowerCase().includes('opencode'))?.installed,
+                  },
+                  {
+                    key: 'mcode' as const,
+                    name: 'MiniMax Code (mcode)',
+                    installed: discovery?.agents.find(a => a.name.toLowerCase().includes('mcode'))?.installed,
+                  },
+                ].map(agentItem => {
+                  const isSelected = targetAgent === agentItem.key;
+                  return (
+                    <div
+                      key={agentItem.key}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        padding: '8px 12px',
+                        borderRadius: '6px',
+                        background: isSelected ? 'var(--bg-elevated)' : 'transparent',
+                        border: isSelected ? '1px solid var(--accent-primary, #3b82f6)' : '1px solid transparent',
+                        transition: 'all 0.15s ease'
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                        <div
+                          style={{
+                            width: '8px',
+                            height: '8px',
+                            borderRadius: '50%',
+                            background: agentItem.installed ? '#10b981' : '#f59e0b',
+                            flexShrink: 0
+                          }}
+                        />
+                        <div>
+                          <div style={{ fontSize: '13px', fontWeight: isSelected ? 600 : 500, color: 'var(--text-primary)' }}>
+                            {agentItem.name}
+                          </div>
+                          <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
+                            {agentItem.installed ? '已就绪' : '未检测到'}
+                          </div>
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => handleSelectTargetAgent(agentItem.key)}
+                        style={{
+                          padding: '4px 12px',
+                          fontSize: '12px',
+                          fontWeight: 500,
+                          borderRadius: '4px',
+                          border: 'none',
+                          background: isSelected ? 'var(--accent-primary, #3b82f6)' : 'var(--bg-card)',
+                          color: isSelected ? '#ffffff' : 'var(--text-primary)',
+                          cursor: isSelected ? 'default' : 'pointer',
+                          boxShadow: isSelected ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
+                          transition: 'all 0.15s ease'
+                        }}
+                      >
+                        {isSelected ? '已固定选择' : '选择配置'}
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Protocol Selector (mcode does not support gemini) */}
+            <div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                <label style={{ fontSize: '14px', fontWeight: 500, color: 'var(--text-secondary)' }}>接口兼容性</label>
+                {targetAgent === 'mcode' && (
+                  <span style={{ fontSize: '11px', color: 'var(--text-tertiary, #9ca3af)' }}>
+                    mcode 仅支持 OpenAI 兼容 / Anthropic
+                  </span>
+                )}
+              </div>
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: targetAgent === 'mcode' ? 'repeat(2, 1fr)' : 'repeat(3, 1fr)',
+                  gap: '6px',
+                  background: 'var(--bg-surface)',
+                  padding: '4px',
+                  borderRadius: 'var(--radius-sm, 6px)',
+                  border: '1px solid var(--border-subtle)'
+                }}
+              >
                 {[
                   { id: 'openai', label: 'OpenAI 兼容' },
                   { id: 'anthropic', label: 'Anthropic' },
-                  { id: 'gemini', label: 'Gemini' },
+                  ...(targetAgent === 'opencode' ? [{ id: 'gemini', label: 'Gemini' }] : []),
                 ].map(p => {
                   const isActive = protocol === p.id;
                   return (
@@ -725,7 +872,7 @@ export const AgentManagementPage: React.FC<AgentManagementPageProps> = ({ onOpen
                   cursor: 'pointer'
                 }}
               >
-                {configuring ? '保存并绑定中...' : '写入 opencode.json & 自动创建 Loom 运行模板'}
+                {configuring ? '保存并绑定中...' : `写入 ${targetAgent === 'mcode' ? 'config.yaml' : 'opencode.json'} & 自动创建 Loom 运行模板`}
               </button>
             )}
           </div>

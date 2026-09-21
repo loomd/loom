@@ -3,7 +3,7 @@
 const MIN_WINDOW_WIDTH: u32 = 800;
 const MIN_WINDOW_HEIGHT: u32 = 560;
 
-use loom_core::agent_config::{discover_agents, fetch_models, write_opencode_config, DiscoveryOverview, FetchedModel};
+use loom_core::agent_config::{discover_agents, fetch_models, write_mcode_config, write_opencode_config, DiscoveryOverview, FetchedModel};
 use loom_core::cli_install::{self as cli_install, CliInstallStatus};
 use loom_core::skills::{get_existing_skill_paths, inject_loom_skills, LOOM_SKILL_VERSION};
 use loom_core::storage::{self as cstore, AgentDoc, AgentInstance, Category, CliTool, GlobalDocTemplate, GlobalEnvVar, GlobalSkillTemplate, PersistedTerminal, Project, ProjectSkill, ScanResult, Template};
@@ -1448,6 +1448,30 @@ fn execute_test_command(cmd: &str, args_json: &str) -> Result<String, String> {
             let res = write_opencode_config(provider_id, protocol, base_url, api_key, &selected_models).map_err(|e| e.to_string())?;
             serde_json::to_string(&res).map_err(|e| e.to_string())
         }
+        "configure_mcode_provider" => {
+            let provider_id = args["provider_id"]
+                .as_str()
+                .or_else(|| args["providerId"].as_str())
+                .ok_or_else(|| "Missing argument 'providerId'".to_string())?;
+            let base_url = args["base_url"]
+                .as_str()
+                .or_else(|| args["baseUrl"].as_str())
+                .ok_or_else(|| "Missing argument 'baseUrl'".to_string())?;
+            let api_key = args["api_key"]
+                .as_str()
+                .or_else(|| args["apiKey"].as_str())
+                .unwrap_or("");
+            let protocol = args.get("protocol").and_then(|v| v.as_str()).unwrap_or("openai");
+            let selected_models: Vec<String> = if let Some(arr) = args.get("selectedModels").or_else(|| args.get("selected_models")).and_then(|v| v.as_array()) {
+                arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect()
+            } else if let Some(s) = args.get("selectedModel").or_else(|| args.get("selected_model")).and_then(|v| v.as_str()) {
+                vec![s.to_string()]
+            } else {
+                vec![]
+            };
+            let res = write_mcode_config(provider_id, protocol, base_url, api_key, &selected_models).map_err(|e| e.to_string())?;
+            serde_json::to_string(&res).map_err(|e| e.to_string())
+        }
         "get_selected_project_id" => {
             let res = get_selected_project_id()?;
             serde_json::to_string(&res).map_err(|e| e.to_string())
@@ -1686,7 +1710,7 @@ async fn get_agent_discovery_status() -> Result<DiscoveryOverview, String> {
 
 #[tauri::command]
 #[allow(non_snake_case)]
-fn fetch_provider_models(
+async fn fetch_provider_models(
     base_url: Option<String>,
     baseUrl: Option<String>,
     api_key: Option<String>,
@@ -1695,12 +1719,16 @@ fn fetch_provider_models(
 ) -> Result<Vec<FetchedModel>, String> {
     let url = base_url.or(baseUrl).unwrap_or_default();
     let key = api_key.or(apiKey).unwrap_or_default();
-    fetch_models(&url, &key, protocol.as_deref()).map_err(|e| e.to_string())
+    let proto = protocol;
+    let handle = std::thread::spawn(move || {
+        fetch_models(&url, &key, proto.as_deref())
+    });
+    handle.join().map_err(|_| "拉取线程执行异常".to_string())?
 }
 
 #[tauri::command]
-#[allow(non_snake_case)]
-fn configure_opencode_provider(
+#[allow(non_snake_case, clippy::too_many_arguments)]
+async fn configure_opencode_provider(
     provider_id: Option<String>,
     providerId: Option<String>,
     protocol: Option<String>,
@@ -1715,8 +1743,35 @@ fn configure_opencode_provider(
     let url = base_url.or(baseUrl).unwrap_or_default();
     let key = api_key.or(apiKey).unwrap_or_default();
     let models = selected_models.or(selectedModels).unwrap_or_default();
-    let proto = protocol.as_deref().unwrap_or("openai");
-    write_opencode_config(&p_id, proto, &url, &key, &models).map_err(|e| e.to_string())
+    let proto = protocol.unwrap_or_else(|| "openai".to_string());
+    let handle = std::thread::spawn(move || {
+        write_opencode_config(&p_id, &proto, &url, &key, &models)
+    });
+    handle.join().map_err(|_| "写入线程执行异常".to_string())?
+}
+
+#[tauri::command]
+#[allow(non_snake_case, clippy::too_many_arguments)]
+async fn configure_mcode_provider(
+    provider_id: Option<String>,
+    providerId: Option<String>,
+    protocol: Option<String>,
+    base_url: Option<String>,
+    baseUrl: Option<String>,
+    api_key: Option<String>,
+    apiKey: Option<String>,
+    selected_models: Option<Vec<String>>,
+    selectedModels: Option<Vec<String>>,
+) -> Result<String, String> {
+    let p_id = provider_id.or(providerId).unwrap_or_else(|| "custom".to_string());
+    let url = base_url.or(baseUrl).unwrap_or_default();
+    let key = api_key.or(apiKey).unwrap_or_default();
+    let models = selected_models.or(selectedModels).unwrap_or_default();
+    let proto = protocol.unwrap_or_else(|| "openai".to_string());
+    let handle = std::thread::spawn(move || {
+        write_mcode_config(&p_id, &proto, &url, &key, &models)
+    });
+    handle.join().map_err(|_| "写入线程执行异常".to_string())?
 }
 
 /// Watch loom.json for external changes (e.g. the `loom` CLI adding/removing
@@ -2139,6 +2194,7 @@ fn main() {
             get_agent_discovery_status,
             fetch_provider_models,
             configure_opencode_provider,
+            configure_mcode_provider,
             get_selected_project_id,
             save_selected_project_id,
             get_project_terminals,

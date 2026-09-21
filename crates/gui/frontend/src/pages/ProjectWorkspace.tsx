@@ -61,7 +61,7 @@ const performRestore = useCallback((list: PersistedTerminal[], layout: GridLayou
     const newId = crypto.randomUUID();
     let args = p.args ? [...p.args] : undefined;
     let initialCommand = p.initial_command;
-    let command = p.command;
+    const command = p.command;
     const sessionId = p.opencode_session_id;
     const isAgent = Boolean(
       p.is_opencode ||
@@ -571,11 +571,11 @@ const closeActiveByShortcut = useCallback(() => {
         )}
         {activeTabId === 'overview' && !showGrid && (
           <div style={{ flexGrow: 1, minHeight: 0, display: 'flex', flexDirection: 'row', gap: '24px', padding: '12px 24px', position: 'relative', overflow: 'hidden' }}>
-<div data-tour-target="templates-section" style={{ flex: 1, minWidth: '180px', display: 'flex', flexDirection: 'column', gap: '16px', paddingTop: '2px', overflowY: 'auto', scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
+<div data-tour-target="templates-section" style={{ flex: 1, minWidth: '180px', display: 'flex', flexDirection: 'column', gap: '16px', paddingTop: '2px', paddingBottom: '10px', overflowY: 'auto', scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
 				<h3 style={{ margin: 0, fontSize: '1.0rem', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
 					{t('proj.launcher.title') || 'Quick Spawn'}
               </h3>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', width: '100%' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', width: '100%', paddingBottom: '10px' }}>
                  <button type="button"
                    onClick={handleAddTerminal}
                    className="btn btn-ghost"

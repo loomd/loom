@@ -98,6 +98,19 @@ pub fn discover_agents() -> DiscoveryOverview {
         download_url: "https://opencode.ai/docs/zh-cn".to_string(),
     });
 
+    // 2. Mcode
+    let mcode_path = check_executable("mcode");
+    let mcode_installed = mcode_path.is_some();
+
+    agents.push(AgentDiscoveryStatus {
+        name: "mcode".to_string(),
+        installed: mcode_installed,
+        version: None,
+        executable_path: mcode_path,
+        install_command: "npm install -g @minimax-ai/mcode".to_string(),
+        download_url: "https://www.minimaxi.com/".to_string(),
+    });
+
     let node_install_command = "winget install OpenJS.NodeJS".to_string();
 
     DiscoveryOverview {
@@ -138,52 +151,58 @@ pub fn resolve_models_request(base_url: &str, api_key: &str, protocol: Option<&s
     (url, is_gemini, is_anthropic)
 }
 
-pub fn fetch_models(base_url: &str, api_key: &str, protocol: Option<&str>) -> Result<Vec<FetchedModel>, String> {
-    let client = reqwest::blocking::Client::builder()
-        .timeout(std::time::Duration::from_secs(10))
-        .build()
-        .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
-
+pub fn fetch_models_blocking(
+    base_url: &str,
+    api_key: &str,
+    protocol: Option<&str>,
+) -> Result<Vec<FetchedModel>, String> {
     let (url, is_gemini, is_anthropic) = resolve_models_request(base_url, api_key, protocol);
-    let key = api_key.trim();
+
+    let client = reqwest::blocking::Client::builder()
+        .connect_timeout(std::time::Duration::from_secs(5))
+        .timeout(std::time::Duration::from_secs(8))
+        .build()
+        .map_err(|e| format!("Failed to build HTTP client: {}", e))?;
 
     let mut req = client.get(&url);
+
+    let key = api_key.trim();
     if !key.is_empty() {
         if is_anthropic {
-            req = req
-                .header("x-api-key", key)
-                .header("anthropic-version", "2023-06-01")
-                .header("Authorization", format!("Bearer {}", key));
-        } else if is_gemini {
-            req = req
-                .header("x-goog-api-key", key)
-                .header("Authorization", format!("Bearer {}", key));
-        } else {
+            req = req.header("x-api-key", key);
+            req = req.header("anthropic-version", "2023-06-01");
+        } else if !is_gemini {
             req = req.header("Authorization", format!("Bearer {}", key));
         }
     }
 
-    let resp = req.send().map_err(|e| format!("Failed to send request to {}: {}", url, e))?;
+    let resp = req.send().map_err(|e| format!("Request failed: {}", e))?;
 
     if !resp.status().is_success() {
-        return Err(format!("Server returned error HTTP status {}: {}", resp.status(), resp.text().unwrap_or_default()));
+        let status = resp.status();
+        let body = resp.text().unwrap_or_default();
+        return Err(format!("Server returned error status {}: {}", status, body));
     }
 
-    let body = resp.text().map_err(|e| format!("Failed to read response body: {}", e))?;
-    let json_val: serde_json::Value = serde_json::from_str(&body).map_err(|e| format!("Failed to parse models response JSON: {}", e))?;
-
-    let items: Vec<serde_json::Value> = if let Some(arr) = json_val.get("data").and_then(|v| v.as_array()) {
-        arr.clone()
-    } else if let Some(arr) = json_val.get("models").and_then(|v| v.as_array()) {
-        arr.clone()
-    } else if let Some(arr) = json_val.as_array() {
-        arr.clone()
-    } else {
-        return Err("Unexpected models response format (expected 'data' or 'models' array)".to_string());
-    };
+    let json_val: serde_json::Value = resp
+        .json()
+        .map_err(|e| format!("Failed to parse response JSON: {}", e))?;
 
     let mut result = Vec::new();
-    for item in items {
+
+    // Check if models are in `data` (OpenAI style) or `models` (Gemini style)
+    let models_array = json_val
+        .get("data")
+        .and_then(|v| v.as_array())
+        .or_else(|| json_val.get("models").and_then(|v| v.as_array()))
+        .or_else(|| json_val.as_array());
+
+    let arr = match models_array {
+        Some(a) => a,
+        None => return Err(format!("Unrecognized models payload structure: {:?}", json_val)),
+    };
+
+    for item in arr {
         let raw_id = item.get("id").and_then(|v| v.as_str())
             .or_else(|| item.get("name").and_then(|v| v.as_str()));
 
@@ -209,6 +228,14 @@ pub fn fetch_models(base_url: &str, api_key: &str, protocol: Option<&str>) -> Re
     }
 
     Ok(result)
+}
+
+pub fn fetch_models(
+    base_url: &str,
+    api_key: &str,
+    protocol: Option<&str>,
+) -> Result<Vec<FetchedModel>, String> {
+    fetch_models_blocking(base_url, api_key, protocol)
 }
 
 pub fn build_provider_config(
@@ -305,6 +332,209 @@ pub fn write_opencode_config(
     Ok(config_file.to_string_lossy().to_string())
 }
 
+pub fn build_mcode_provider_config(
+    provider_name: &str,
+    protocol: &str,
+    base_url: &str,
+    api_key: &str,
+    selected_models: &[String],
+) -> serde_yaml::Value {
+    let provider_key = if provider_name.is_empty() { "custom" } else { provider_name };
+    let proto = protocol.to_ascii_lowercase();
+    let api_type = match proto.as_str() {
+        "anthropic" => "anthropic-messages",
+        _ => "openai-completions",
+    };
+
+    let mut models_map = serde_yaml::Mapping::new();
+    for m in selected_models {
+        let mut model_fields = serde_yaml::Mapping::new();
+        model_fields.insert(
+            serde_yaml::Value::String("name".to_string()),
+            serde_yaml::Value::String(m.clone()),
+        );
+        model_fields.insert(
+            serde_yaml::Value::String("attachment".to_string()),
+            serde_yaml::Value::Bool(true),
+        );
+        model_fields.insert(
+            serde_yaml::Value::String("reasoning".to_string()),
+            serde_yaml::Value::Bool(true),
+        );
+        model_fields.insert(
+            serde_yaml::Value::String("temperature".to_string()),
+            serde_yaml::Value::Bool(true),
+        );
+        model_fields.insert(
+            serde_yaml::Value::String("tool_call".to_string()),
+            serde_yaml::Value::Bool(true),
+        );
+
+        let mut limit_fields = serde_yaml::Mapping::new();
+        limit_fields.insert(
+            serde_yaml::Value::String("context".to_string()),
+            serde_yaml::Value::Number(1000000.into()),
+        );
+        limit_fields.insert(
+            serde_yaml::Value::String("output".to_string()),
+            serde_yaml::Value::Number(64000.into()),
+        );
+        model_fields.insert(
+            serde_yaml::Value::String("limit".to_string()),
+            serde_yaml::Value::Mapping(limit_fields),
+        );
+
+        let mut modalities_fields = serde_yaml::Mapping::new();
+        modalities_fields.insert(
+            serde_yaml::Value::String("input".to_string()),
+            serde_yaml::Value::Sequence(vec![
+                serde_yaml::Value::String("text".to_string()),
+                serde_yaml::Value::String("image".to_string()),
+            ]),
+        );
+        modalities_fields.insert(
+            serde_yaml::Value::String("output".to_string()),
+            serde_yaml::Value::Sequence(vec![
+                serde_yaml::Value::String("text".to_string()),
+            ]),
+        );
+        model_fields.insert(
+            serde_yaml::Value::String("modalities".to_string()),
+            serde_yaml::Value::Mapping(modalities_fields),
+        );
+
+        let mut thinking_fields = serde_yaml::Mapping::new();
+        thinking_fields.insert(
+            serde_yaml::Value::String("mode".to_string()),
+            serde_yaml::Value::String("switchable".to_string()),
+        );
+        thinking_fields.insert(
+            serde_yaml::Value::String("default_value".to_string()),
+            serde_yaml::Value::String("true".to_string()),
+        );
+        model_fields.insert(
+            serde_yaml::Value::String("thinking_config".to_string()),
+            serde_yaml::Value::Mapping(thinking_fields),
+        );
+
+        models_map.insert(
+            serde_yaml::Value::String(m.clone()),
+            serde_yaml::Value::Mapping(model_fields),
+        );
+    }
+
+    let mut options_map = serde_yaml::Mapping::new();
+    options_map.insert(
+        serde_yaml::Value::String("apiKey".to_string()),
+        serde_yaml::Value::String(api_key.to_string()),
+    );
+    options_map.insert(
+        serde_yaml::Value::String("baseURL".to_string()),
+        serde_yaml::Value::String(base_url.to_string()),
+    );
+    options_map.insert(
+        serde_yaml::Value::String("authMode".to_string()),
+        serde_yaml::Value::String("api-key".to_string()),
+    );
+
+    let mut provider_entry = serde_yaml::Mapping::new();
+    provider_entry.insert(
+        serde_yaml::Value::String("name".to_string()),
+        serde_yaml::Value::String(provider_key.to_string()),
+    );
+    provider_entry.insert(
+        serde_yaml::Value::String("kind".to_string()),
+        serde_yaml::Value::String("custom".to_string()),
+    );
+    provider_entry.insert(
+        serde_yaml::Value::String("enabled".to_string()),
+        serde_yaml::Value::Bool(true),
+    );
+    provider_entry.insert(
+        serde_yaml::Value::String("api".to_string()),
+        serde_yaml::Value::String(api_type.to_string()),
+    );
+    provider_entry.insert(
+        serde_yaml::Value::String("options".to_string()),
+        serde_yaml::Value::Mapping(options_map),
+    );
+    provider_entry.insert(
+        serde_yaml::Value::String("models".to_string()),
+        serde_yaml::Value::Mapping(models_map),
+    );
+
+    serde_yaml::Value::Mapping(provider_entry)
+}
+
+pub fn write_mcode_config_to_path(
+    config_file: &std::path::Path,
+    provider_name: &str,
+    protocol: &str,
+    base_url: &str,
+    api_key: &str,
+    selected_models: &[String],
+) -> Result<String, String> {
+    if let Some(parent) = config_file.parent() {
+        fs::create_dir_all(parent).map_err(|e| format!("Failed to create config dir: {}", e))?;
+    }
+
+    let mut existing_val: serde_yaml::Value = if config_file.exists() {
+        let content = fs::read_to_string(config_file).unwrap_or_else(|_| "".to_string());
+        if content.trim().is_empty() {
+            serde_yaml::Value::Mapping(serde_yaml::Mapping::new())
+        } else {
+            serde_yaml::from_str(&content).unwrap_or_else(|_| serde_yaml::Value::Mapping(serde_yaml::Mapping::new()))
+        }
+    } else {
+        serde_yaml::Value::Mapping(serde_yaml::Mapping::new())
+    };
+
+    if !existing_val.is_mapping() {
+        existing_val = serde_yaml::Value::Mapping(serde_yaml::Mapping::new());
+    }
+
+    let root_map = existing_val.as_mapping_mut().unwrap();
+    let custom_provider_key = serde_yaml::Value::String("custom_provider".to_string());
+
+    // 考虑不存在 custom_provider 或者 custom_provider 不是 mapping 的情况
+    if !root_map.contains_key(&custom_provider_key) || !root_map.get(&custom_provider_key).is_some_and(|v| v.is_mapping()) {
+        root_map.insert(custom_provider_key.clone(), serde_yaml::Value::Mapping(serde_yaml::Mapping::new()));
+    }
+
+    let custom_providers = root_map.get_mut(&custom_provider_key).unwrap().as_mapping_mut().unwrap();
+
+    let provider_key = if provider_name.is_empty() { "custom" } else { provider_name };
+    let provider_config = build_mcode_provider_config(provider_name, protocol, base_url, api_key, selected_models);
+
+    custom_providers.insert(serde_yaml::Value::String(provider_key.to_string()), provider_config);
+
+    let formatted_yaml = serde_yaml::to_string(&existing_val)
+        .map_err(|e| format!("Failed to serialize config.yaml: {}", e))?;
+
+    let tmp_file = config_file.with_extension("yaml.tmp");
+    fs::write(&tmp_file, &formatted_yaml).map_err(|e| format!("Failed to write tmp config.yaml: {}", e))?;
+    fs::rename(&tmp_file, config_file).map_err(|e| format!("Failed to rename config.yaml: {}", e))?;
+
+    Ok(config_file.to_string_lossy().to_string())
+}
+
+pub fn write_mcode_config(
+    provider_name: &str,
+    protocol: &str,
+    base_url: &str,
+    api_key: &str,
+    selected_models: &[String],
+) -> Result<String, String> {
+    let minimax_dir = if let Ok(dir) = std::env::var("MINIMAX_DATA_DIR") {
+        std::path::PathBuf::from(dir)
+    } else {
+        let home = dirs::home_dir().ok_or_else(|| "Could not find user home directory".to_string())?;
+        home.join(".minimax")
+    };
+    let config_file = minimax_dir.join("config.yaml");
+    write_mcode_config_to_path(&config_file, provider_name, protocol, base_url, api_key, selected_models)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -344,6 +574,74 @@ mod tests {
     }
 
     #[test]
+    fn test_build_mcode_provider_config_openai() {
+        let models = vec!["deepseek-chat".to_string(), "deepseek-reasoner".to_string()];
+        let val = build_mcode_provider_config("deepseek", "openai", "https://api.deepseek.com", "sk-ds123", &models);
+        let mapping = val.as_mapping().unwrap();
+        assert_eq!(mapping.get(serde_yaml::Value::String("name".to_string())).unwrap().as_str().unwrap(), "deepseek");
+        assert_eq!(mapping.get(serde_yaml::Value::String("kind".to_string())).unwrap().as_str().unwrap(), "custom");
+        assert!(mapping.get(serde_yaml::Value::String("enabled".to_string())).unwrap().as_bool().unwrap());
+        assert_eq!(mapping.get(serde_yaml::Value::String("api".to_string())).unwrap().as_str().unwrap(), "openai-completions");
+
+        let options = mapping.get(serde_yaml::Value::String("options".to_string())).unwrap().as_mapping().unwrap();
+        assert_eq!(options.get(serde_yaml::Value::String("baseURL".to_string())).unwrap().as_str().unwrap(), "https://api.deepseek.com");
+        assert_eq!(options.get(serde_yaml::Value::String("apiKey".to_string())).unwrap().as_str().unwrap(), "sk-ds123");
+        assert_eq!(options.get(serde_yaml::Value::String("authMode".to_string())).unwrap().as_str().unwrap(), "api-key");
+
+        let models_map = mapping.get(serde_yaml::Value::String("models".to_string())).unwrap().as_mapping().unwrap();
+        assert!(models_map.contains_key(serde_yaml::Value::String("deepseek-chat".to_string())));
+        assert!(models_map.contains_key(serde_yaml::Value::String("deepseek-reasoner".to_string())));
+    }
+
+    #[test]
+    fn test_build_mcode_provider_config_anthropic() {
+        let models = vec!["claude-3-5-sonnet-20241022".to_string()];
+        let val = build_mcode_provider_config("claude", "anthropic", "https://api.anthropic.com/v1", "sk-ant123", &models);
+        let mapping = val.as_mapping().unwrap();
+        assert_eq!(mapping.get(serde_yaml::Value::String("api".to_string())).unwrap().as_str().unwrap(), "anthropic-messages");
+    }
+
+    #[test]
+    fn test_write_mcode_config_when_custom_provider_missing() {
+        let tmp_dir = tempfile::tempdir().unwrap();
+        let config_path = tmp_dir.path().join("config.yaml");
+
+        // 初始为空文件或包含其他顶层字段（但不含 custom_provider）
+        fs::write(&config_path, "defaultModel: minimax/MiniMax-M3\nversion: 1\n").unwrap();
+
+        let models = vec!["gpt-4o".to_string()];
+        let res = write_mcode_config_to_path(&config_path, "custom_test", "openai", "https://api.test.com", "key_abc", &models);
+        assert!(res.is_ok());
+
+        let written_content = fs::read_to_string(&config_path).unwrap();
+        let parsed: serde_yaml::Value = serde_yaml::from_str(&written_content).unwrap();
+        let root = parsed.as_mapping().unwrap();
+
+        assert!(root.contains_key(serde_yaml::Value::String("defaultModel".to_string())));
+        assert!(root.contains_key(serde_yaml::Value::String("custom_provider".to_string())));
+
+        let custom_provider = root.get(serde_yaml::Value::String("custom_provider".to_string())).unwrap().as_mapping().unwrap();
+        assert!(custom_provider.contains_key(serde_yaml::Value::String("custom_test".to_string())));
+    }
+
+    #[test]
+    fn test_write_mcode_config_when_file_not_exist() {
+        let tmp_dir = tempfile::tempdir().unwrap();
+        let config_path = tmp_dir.path().join("nested").join("config.yaml");
+
+        let models = vec!["gemini-2.0-flash".to_string()];
+        let res = write_mcode_config_to_path(&config_path, "gemini_provider", "openai", "https://generativelanguage.googleapis.com", "key_gemini", &models);
+        assert!(res.is_ok());
+
+        let written_content = fs::read_to_string(&config_path).unwrap();
+        let parsed: serde_yaml::Value = serde_yaml::from_str(&written_content).unwrap();
+        let root = parsed.as_mapping().unwrap();
+
+        let custom_provider = root.get(serde_yaml::Value::String("custom_provider".to_string())).unwrap().as_mapping().unwrap();
+        assert!(custom_provider.contains_key(serde_yaml::Value::String("gemini_provider".to_string())));
+    }
+
+    #[test]
     fn test_resolve_models_request_gemini_with_v1beta() {
         let (url, is_gemini, _) = resolve_models_request("http://127.0.0.1:8045/v1beta", "sk-123", Some("gemini"));
         assert!(is_gemini);
@@ -368,5 +666,15 @@ mod tests {
     fn test_resolve_models_request_openai_with_v1() {
         let (url, _, _) = resolve_models_request("https://api.openai.com/v1", "sk-test", Some("openai"));
         assert_eq!(url, "https://api.openai.com/v1/models");
+    }
+
+    #[test]
+    fn test_discover_agents() {
+        let overview = discover_agents();
+        assert_eq!(overview.agents.len(), 2);
+        assert_eq!(overview.agents[0].name, "opencode");
+        assert_eq!(overview.agents[0].install_command, "npm install -g opencode-ai");
+        assert_eq!(overview.agents[1].name, "mcode");
+        assert_eq!(overview.agents[1].install_command, "npm install -g @minimax-ai/mcode");
     }
 }
