@@ -332,6 +332,25 @@ pub fn write_opencode_config(
     Ok(config_file.to_string_lossy().to_string())
 }
 
+pub fn normalize_mcode_base_url(base_url: &str) -> String {
+    let mut trimmed = base_url.trim().trim_end_matches('/');
+    if trimmed.is_empty() {
+        return String::new();
+    }
+    if trimmed.ends_with("/models") {
+        trimmed = trimmed.strip_suffix("/models").unwrap().trim_end_matches('/');
+    }
+    if trimmed.ends_with("/v1")
+        || trimmed.ends_with("/v1beta")
+        || trimmed.ends_with("/v1alpha")
+        || trimmed.ends_with("/v2")
+    {
+        trimmed.to_string()
+    } else {
+        format!("{}/v1", trimmed)
+    }
+}
+
 pub fn build_mcode_provider_config(
     provider_name: &str,
     protocol: &str,
@@ -423,6 +442,8 @@ pub fn build_mcode_provider_config(
         );
     }
 
+    let normalized_base_url = normalize_mcode_base_url(base_url);
+
     let mut options_map = serde_yaml::Mapping::new();
     options_map.insert(
         serde_yaml::Value::String("apiKey".to_string()),
@@ -430,7 +451,7 @@ pub fn build_mcode_provider_config(
     );
     options_map.insert(
         serde_yaml::Value::String("baseURL".to_string()),
-        serde_yaml::Value::String(base_url.to_string()),
+        serde_yaml::Value::String(normalized_base_url),
     );
     options_map.insert(
         serde_yaml::Value::String("authMode".to_string()),
@@ -574,6 +595,23 @@ mod tests {
     }
 
     #[test]
+    fn test_normalize_mcode_base_url() {
+        assert_eq!(normalize_mcode_base_url(""), "");
+        assert_eq!(normalize_mcode_base_url("   "), "");
+        assert_eq!(normalize_mcode_base_url("https://api.deepseek.com"), "https://api.deepseek.com/v1");
+        assert_eq!(normalize_mcode_base_url("https://api.deepseek.com/"), "https://api.deepseek.com/v1");
+        assert_eq!(normalize_mcode_base_url("https://api.openai.com/v1"), "https://api.openai.com/v1");
+        assert_eq!(normalize_mcode_base_url("https://api.openai.com/v1/"), "https://api.openai.com/v1");
+        assert_eq!(normalize_mcode_base_url("https://generativelanguage.googleapis.com/v1beta"), "https://generativelanguage.googleapis.com/v1beta");
+        assert_eq!(normalize_mcode_base_url("https://generativelanguage.googleapis.com/v1alpha/"), "https://generativelanguage.googleapis.com/v1alpha");
+        assert_eq!(normalize_mcode_base_url("https://api.example.com/v2"), "https://api.example.com/v2");
+        assert_eq!(normalize_mcode_base_url("https://api.anthropic.com"), "https://api.anthropic.com/v1");
+        assert_eq!(normalize_mcode_base_url("https://api.anthropic.com/v1"), "https://api.anthropic.com/v1");
+        assert_eq!(normalize_mcode_base_url("https://api.deepseek.com/models"), "https://api.deepseek.com/v1");
+        assert_eq!(normalize_mcode_base_url("https://api.deepseek.com/v1/models"), "https://api.deepseek.com/v1");
+    }
+
+    #[test]
     fn test_build_mcode_provider_config_openai() {
         let models = vec!["deepseek-chat".to_string(), "deepseek-reasoner".to_string()];
         let val = build_mcode_provider_config("deepseek", "openai", "https://api.deepseek.com", "sk-ds123", &models);
@@ -584,7 +622,7 @@ mod tests {
         assert_eq!(mapping.get(serde_yaml::Value::String("api".to_string())).unwrap().as_str().unwrap(), "openai-completions");
 
         let options = mapping.get(serde_yaml::Value::String("options".to_string())).unwrap().as_mapping().unwrap();
-        assert_eq!(options.get(serde_yaml::Value::String("baseURL".to_string())).unwrap().as_str().unwrap(), "https://api.deepseek.com");
+        assert_eq!(options.get(serde_yaml::Value::String("baseURL".to_string())).unwrap().as_str().unwrap(), "https://api.deepseek.com/v1");
         assert_eq!(options.get(serde_yaml::Value::String("apiKey".to_string())).unwrap().as_str().unwrap(), "sk-ds123");
         assert_eq!(options.get(serde_yaml::Value::String("authMode".to_string())).unwrap().as_str().unwrap(), "api-key");
 

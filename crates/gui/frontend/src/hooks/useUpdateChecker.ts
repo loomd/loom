@@ -1,5 +1,10 @@
 import { useState, useEffect, useCallback } from "react";
 
+export interface DownloadProgress {
+	status: "idle" | "downloading" | "preparing" | "complete" | "error";
+	percent: number;
+}
+
 export function useUpdateChecker(
 	t: (key: string, params?: Record<string, string>) => string,
 	toast: {
@@ -47,12 +52,11 @@ export function useUpdateChecker(
 					});
 					setUpdateDownload(updateResult);
 
+					setShowUpdateToast(true);
 					if (isManual) {
 						toast.info(
 							`${t("settings.version.newUpdate")}: ${updateResult.version}`,
 						);
-					} else {
-						setShowUpdateToast(true);
 					}
 				} else {
 					setUpdateInfo({

@@ -8,23 +8,35 @@ const TerminalTab = React.lazy(() => import('./TerminalTab').then(m => ({ defaul
 
 interface TerminalPanelProps {
   terminals: ConsoleTab[];
+  terminalSlots?: (string | null)[];
   activeTabId: string;
   layoutMode: GridLayout | null;
   showGrid: boolean;
   isVisible: boolean;
   theme?: 'dark' | 'day' | 'gray';
   fontSize?: string | number;
-  onAddTerminal?: () => void;
+  onAddTerminal?: (targetSlotIndex?: number) => void;
   onPaneFocus?: (tabId: string) => void;
   projectId?: string;
 }
 
-export function TerminalPanel({ terminals, activeTabId, layoutMode, showGrid, isVisible, theme, fontSize, onAddTerminal, onPaneFocus, projectId }: TerminalPanelProps) {
+export function TerminalPanel({ terminals, terminalSlots, activeTabId, layoutMode, showGrid, isVisible, theme, fontSize, onAddTerminal, onPaneFocus, projectId }: TerminalPanelProps) {
   const dims = showGrid && layoutMode ? gridDims(layoutMode) : null;
   const areas = showGrid && layoutMode ? (gridCellAreas(layoutMode) ?? layoutPreview(layoutMode).areas) : null;
   const cellCount = dims ? gridCellCount(layoutMode!) : 0;
 
-  const visibleTerminals = dims ? terminals.slice(0, cellCount) : terminals.filter(t => t.id === activeTabId);
+  const activeSlots: (ConsoleTab | null)[] = React.useMemo(() => {
+    if (!dims) return [];
+    if (terminalSlots && terminalSlots.length === cellCount) {
+      return terminalSlots.map(id => (id ? terminals.find(t => t.id === id) ?? null : null));
+    }
+    return Array.from({ length: cellCount }, (_, i) => terminals[i] ?? null);
+  }, [dims, terminalSlots, cellCount, terminals]);
+
+  const visibleTerminals = dims
+    ? activeSlots.filter((t): t is ConsoleTab => t !== null)
+    : terminals.filter(t => t.id === activeTabId);
+
   const effectiveFocusTabId = visibleTerminals.some(t => t.id === activeTabId)
     ? activeTabId
     : (visibleTerminals[0]?.id ?? null);
@@ -47,47 +59,75 @@ export function TerminalPanel({ terminals, activeTabId, layoutMode, showGrid, is
     </Suspense>
   );
 
-  const panes = terminals.map((tab, idx) => {
-    const isTabVisible = dims ? idx < cellCount : tab.id === activeTabId;
-    const isTabFocused = isTabVisible && tab.id === effectiveFocusTabId;
-    return (
-      <div key={tab.id} data-testid={`pane-${tab.id}`} onClick={() => { onPaneFocus?.(tab.id); }} style={{
-        display: isTabVisible ? 'flex' : 'none',
-        flexDirection: 'column',
-        minWidth: 0,
-        minHeight: 0,
-        overflow: 'hidden',
-        backgroundColor: '#121214',
-        gridArea: areas ? String.fromCharCode(97 + idx) : undefined,
-        ...(dims ? {} : { flex: 1 }),
-      }}>
-        {renderTerminal(tab, isTabVisible, isTabFocused)}
-      </div>
-    );
-  });
+  let gridPanes: React.ReactNode[];
+  if (dims) {
+    gridPanes = activeSlots.map((tab, slotIdx) => {
+      const areaName = areas ? String.fromCharCode(97 + slotIdx) : undefined;
+      if (tab) {
+        const isTabFocused = tab.id === effectiveFocusTabId;
+        return (
+          <div key={tab.id} data-testid={`pane-${tab.id}`} onClick={() => { onPaneFocus?.(tab.id); }} style={{
+            display: 'flex',
+            flexDirection: 'column',
+            minWidth: 0,
+            minHeight: 0,
+            overflow: 'hidden',
+            backgroundColor: '#121214',
+            gridArea: areaName,
+          }}>
+            {renderTerminal(tab, true, isTabFocused)}
+          </div>
+        );
+      }
+      return (
+        <div key={`empty-${slotIdx}`} style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          minWidth: 0,
+          minHeight: 0,
+          overflow: 'hidden',
+          backgroundColor: '#121214',
+          gridArea: areaName,
+        }}>
+          <button
+            onClick={() => onAddTerminal?.(slotIdx)}
+            style={{
+              display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '6px 12px',
+              fontSize: '0.82rem', borderRadius: 'var(--radius-sm, 6px)', cursor: 'pointer',
+              backgroundColor: 'var(--bg-elevated, #18181b)', border: '1px dashed var(--border-subtle, #3e3e42)',
+              color: 'var(--text-tertiary, #71717a)', userSelect: 'none',
+            }}
+          >
+            + 新派生
+          </button>
+        </div>
+      );
+    });
+  } else {
+    gridPanes = terminals.map((tab) => {
+      const isTabVisible = tab.id === activeTabId;
+      const isTabFocused = isTabVisible && tab.id === effectiveFocusTabId;
+      return (
+        <div key={tab.id} data-testid={`pane-${tab.id}`} onClick={() => { onPaneFocus?.(tab.id); }} style={{
+          display: isTabVisible ? 'flex' : 'none',
+          flexDirection: 'column',
+          minWidth: 0,
+          minHeight: 0,
+          overflow: 'hidden',
+          backgroundColor: '#121214',
+          flex: 1,
+        }}>
+          {renderTerminal(tab, isTabVisible, isTabFocused)}
+        </div>
+      );
+    });
+  }
 
-  const emptyPanes = dims ? Array.from({ length: Math.max(0, cellCount - terminals.length) }, (_, i) => (
-    <div key={`empty-${i}`} style={{
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      minWidth: 0,
-      minHeight: 0,
-      overflow: 'hidden',
-      backgroundColor: '#121214',
-      gridArea: areas ? String.fromCharCode(97 + terminals.length + i) : undefined,
-    }}>
-      <button
-        onClick={onAddTerminal}
-        style={{
-          display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '6px 12px',
-          fontSize: '0.82rem', borderRadius: 'var(--radius-sm, 6px)', cursor: 'pointer',
-          backgroundColor: 'var(--bg-elevated, #18181b)', border: '1px dashed var(--border-subtle, #3e3e42)',
-          color: 'var(--text-tertiary, #71717a)', userSelect: 'none',
-        }}
-      >
-        + 新派生
-      </button>
+  // 保留未在网格中展示的终端进程实例，避免状态被销毁
+  const hiddenPanes = dims ? terminals.filter(tab => !activeSlots.some(s => s?.id === tab.id)).map(tab => (
+    <div key={tab.id} style={{ display: 'none' }}>
+      {renderTerminal(tab, false, false)}
     </div>
   )) : [];
 
@@ -102,8 +142,8 @@ export function TerminalPanel({ terminals, activeTabId, layoutMode, showGrid, is
       overflow: 'hidden'
     }}>
       <SplitGrid cols={dims?.cols ?? 1} rows={dims?.rows ?? 1} areas={areas ?? '"a"'} grid={!!dims} layoutKey={layoutMode} projectId={projectId}>
-        {panes}
-        {emptyPanes}
+        {gridPanes}
+        {hiddenPanes}
       </SplitGrid>
     </div>
   );

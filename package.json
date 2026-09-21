@@ -1,0 +1,6 @@
+{
+  "dependencies": {
+    "@opentui/core": "^0.5.11",
+    "opentui-math": "^0.1.0"
+  }
+}

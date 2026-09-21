@@ -5,6 +5,7 @@ import GeneralSettingsTab from "./settings/GeneralSettingsTab";
 import CliToolsTab from "./settings/CliToolsTab";
 import LibsTab from "./settings/LibsTab";
 import EnvVarsPage from "./EnvVarsPage";
+import type { DownloadProgress } from "../hooks/useUpdateChecker";
 interface Props {
 	theme: "dark" | "day" | "gray";
 	onThemeChange: (newTheme: "dark" | "day" | "gray") => Promise<void>;
@@ -23,6 +24,7 @@ interface Props {
 		url?: string;
 		error?: boolean;
 	} | null;
+	downloadProgress?: DownloadProgress | null;
 	onCheckUpdate: (isManual: boolean) => Promise<void>;
 	onInstallUpdate?: () => void;
 	onSkipVersion?: (version: string) => void;
@@ -50,6 +52,7 @@ export default function SettingsPage({
 	onFontSizeChange,
 	onTerminalFontSizeChange,
 	updateInfo,
+	downloadProgress,
 	onCheckUpdate,
 	onInstallUpdate,
 	onSkipVersion,
@@ -156,6 +159,7 @@ export default function SettingsPage({
 						onFontSizeChange={onFontSizeChange}
 						onTerminalFontSizeChange={onTerminalFontSizeChange}
 						updateInfo={updateInfo}
+						downloadProgress={downloadProgress}
 						onCheckUpdate={onCheckUpdate}
 						onInstallUpdate={onInstallUpdate}
 						onSkipVersion={onSkipVersion}

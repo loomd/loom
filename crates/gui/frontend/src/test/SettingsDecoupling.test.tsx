@@ -282,4 +282,40 @@ describe("SettingsPage", () => {
     const skills = screen.getAllByText((c: string) => c.includes("技能模版"));
     expect(skills.length).toBeGreaterThanOrEqual(1);
   });
+
+  it("renders update download and installing progress in general tab", async () => {
+    await act(async () => {
+      renderWithProviders(
+        <SettingsPage
+          {...defaultProps}
+          updateInfo={{
+            hasUpdate: true,
+            latestVersion: "0.8.0",
+          }}
+          downloadProgress={{
+            status: "downloading",
+            percent: 45,
+          }}
+        />,
+      );
+    });
+    expect(screen.getByText(/45%/)).toBeInTheDocument();
+
+    await act(async () => {
+      renderWithProviders(
+        <SettingsPage
+          {...defaultProps}
+          updateInfo={{
+            hasUpdate: true,
+            latestVersion: "0.8.0",
+          }}
+          downloadProgress={{
+            status: "preparing",
+            percent: 100,
+          }}
+        />,
+      );
+    });
+    expect(screen.getByText("正在准备安装...")).toBeInTheDocument();
+  });
 });

@@ -30,7 +30,7 @@ function getMergedArgs(tool: CliTool, tpl: Template): string[] {
 }
 
 export interface TabActions {
-  addTab: (tab: ConsoleTab) => void;
+  addTab: (tab: ConsoleTab, targetSlotIndex?: number) => void;
   setActiveTabId: (id: string) => void;
   openEditorTab: (file: FileEntry, cwd: string) => void;
   removeTabById: (id: string) => void;
@@ -251,7 +251,7 @@ export function useWorkspaceData(
     }
   };
 
-  const handleRunTemplate = async (tpl: Template) => {
+  const handleRunTemplate = async (tpl: Template & { targetSlotIndex?: number }) => {
     const tool = cliTools.find(t => t.id === tpl.cli_id);
     if (!tool) {
       toast.error('CLI Tool not found');
@@ -290,7 +290,7 @@ export function useWorkspaceData(
         tpl.name.toLowerCase().includes('opencode') || tpl.name.toLowerCase().includes('mcode') || tpl.name.toLowerCase().includes('minimax') ||
         (tpl.args && tpl.args.some(a => a.toLowerCase().includes('opencode') || a.toLowerCase().includes('mcode') || a.toLowerCase().includes('minimax')));
       if (isOpencode) newTab.isOpencode = true;
-      tabActions.addTab(newTab);
+      tabActions.addTab(newTab, tpl.targetSlotIndex);
       tabActions.setActiveTabId(newSessionId);
       toast.success(t('temp.toast.launched') + ': ' + tpl.name);
     } catch (e) {

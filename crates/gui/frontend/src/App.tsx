@@ -232,18 +232,24 @@ function App() {
 		);
 	}, []);
 
+	const [spawnTargetSlot, setSpawnTargetSlot] = useState<number | undefined>(undefined);
+
 	const handleSpawnAgent = useCallback((tpl: Template) => {
 		setShowSpawnPanel(false);
-		window.dispatchEvent(new CustomEvent("loom-run-template", { detail: tpl }));
-	}, []);
+		window.dispatchEvent(new CustomEvent("loom-run-template", { detail: { ...tpl, targetSlotIndex: spawnTargetSlot } }));
+	}, [spawnTargetSlot]);
 
 	const handleSpawnBlankTerminal = useCallback(() => {
 		setShowSpawnPanel(false);
-		window.dispatchEvent(new CustomEvent("loom-new-blank-terminal"));
-	}, []);
+		window.dispatchEvent(new CustomEvent("loom-new-blank-terminal", { detail: { targetSlotIndex: spawnTargetSlot } }));
+	}, [spawnTargetSlot]);
 
 	useEffect(() => {
-		const openSpawn = () => setShowSpawnPanel(true);
+		const openSpawn = (e: Event) => {
+			const detail = (e as CustomEvent).detail;
+			setSpawnTargetSlot(detail?.targetSlotIndex);
+			setShowSpawnPanel(true);
+		};
 		window.addEventListener("loom-open-spawn", openSpawn);
 		return () => window.removeEventListener("loom-open-spawn", openSpawn);
 	}, []);
@@ -301,6 +307,7 @@ function App() {
 			if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "n" && page === "workspace") {
 				e.preventDefault();
 				e.stopPropagation();
+				setSpawnTargetSlot(undefined);
 				setShowSpawnPanel((prev) => !prev);
 				return;
 			}
@@ -355,6 +362,7 @@ function App() {
 								onFontSizeChange={theme.handleFontSizeChange}
 								onTerminalFontSizeChange={theme.handleTerminalFontSizeChange}
 								updateInfo={updater.updateInfo}
+								downloadProgress={updater.downloadProgress}
 								onCheckUpdate={updater.performUpdateCheck}
 								onInstallUpdate={updater.handleInstallUpdate}
 								onSkipVersion={updater.handleSkipVersion}

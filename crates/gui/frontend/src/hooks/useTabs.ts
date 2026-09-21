@@ -114,12 +114,63 @@ export function useTabs(projectRoot: string) {
     { id: 'overview', title: '概览', type: 'overview', cwd: projectRoot }
   ]);
   const [activeTabId, setActiveTabId] = useState<string>('overview');
-  const [layoutMode, setLayoutMode] = useState<GridLayout | null>(null);
+  const [layoutMode, setLayoutModeInternal] = useState<GridLayout | null>(null);
+  const [terminalSlots, setTerminalSlots] = useState<(string | null)[]>([]);
 
   const terminals = tabs.filter(t => t.type === 'terminal');
   const showGrid = layoutMode !== null;
 
-  const handleAddRawTerminal = useCallback((keepGrid = false, initialCmd?: string) => {
+  const setLayoutMode = useCallback((mode: GridLayout | null | ((prev: GridLayout | null) => GridLayout | null)) => {
+    setLayoutModeInternal(prevMode => {
+      const nextMode = typeof mode === 'function' ? mode(prevMode) : mode;
+      if (!nextMode) {
+        setTerminalSlots([]);
+      } else {
+        const count = gridCellCount(nextMode);
+        setTerminalSlots(prevSlots => {
+          const activeTerminalIds = new Set(tabs.filter(t => t.type === 'terminal').map(t => t.id));
+          const nextSlots: (string | null)[] = Array.from({ length: count }, (_, i) => {
+            const existing = prevSlots[i];
+            return existing && activeTerminalIds.has(existing) ? existing : null;
+          });
+          const slottedSet = new Set(nextSlots.filter((id): id is string => id !== null));
+          const unslotted = tabs.filter(t => t.type === 'terminal' && !slottedSet.has(t.id));
+          let unslottedIdx = 0;
+          for (let i = 0; i < count; i++) {
+            if (!nextSlots[i] && unslottedIdx < unslotted.length) {
+              nextSlots[i] = unslotted[unslottedIdx].id;
+              unslottedIdx++;
+            }
+          }
+          return nextSlots;
+        });
+      }
+      return nextMode;
+    });
+  }, [tabs]);
+
+  const assignTerminalToSlot = useCallback((newSessionId: string, targetSlotIndex?: number) => {
+    if (!layoutMode) return;
+    const count = gridCellCount(layoutMode);
+    setTerminalSlots(prev => {
+      const currentSlots: (string | null)[] = Array.from({ length: count }, (_, i) => prev[i] ?? null);
+
+      if (targetSlotIndex !== undefined && targetSlotIndex >= 0 && targetSlotIndex < count) {
+        currentSlots[targetSlotIndex] = newSessionId;
+        return currentSlots;
+      }
+
+      const emptyIdx = currentSlots.findIndex(s => s === null);
+      if (emptyIdx !== -1) {
+        currentSlots[emptyIdx] = newSessionId;
+        return currentSlots;
+      }
+
+      return currentSlots;
+    });
+  }, [layoutMode]);
+
+  const handleAddRawTerminal = useCallback((keepGrid = false, initialCmd?: string, targetSlotIndex?: number) => {
     const sessionId = crypto.randomUUID();
     const newTab: ConsoleTab = {
       id: sessionId,
@@ -128,13 +179,17 @@ export function useTabs(projectRoot: string) {
       cwd: projectRoot,
       initialCommand: initialCmd
     };
-    if (!keepGrid) setLayoutMode(null);
+    if (!keepGrid) {
+      setLayoutMode(null);
+    } else if (layoutMode) {
+      assignTerminalToSlot(sessionId, targetSlotIndex);
+    }
     setTabs(prev => [...prev, newTab]);
     setActiveTabId(sessionId);
-  }, [projectRoot, terminals.length]);
+  }, [projectRoot, terminals.length, layoutMode, assignTerminalToSlot, setLayoutMode]);
 
-  const handleCloseTerminal = useCallback(async (id: string, e: React.MouseEvent): Promise<string | null> => {
-    e.stopPropagation();
+  const handleCloseTerminal = useCallback(async (id: string, e?: React.MouseEvent): Promise<string | null> => {
+    e?.stopPropagation?.();
     const tabToClose = tabs.find(t => t.id === id);
     if (tabToClose?.type === 'editor' && tabToClose.isDirty) {
       const confirmed = await dialog.confirm({ message: '文件有未保存的更改，确定要关闭吗？', danger: true });
@@ -152,6 +207,7 @@ export function useTabs(projectRoot: string) {
         nextActive = filtered[0]?.id ?? 'overview';
       }
     }
+    setTerminalSlots(prev => prev.map(s => s === id ? null : s));
     setTabs(filtered);
     if (nextActive) setActiveTabId(nextActive);
     return nextActive;
@@ -175,9 +231,12 @@ export function useTabs(projectRoot: string) {
     setActiveTabId(fileId);
   }, []);
 
-  const addTab = useCallback((tab: ConsoleTab) => {
+  const addTab = useCallback((tab: ConsoleTab, targetSlotIndex?: number) => {
+    if (tab.type === 'terminal' && layoutMode) {
+      assignTerminalToSlot(tab.id, targetSlotIndex);
+    }
     setTabs(prev => [...prev, tab]);
-  }, []);
+  }, [layoutMode, assignTerminalToSlot]);
 
 	const removeTabById = useCallback((id: string): string | null => {
 		const filtered = tabs.filter(t => t.id !== id);
@@ -192,6 +251,7 @@ export function useTabs(projectRoot: string) {
 				nextActive = filtered[0]?.id ?? 'overview';
 			}
 		}
+		setTerminalSlots(prev => prev.map(s => s === id ? null : s));
 		setTabs(filtered);
 		if (nextActive) setActiveTabId(nextActive);
 		return nextActive;
@@ -222,6 +282,8 @@ export function useTabs(projectRoot: string) {
     setActiveTabId,
     layoutMode,
     setLayoutMode,
+    terminalSlots,
+    setTerminalSlots,
     terminals,
     showGrid,
     handleAddRawTerminal,

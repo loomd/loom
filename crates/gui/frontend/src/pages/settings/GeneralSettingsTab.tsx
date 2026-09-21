@@ -3,6 +3,7 @@ import { useI18n } from "../../I18nContext";
 import { useToast } from "../../ToastContext";
 import WhatsNewDialog from "../../components/WhatsNewDialog";
 import { getAutostart, setAutostart, getUpdateCheckInterval, setUpdateCheckInterval, getRestoreTerminals, setRestoreTerminals, getWhatsNewAll } from "../../api";
+import type { DownloadProgress } from "../../hooks/useUpdateChecker";
 
 interface Props {
 	theme: "dark" | "day" | "gray";
@@ -22,6 +23,7 @@ interface Props {
 		url?: string;
 		error?: boolean;
 	} | null;
+	downloadProgress?: DownloadProgress | null;
 	onCheckUpdate: (isManual: boolean) => Promise<void>;
 	onInstallUpdate?: () => void;
 	onSkipVersion?: (version: string) => void;
@@ -57,6 +59,7 @@ export default function GeneralSettingsTab({
 	onFontSizeChange,
 	onTerminalFontSizeChange,
 	updateInfo,
+	downloadProgress,
 	onCheckUpdate,
 	onInstallUpdate,
 	onSkipVersion,
@@ -1406,41 +1409,84 @@ export default function GeneralSettingsTab({
 									>
 										{t("settings.version.newUpdate")}
 									</span>
-									{onInstallUpdate && (
-										<button
-											onClick={onInstallUpdate}
+									{downloadProgress && downloadProgress.status !== "idle" ? (
+										<div
 											style={{
-												color: "var(--accent-purple, #9b5de5)",
-												textDecoration: "underline",
-												fontWeight: 500,
-												cursor: "pointer",
-												background: "none",
-												border: "none",
-												fontSize: "inherit",
-												padding: 0,
+												display: "inline-flex",
+												alignItems: "center",
+												gap: "8px",
 											}}
 										>
-											{t("settings.version.installNow")}
-										</button>
-									)}
-									{onSkipVersion && updateInfo.latestVersion && (
-										<button
-											onClick={() =>
-												onSkipVersion(updateInfo.latestVersion)
-											}
-											style={{
-												color: "var(--text-tertiary)",
-												textDecoration: "none",
-												fontWeight: 400,
-												cursor: "pointer",
-												background: "none",
-												border: "none",
-												fontSize: "0.75rem",
-												padding: "2px 8px",
-											}}
-										>
-											{t("settings.version.skip")}
-										</button>
+											<span
+												style={{
+													fontSize: "0.8rem",
+													color: "var(--accent-purple, #9b5de5)",
+													fontWeight: 500,
+												}}
+											>
+												{downloadProgress.status === "downloading"
+													? `${t("settings.version.progress.downloading")} ${downloadProgress.percent}%`
+													: t("settings.version.progress.preparing")}
+											</span>
+											<div
+												style={{
+													width: "80px",
+													height: "4px",
+													backgroundColor: "rgba(255, 255, 255, 0.1)",
+													borderRadius: "2px",
+													overflow: "hidden",
+												}}
+											>
+												<div
+													style={{
+														width: `${downloadProgress.percent}%`,
+														height: "100%",
+														backgroundColor: "var(--accent-purple, #9b5de5)",
+														borderRadius: "2px",
+														transition: "width 0.2s ease",
+													}}
+												/>
+											</div>
+										</div>
+									) : (
+										<>
+											{onInstallUpdate && (
+												<button
+													onClick={onInstallUpdate}
+													style={{
+														color: "var(--accent-purple, #9b5de5)",
+														textDecoration: "underline",
+														fontWeight: 500,
+														cursor: "pointer",
+														background: "none",
+														border: "none",
+														fontSize: "inherit",
+														padding: 0,
+													}}
+												>
+													{t("settings.version.installNow")}
+												</button>
+											)}
+											{onSkipVersion && updateInfo.latestVersion && (
+												<button
+													onClick={() =>
+														onSkipVersion(updateInfo.latestVersion)
+													}
+													style={{
+														color: "var(--text-tertiary)",
+														textDecoration: "none",
+														fontWeight: 400,
+														cursor: "pointer",
+														background: "none",
+														border: "none",
+														fontSize: "0.75rem",
+														padding: "2px 8px",
+													}}
+												>
+													{t("settings.version.skip")}
+												</button>
+											)}
+										</>
 									)}
 								</div>
 							)}

@@ -36,7 +36,7 @@ export default function ProjectWorkspace({ project, isVisible, onUnregisterProje
 	const tabsState = useTabs(project.root_path);
 	const {
 		tabs, setTabs, activeTabId, setActiveTabId, layoutMode, setLayoutMode,
-		terminals, showGrid, handleAddRawTerminal, handleCloseTerminal,
+		terminals, showGrid, terminalSlots, handleAddRawTerminal, handleCloseTerminal,
 		handleOpenFile, updateTabDirty, removeTabById, moveTab, addTab,
 	} = tabsState;
 	const isAgentTerminal = useCallback((t: { isOpencode?: boolean; title?: string; command?: string }) => {
@@ -247,14 +247,15 @@ useEffect(() => {
   return () => clearTimeout(timer);
 }, [restoreReady, terminals, agentStateMap, project.id, pendingRestoreTerminals, layoutMode, isAgentTerminal]);
 
-const handleAddTerminal = useCallback(() => {
-  if (showGrid && layoutMode && terminals.length < gridCount) {
-    handleAddRawTerminal(true);
+const handleAddTerminal = useCallback((targetSlotIndex?: number) => {
+  const isFull = layoutMode ? (terminalSlots.length === gridCount && terminalSlots.every(id => id !== null && terminals.some(t => t.id === id))) : false;
+  if (showGrid && layoutMode && (targetSlotIndex !== undefined || !isFull)) {
+    handleAddRawTerminal(true, undefined, targetSlotIndex);
     return;
   }
   if (showGrid && layoutMode) setPendingGridMode(layoutMode);
-  handleAddRawTerminal();
-}, [showGrid, layoutMode, gridCount, terminals.length, handleAddRawTerminal, setPendingGridMode]);
+  handleAddRawTerminal(false, undefined, targetSlotIndex);
+}, [showGrid, layoutMode, gridCount, terminalSlots, terminals, handleAddRawTerminal, setPendingGridMode]);
 
 const handleAddAgentsSkills = useCallback(() => {
   const existingTab = tabs.find(t => t.type === 'agents-skills');
@@ -276,7 +277,7 @@ const handleAddAgentsSkills = useCallback(() => {
   addTab(newTab);
   setActiveTabId(tabId);
 }, [tabs, showGrid, layoutMode, setPendingGridMode, setLayoutMode, addTab, setActiveTabId, project.root_path, t]);
-const openSpawnPanel = () => window.dispatchEvent(new CustomEvent("loom-open-spawn"));
+const openSpawnPanel = (targetSlotIndex?: number) => window.dispatchEvent(new CustomEvent("loom-open-spawn", { detail: { targetSlotIndex } }));
 
 const maybeRestoreGrid = useCallback((closedId: string, nextActive: string | null) => {
   if (nextActive === null || layoutMode !== null || !pendingGridMode) return;
@@ -372,11 +373,11 @@ const closeActiveByShortcut = useCallback(() => {
 		const handler = (e: Event) => {
 			const detail = (e as CustomEvent).detail;
 			if (e.type === "loom-new-blank-terminal") {
-				handleAddTerminal();
+				handleAddTerminal(detail?.targetSlotIndex);
 				return;
 			}
 			if (detail && typeof detail === 'object' && !Array.isArray(detail) && detail.cmd) {
-				handleAddRawTerminal(false, detail.cmd);
+				handleAddRawTerminal(false, detail.cmd, detail.targetSlotIndex);
 				return;
 			}
 			if (detail && typeof detail === 'object' && !Array.isArray(detail) && detail.id) {
@@ -441,7 +442,7 @@ const closeActiveByShortcut = useCallback(() => {
             </div>
           ))}
           <div
-            onClick={openSpawnPanel}
+            onClick={() => openSpawnPanel()}
             className="workspace-tab-item"
             title={t('proj.btn.spawn') || '派生'}
             style={{
@@ -463,9 +464,8 @@ const closeActiveByShortcut = useCallback(() => {
           style={{ display: 'flex', alignItems: 'center', gap: '2px', overflowX: 'auto', flex: 1, scrollbarWidth: 'none', msOverflowStyle: 'none' }} className="titlebar-tabs-scroll"
         >
           {tabs.filter(tab => tab.id !== 'overview').map(tab => {
-            const isActive = showGrid
-              ? tab.type === 'terminal' && terminals.findIndex(t => t.id === tab.id) < gridCount
-              : tab.id === activeTabId;
+            const isTabInGrid = showGrid && tab.type === 'terminal' && terminalSlots.includes(tab.id);
+            const isActive = showGrid ? isTabInGrid : tab.id === activeTabId;
             return (
               <div key={tab.id}
                 draggable={true}
@@ -480,7 +480,7 @@ const closeActiveByShortcut = useCallback(() => {
                 }}
                 onDrop={(e) => { e.preventDefault(); setDragTabId(null); }}
                 onClick={() => {
-                  if (showGrid && tab.type === 'terminal' && terminals.findIndex(t => t.id === tab.id) < gridCount) return;
+                  if (showGrid && tab.type === 'terminal' && terminalSlots.includes(tab.id)) return;
                   if (showGrid && layoutMode) {
                     setPendingGridMode(layoutMode);
                     setLayoutMode(null);
@@ -577,7 +577,7 @@ const closeActiveByShortcut = useCallback(() => {
               </h3>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', width: '100%', paddingBottom: '10px' }}>
                  <button type="button"
-                   onClick={handleAddTerminal}
+                   onClick={() => handleAddTerminal()}
                    className="btn btn-ghost"
                    style={{
                      display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 14px',
@@ -774,6 +774,7 @@ const closeActiveByShortcut = useCallback(() => {
 
         <TerminalPanel
           terminals={terminals}
+          terminalSlots={terminalSlots}
           activeTabId={activeTabId}
           layoutMode={layoutMode}
           showGrid={showGrid}

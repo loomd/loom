@@ -569,4 +569,40 @@ describe("TerminalPanel", () => {
     fireEvent.click(pane1);
     expect(onPaneFocus).toHaveBeenCalledWith("t1");
   });
+
+  it("renders terminals in exact slot positions and passes target slot index on empty slot click", async () => {
+    const { TerminalPanel } = await import("../components/TerminalPanel");
+    const t0 = makeTerminal("t0");
+    const t2 = makeTerminal("t2");
+    const onAddTerminal = vi.fn();
+
+    // 2x2 grid with 4 slots, slot 0 and slot 2 occupied, slot 1 and slot 3 empty
+    const { container, getByTestId } = render(
+      <TerminalPanel
+        terminals={[t0, t2]}
+        terminalSlots={["t0", null, "t2", null]}
+        activeTabId="t0"
+        layoutMode="2x2"
+        showGrid={true}
+        isVisible={true}
+        onAddTerminal={onAddTerminal}
+      />
+    );
+
+    const pane0 = getByTestId("pane-t0");
+    const pane2 = getByTestId("pane-t2");
+    expect(pane0.getAttribute("style")).toContain("grid-area: a");
+    expect(pane2.getAttribute("style")).toContain("grid-area: c");
+
+    const buttons = Array.from(container.querySelectorAll("button")).filter(b => b.textContent === "+ 新派生");
+    expect(buttons).toHaveLength(2);
+
+    // Clicking the first button (which is at slot 1, area 'b')
+    fireEvent.click(buttons[0]);
+    expect(onAddTerminal).toHaveBeenCalledWith(1);
+
+    // Clicking the second button (which is at slot 3, area 'd')
+    fireEvent.click(buttons[1]);
+    expect(onAddTerminal).toHaveBeenCalledWith(3);
+  });
 });
