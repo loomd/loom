@@ -28,7 +28,17 @@ export function TerminalPanel({ terminals, terminalSlots, activeTabId, layoutMod
   const activeSlots: (ConsoleTab | null)[] = React.useMemo(() => {
     if (!dims) return [];
     if (terminalSlots && terminalSlots.length === cellCount) {
-      return terminalSlots.map(id => (id ? terminals.find(t => t.id === id) ?? null : null));
+      const slottedTabs = terminalSlots.map(id => (id ? terminals.find(t => t.id === id) ?? null : null));
+      const slottedIds = new Set(slottedTabs.filter((t): t is ConsoleTab => t !== null).map(t => t.id));
+      const unslotted = terminals.filter(t => !slottedIds.has(t.id));
+      let unslottedIdx = 0;
+      return slottedTabs.map(tab => {
+        if (tab) return tab;
+        if (unslottedIdx < unslotted.length) {
+          return unslotted[unslottedIdx++];
+        }
+        return null;
+      });
     }
     return Array.from({ length: cellCount }, (_, i) => terminals[i] ?? null);
   }, [dims, terminalSlots, cellCount, terminals]);

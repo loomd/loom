@@ -605,4 +605,27 @@ describe("TerminalPanel", () => {
     fireEvent.click(buttons[1]);
     expect(onAddTerminal).toHaveBeenCalledWith(3);
   });
+
+  it("recovers unslotted terminals into empty slots instead of showing blank empty slots when terminals are alive", async () => {
+    const { TerminalPanel } = await import("../components/TerminalPanel");
+    const t0 = makeTerminal("t0");
+    const t1 = makeTerminal("t1");
+
+    // terminalSlots were initialized as all null, but t0 and t1 are alive
+    const { container, getByTestId } = render(
+      <TerminalPanel
+        terminals={[t0, t1]}
+        terminalSlots={[null, null]}
+        activeTabId="t0"
+        layoutMode="1x2"
+        showGrid={true}
+        isVisible={true}
+      />
+    );
+
+    expect(getByTestId("pane-t0")).toBeDefined();
+    expect(getByTestId("pane-t1")).toBeDefined();
+    const buttons = Array.from(container.querySelectorAll("button")).filter(b => b.textContent === "+ 新派生");
+    expect(buttons).toHaveLength(0);
+  });
 });

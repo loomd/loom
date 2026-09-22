@@ -174,7 +174,10 @@ export function useTabs(projectRoot: string) {
   const terminals = tabs.filter(t => t.type === 'terminal');
   const showGrid = layoutMode !== null;
 
-  const setLayoutMode = useCallback((mode: GridLayout | null | ((prev: GridLayout | null) => GridLayout | null)) => {
+  const setLayoutMode = useCallback((
+    mode: GridLayout | null | ((prev: GridLayout | null) => GridLayout | null),
+    initialSlots?: (string | null)[]
+  ) => {
     setLayoutModeInternal(prevMode => {
       const nextMode = typeof mode === 'function' ? mode(prevMode) : mode;
       if (!nextMode) {
@@ -182,9 +185,13 @@ export function useTabs(projectRoot: string) {
       } else {
         const count = gridCellCount(nextMode);
         setTerminalSlots(prevSlots => {
+          if (initialSlots && initialSlots.length === count) {
+            return initialSlots;
+          }
+          const slotsSource = initialSlots && initialSlots.length > 0 ? initialSlots : prevSlots;
           const activeTerminalIds = new Set(tabs.filter(t => t.type === 'terminal').map(t => t.id));
           const nextSlots: (string | null)[] = Array.from({ length: count }, (_, i) => {
-            const existing = prevSlots[i];
+            const existing = slotsSource[i];
             return existing && activeTerminalIds.has(existing) ? existing : null;
           });
           const slottedSet = new Set(nextSlots.filter((id): id is string => id !== null));

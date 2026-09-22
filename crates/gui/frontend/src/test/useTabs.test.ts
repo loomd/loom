@@ -84,4 +84,14 @@ describe('useTabs slot allocation', () => {
     // Top tab bar order (tabs) must match grid slot order: [shell, opencode]
     expect(result.current.tabs.filter(t => t.type === 'terminal').map(t => t.id)).toEqual([shellId, opencodeId]);
   });
+
+  it('supports initializing slots explicitly when restoring layout with initialSlots', () => {
+    const { result } = renderHook(() => useTabs('/test/path'), { wrapper });
+
+    act(() => {
+      result.current.setLayoutMode('2x1', ['slot-1', 'slot-2']);
+    });
+
+    expect(result.current.terminalSlots).toEqual(['slot-1', 'slot-2']);
+  });
 });

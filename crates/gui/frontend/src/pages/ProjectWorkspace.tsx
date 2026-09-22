@@ -149,7 +149,8 @@ const performRestore = useCallback((list: PersistedTerminal[], layout: GridLayou
     setActiveTabId(newTabs[0].id);
   }
   if (layout) {
-    setLayoutMode(layout);
+    const initialSlots: (string | null)[] = Array.from({ length: gridCellCount(layout) }, (_, i) => newTabs[i]?.id ?? null);
+    setLayoutMode(layout, initialSlots);
   }
   if (notify) {
     toast.success(t('proj.restore.toast.success', { count: newTabs.length }));
