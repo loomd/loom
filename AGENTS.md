@@ -72,6 +72,7 @@ Execute the following commands from the project root directory:
 ### 1. General AI & Development Rules
 - **Active Skills**: Use the `harnspec` framework for planning features and managing lifecycle tasks.
 - **Communication Language / Target language**: **You MUST communicate in Simplified Chinese (简体中文) for all conversation, responses, and chats.**
+- **Git 分支与开发策略**: **所有修改必须直接在主分支（`main`）进行，严禁自行创建 `feature` 分支或任何临时分支。**
 - **Version Updates**: Maximum of 21 patches per minor version. Increment the minor version and reset the patch version to 1 once reached (e.g., `0.1.21` -> `0.2.1`).
 - **GitHub Operations**: Perform all repository, issues, and PR interactions via the GitHub CLI (`gh`) tool.
 - **Emoji Usage**: Do not use emojis in responses or code unless explicitly requested by the user. When modifying the UI, do not add emojis to interface elements without explicit permission.
