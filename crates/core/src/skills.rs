@@ -15,6 +15,11 @@ description: Loom CLI and Workspace management integration for AI Agents
 
 This skill enables AI agents to interact with and manage the Loom environment, tools, templates, and workspace processes using the `loom` CLI.
 
+## Core Rules
+
+- **CRITICAL**: Never directly edit the `loom.json` configuration file. Always use the `loom` CLI commands for reading, adding, updating, or deleting resources.
+- **SECURITY**: Never spawn or execute discovered CLI tools/executables found during directory scans.
+
 ## Step 0: Verify Loom CLI Availability
 
 Before doing anything else, confirm the `loom` CLI is installed and callable:
@@ -32,9 +37,10 @@ Before doing anything else, confirm the `loom` CLI is installed and callable:
 Templates define how to launch an agent/tool in the Loom workspace (parameters, env vars, working dir).
 - List all templates: `loom template list [--json]`
 - List templates for a specific agent: `loom template list --agent <agent-name> [--json]`
-- Add a template: `loom template add --agent <agent-name> --name <template-name> [--arg <arg>]... [--env KEY=VALUE]... [--pwd <dir>] [--env-mode <inherit|isolated>]`
-- Edit a template: `loom template edit --id <id> [--name <template-name>] [--arg <arg>]... [--env KEY=VALUE]... [--pwd <dir>] [--env-mode <inherit|isolated>]`
-- Delete a template: `loom template delete --agent <agent-name> --name <template-name>`
+- Add a template: `loom template add --agent <agent-name-or-id> --name <template-name> [--arg=<arg>]... [--env KEY=VALUE]... [--pwd <dir>] [--env-mode <inherit|isolated>]`
+  - **Important**: When passing arguments starting with `-` or `--` (e.g. `--model`), always use the equals syntax `--arg=--model` to avoid CLI flag parsing conflicts.
+- Edit a template: `loom template edit --id <id> [--name <template-name>] [--arg=<arg>]... [--env KEY=VALUE]... [--pwd <dir>] [--env-mode <inherit|isolated>]`
+- Delete a template: `loom template delete --agent <agent-name-or-id> --name <template-name>`
 - Reorder templates: `loom template reorder <id1> <id2>...`
 
 `--agent` accepts a registered tool name, alias or id. Newly added templates make a derivable agent appear in the Loom overview (derive) panel in real time.
@@ -58,6 +64,8 @@ pub fn get_skill_target_dirs() -> Vec<PathBuf> {
         // OpenCode skill directories
         dirs.push(home.join(".agents").join("skills").join("loom"));
         dirs.push(home.join(".config").join("opencode").join("skills").join("loom"));
+        // Claude Code skill directory
+        dirs.push(home.join(".claude").join("skills").join("loom"));
     }
     dirs
 }
