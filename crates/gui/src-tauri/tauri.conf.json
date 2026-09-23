@@ -6,7 +6,7 @@
     "beforeDevCommand": "npm --prefix crates/gui/frontend run dev",
     "beforeBuildCommand": "npm --prefix crates/gui/frontend run build",
     "frontendDist": "../dist",
-    "devUrl": "http://localhost:1420"
+    "devUrl": "http://localhost:1421"
   },
   "app": {
     "windows": [

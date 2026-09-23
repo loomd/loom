@@ -220,7 +220,7 @@ describe("Shell Border Settings & Features", () => {
 
   it("TerminalPanel in multi-split mode only renders borders on spawned shells, and not on empty slots", async () => {
     const terminals: ConsoleTab[] = [
-      { id: "tab-1", title: "Terminal 1", cwd: "/test" },
+      { id: "tab-1", type: "terminal", title: "Terminal 1", cwd: "/test" },
     ];
     // 2-slot grid, only slot 0 has terminal, slot 1 is empty (null)
     const terminalSlots = ["tab-1", null];
@@ -256,8 +256,8 @@ describe("Shell Border Settings & Features", () => {
   describe("computeCollapsedBorders border collapse logic", () => {
     it("merges adjacent borders in 2x1 horizontal split (A on left, B on right)", () => {
       const activeSlots: (ConsoleTab | null)[] = [
-        { id: "tab-a", title: "A", cwd: "" },
-        { id: "tab-b", title: "B", cwd: "" },
+        { id: "tab-a", type: "terminal", title: "A", cwd: "" },
+        { id: "tab-b", type: "terminal", title: "B", cwd: "" },
       ];
       const areas = '"a b" "a b"';
 
@@ -279,8 +279,8 @@ describe("Shell Border Settings & Features", () => {
 
     it("merges adjacent borders in 1x2 vertical split (A on top, B on bottom)", () => {
       const activeSlots: (ConsoleTab | null)[] = [
-        { id: "tab-a", title: "A", cwd: "" },
-        { id: "tab-b", title: "B", cwd: "" },
+        { id: "tab-a", type: "terminal", title: "A", cwd: "" },
+        { id: "tab-b", type: "terminal", title: "B", cwd: "" },
       ];
       const areas = '"a a" "b b"';
 
@@ -302,7 +302,7 @@ describe("Shell Border Settings & Features", () => {
       // If A is null and B has shell
       const activeSlotsWithBOnly: (ConsoleTab | null)[] = [
         null,
-        { id: "tab-b", title: "B", cwd: "" },
+        { id: "tab-b", type: "terminal", title: "B", cwd: "" },
       ];
       const borderB = computeCollapsedBorders("b", areas, activeSlotsWithBOnly, "#8b5cf6");
 
