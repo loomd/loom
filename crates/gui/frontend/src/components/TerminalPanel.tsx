@@ -195,7 +195,7 @@ export function TerminalPanel({ terminals, terminalSlots, activeTabId, layoutMod
             flexDirection: 'column',
             minWidth: 0,
             minHeight: 0,
-            overflow: 'hidden',
+            overflow: (isMultiSplit && shellBorderEnabled) ? 'visible' : 'hidden',
             backgroundColor: '#121214',
             gridArea: areaName,
           }}
@@ -278,7 +278,8 @@ export function TerminalPanel({ terminals, terminalSlots, activeTabId, layoutMod
       flexDirection: 'column',
       backgroundColor: '#121214',
       boxSizing: 'border-box',
-      overflow: 'hidden'
+      overflow: 'hidden',
+      padding: (showGrid && dims && shellBorderEnabled) ? '2px' : 0,
     }}>
       <SplitGrid cols={dims?.cols ?? 1} rows={dims?.rows ?? 1} areas={areas ?? '"a"'} grid={!!dims} layoutKey={layoutMode} projectId={projectId}>
         {terminalPanes}
