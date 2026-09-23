@@ -69,6 +69,8 @@ export default function BottomPanel({
 
   const autoHeight = rowCount <= 1 ? 42 : 78;
   const panelHeight = userHeight != null ? userHeight : autoHeight;
+  // 用户主动把面板拖到比自动高度更小：让多行内容也能滚到顶端仅显 1 行
+  const isManuallyShrunk = userHeight != null && userHeight < autoHeight;
 
   useEffect(() => {
     if (!onHeightChange || !enabled) return;
@@ -186,10 +188,10 @@ export default function BottomPanel({
           display: "flex",
           flexWrap: "wrap",
           alignItems: "center",
-          alignContent: rowCount >= 3 ? "flex-start" : "center",
+          alignContent: rowCount >= 3 || isManuallyShrunk ? "flex-start" : "center",
           gap: "0px 0px",
              padding: "7px 8px 10px 8px",
-           overflowY: rowCount >= 3 ? "auto" : "hidden",
+           overflowY: rowCount >= 3 || isManuallyShrunk ? "auto" : "hidden",
           scrollbarWidth: "none",
           msOverflowStyle: "none",
           boxSizing: "border-box",
