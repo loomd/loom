@@ -21,7 +21,7 @@ import { useUpdateChecker } from "./hooks/useUpdateChecker";
 import { useWhatsNew } from "./hooks/useWhatsNew";
 import { useProjectCompositeStates } from "./hooks/useProjectCompositeStates";
 import { markStartup } from "./startupTiming";
-import { getFloatingSidebarEnabled, setFloatingSidebarEnabled as apiSetFloatingSidebarEnabled, getFloatingSidebarPosition, setFloatingSidebarPosition as apiSetFloatingSidebarPosition, getSidebarWidth, setSidebarWidth as setSidebarWidthBackend, getBottomPanelMode, setBottomPanelMode as apiSetBottomPanelMode, getBottomPanelHeight, setBottomPanelHeight as apiSetBottomPanelHeight } from "./api";
+import { getFloatingSidebarEnabled, setFloatingSidebarEnabled as apiSetFloatingSidebarEnabled, getFloatingSidebarPosition, setFloatingSidebarPosition as apiSetFloatingSidebarPosition, getSidebarWidth, setSidebarWidth as setSidebarWidthBackend, getBottomPanelMode, setBottomPanelMode as apiSetBottomPanelMode, getBottomPanelHeight, setBottomPanelHeight as apiSetBottomPanelHeight, getShellBorderEnabled, setShellBorderEnabled as apiSetShellBorderEnabled, getShellBorderColor, setShellBorderColor as apiSetShellBorderColor } from "./api";
 import { AgentManagementPage } from "./pages/AgentManagementPage";
 import { listen } from "@tauri-apps/api/event";
 import type { Template } from "./types";
@@ -127,6 +127,14 @@ function App() {
 		const v = parseInt(saved, 10);
 		return Number.isFinite(v) && v > 0 ? v : null;
 	});
+	const [shellBorderEnabled, setShellBorderEnabled] = useState<boolean>(() => {
+		const saved = safeGetItem("loom_shell_border_enabled");
+		return saved === "true";
+	});
+	const [shellBorderColor, setShellBorderColor] = useState<string>(() => {
+		const saved = safeGetItem("loom_shell_border_color");
+		return saved || "#8b5cf6";
+	});
 
 	useEffect(() => {
 		safeSetItem("loom_sidebar_width", sidebarWidth.toString());
@@ -141,6 +149,8 @@ function App() {
 		safeSetItem("loom_bottom_panel_height", bottomPanelUserHeight === null ? "0" : String(bottomPanelUserHeight));
 		apiSetBottomPanelHeight(bottomPanelUserHeight ?? 0).catch(() => {});
 	}, [bottomPanelUserHeight]);
+	useEffect(() => { safeSetItem("loom_shell_border_enabled", String(!!shellBorderEnabled)); }, [shellBorderEnabled]);
+	useEffect(() => { safeSetItem("loom_shell_border_color", shellBorderColor || "#8b5cf6"); }, [shellBorderColor]);
 
 	// Load sidebar width from Rust file-backed config on mount
 	useEffect(() => {
@@ -166,6 +176,16 @@ function App() {
 			.catch(() => {});
 		getBottomPanelHeight()
 			.then((h) => { if (h > 0) setBottomPanelUserHeight(h); })
+			.catch(() => {});
+		getShellBorderEnabled()
+			.then((enabled) => {
+				if (typeof enabled === "boolean") setShellBorderEnabled(enabled);
+			})
+			.catch(() => {});
+		getShellBorderColor()
+			.then((color) => {
+				if (typeof color === "string" && color) setShellBorderColor(color);
+			})
 			.catch(() => {});
 	}, []);
 
@@ -242,6 +262,20 @@ function App() {
 		setBottomPanelMode(mode);
 		apiSetBottomPanelMode(mode).catch((err) =>
 			console.error("Failed to persist bottom panel mode:", err)
+		);
+	}, []);
+
+	const handleShellBorderEnabledChange = useCallback((enabled: boolean) => {
+		setShellBorderEnabled(enabled);
+		apiSetShellBorderEnabled(enabled).catch((err) =>
+			console.error("Failed to persist shell border enabled:", err)
+		);
+	}, []);
+
+	const handleShellBorderColorChange = useCallback((color: string) => {
+		setShellBorderColor(color);
+		apiSetShellBorderColor(color).catch((err) =>
+			console.error("Failed to persist shell border color:", err)
 		);
 	}, []);
 
@@ -357,7 +391,7 @@ function App() {
 							{p.projects.length === 0 ? <EmptyState onAdd={() => p.setShowModal(true)} t={t} /> : (
 								p.projects.map((proj) => (
 									<div key={proj.id} style={{ display: proj.id === p.selectedProjectId ? "flex" : "none", flexDirection: "column", flex: 1, minHeight: 0, overflow: "hidden" }}>
-										<ProjectWorkspace isSidebarCollapsed={actualCollapsed} onToggleSidebar={sidebarCollapseEnabled ? () => setIsCollapsed(!isCollapsed) : undefined} project={proj} isVisible={page === "workspace" && proj.id === p.selectedProjectId} onUnregisterProject={p.handleUnregisterProject} theme={theme.theme} fontSize={theme.terminalFontSize} bottomPanelEmbedded={floatingSidebarEnabled && floatingSidebarPosition === "bottom" && bottomPanelMode === "embedded"} bottomPanelHeight={floatingSidebarEnabled && floatingSidebarPosition === "bottom" && bottomPanelMode === "embedded" ? bottomPanelHeight : 0} />
+										<ProjectWorkspace isSidebarCollapsed={actualCollapsed} onToggleSidebar={sidebarCollapseEnabled ? () => setIsCollapsed(!isCollapsed) : undefined} project={proj} isVisible={page === "workspace" && proj.id === p.selectedProjectId} onUnregisterProject={p.handleUnregisterProject} theme={theme.theme} fontSize={theme.terminalFontSize} bottomPanelEmbedded={floatingSidebarEnabled && floatingSidebarPosition === "bottom" && bottomPanelMode === "embedded"} bottomPanelHeight={floatingSidebarEnabled && floatingSidebarPosition === "bottom" && bottomPanelMode === "embedded" ? bottomPanelHeight : 0} shellBorderEnabled={shellBorderEnabled} shellBorderColor={shellBorderColor} />
 									</div>
 								))
 							)}
@@ -387,6 +421,10 @@ function App() {
 								onSidebarCollapseEnabledChange={handleSidebarCollapseEnabledChange}
 								bottomPanelMode={bottomPanelMode}
 								onBottomPanelModeChange={handleBottomPanelModeChange}
+								shellBorderEnabled={shellBorderEnabled}
+								onShellBorderEnabledChange={handleShellBorderEnabledChange}
+								shellBorderColor={shellBorderColor}
+								onShellBorderColorChange={handleShellBorderColorChange}
 							/>
 						</div>
 						<div style={{ display: page === "agents" ? "flex" : "none", flexDirection: "column", flex: 1, minHeight: 0, overflow: "auto" }}>

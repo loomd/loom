@@ -521,3 +521,15 @@ export const getRestoreTerminals = (): Promise<boolean> =>
 export const setRestoreTerminals = (enabled: boolean): Promise<void> =>
 	invoke("set_restore_terminals", { enabled });
 
+export const getShellBorderEnabled = (): Promise<boolean> =>
+	invoke("get_shell_border_enabled");
+
+export const setShellBorderEnabled = (enabled: boolean): Promise<void> =>
+	invoke("set_shell_border_enabled", { enabled });
+
+export const getShellBorderColor = (): Promise<string> =>
+	invoke("get_shell_border_color");
+
+export const setShellBorderColor = (color: string): Promise<void> =>
+	invoke("set_shell_border_color", { color });
+

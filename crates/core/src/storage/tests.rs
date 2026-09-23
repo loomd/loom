@@ -90,6 +90,8 @@ let original = AppConfig {
 		bottom_panel_mode: "embedded".to_string(),
 		bottom_panel_height: 0,
 		restore_terminals: true,
+		shell_border_enabled: false,
+		shell_border_color: "#8b5cf6".to_string(),
 		agent_skill_map: HashMap::new(),
 		floating_sidebar_enabled: true,
 		floating_sidebar_position: "right".to_string(),

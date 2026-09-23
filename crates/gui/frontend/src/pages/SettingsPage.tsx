@@ -36,6 +36,10 @@ interface Props {
 	onSidebarCollapseEnabledChange: (enabled: boolean) => void;
 	bottomPanelMode: "embedded" | "floating";
 	onBottomPanelModeChange: (mode: "embedded" | "floating") => void;
+	shellBorderEnabled?: boolean;
+	onShellBorderEnabledChange?: (enabled: boolean) => void;
+	shellBorderColor?: string;
+	onShellBorderColorChange?: (color: string) => void;
 }
 
 type Tab = "general" | "tools" | "env" | "libs";
@@ -64,6 +68,10 @@ export default function SettingsPage({
 	onSidebarCollapseEnabledChange,
 	bottomPanelMode,
 	onBottomPanelModeChange,
+	shellBorderEnabled,
+	onShellBorderEnabledChange,
+	shellBorderColor,
+	onShellBorderColorChange,
 }: Props) {
 	const { t } = useI18n();
 	const [activeSubTab, setActiveSubTab] = useState<Tab>("general");
@@ -171,6 +179,10 @@ export default function SettingsPage({
 						onSidebarCollapseEnabledChange={onSidebarCollapseEnabledChange}
 						bottomPanelMode={bottomPanelMode}
 						onBottomPanelModeChange={onBottomPanelModeChange}
+						shellBorderEnabled={shellBorderEnabled}
+						onShellBorderEnabledChange={onShellBorderEnabledChange}
+						shellBorderColor={shellBorderColor}
+						onShellBorderColorChange={onShellBorderColorChange}
 					/>
 				)}
 				{activeSubTab === "tools" && <CliToolsTab />}

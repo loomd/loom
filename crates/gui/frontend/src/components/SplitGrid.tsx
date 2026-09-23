@@ -125,7 +125,7 @@ export function SplitGrid({ cols, rows, areas, grid, layoutKey, projectId, child
       gridTemplateColumns: grid ? storedCol.map(w => `${w}fr`).join(' ') : undefined,
       gridTemplateRows: grid ? storedRow.map(w => `${w}fr`).join(' ') : undefined,
       gridTemplateAreas: grid ? areas : undefined,
-      gap: grid ? 1 : 0,
+      gap: 0,
       backgroundColor: grid ? 'var(--border-subtle, #27272a)' : undefined,
     }}>
       {children}

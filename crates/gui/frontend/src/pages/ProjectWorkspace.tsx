@@ -27,9 +27,11 @@ interface Props {
   onToggleSidebar?: () => void;
   bottomPanelEmbedded?: boolean;
   bottomPanelHeight?: number;
+  shellBorderEnabled?: boolean;
+  shellBorderColor?: string;
 }
 
-export default function ProjectWorkspace({ project, isVisible, onUnregisterProject, theme, fontSize, isSidebarCollapsed, onToggleSidebar, bottomPanelEmbedded, bottomPanelHeight }: Props) {
+export default function ProjectWorkspace({ project, isVisible, onUnregisterProject, theme, fontSize, isSidebarCollapsed, onToggleSidebar, bottomPanelEmbedded, bottomPanelHeight, shellBorderEnabled, shellBorderColor }: Props) {
   const { t } = useI18n();
   const toast = useToast();
 
@@ -798,6 +800,8 @@ const closeActiveByShortcut = useCallback(() => {
           onAddTerminal={openSpawnPanel}
           onPaneFocus={setActiveTabId}
           projectId={project.id}
+          shellBorderEnabled={shellBorderEnabled}
+          shellBorderColor={shellBorderColor}
         />
 
         {tabs.map(tab => {

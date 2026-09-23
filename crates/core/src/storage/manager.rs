@@ -2258,6 +2258,30 @@ pub fn set_restore_terminals(enabled: bool) -> Result<()> {
     Ok(())
 }
 
+pub fn get_shell_border_enabled() -> Result<bool> {
+    let config = load_config()?;
+    Ok(config.shell_border_enabled)
+}
+
+pub fn set_shell_border_enabled(enabled: bool) -> Result<()> {
+    let mut config = load_config()?;
+    config.shell_border_enabled = enabled;
+    save_config(&config)?;
+    Ok(())
+}
+
+pub fn get_shell_border_color() -> Result<String> {
+    let config = load_config()?;
+    Ok(config.shell_border_color.clone())
+}
+
+pub fn set_shell_border_color(color: String) -> Result<()> {
+    let mut config = load_config()?;
+    config.shell_border_color = color;
+    save_config(&config)?;
+    Ok(())
+}
+
 pub fn get_global_env_vars() -> Result<Vec<GlobalEnvVar>> {
     let config = load_config()?;
     Ok(config.env_vars.clone())

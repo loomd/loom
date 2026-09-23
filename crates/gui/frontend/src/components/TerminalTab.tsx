@@ -20,6 +20,8 @@ interface TerminalTabProps {
   onFocus?: () => void;
   theme?: 'dark' | 'day' | 'gray';
   fontSize?: string | number;
+  borderColor?: string;
+  borderStyle?: React.CSSProperties;
 }
 
 const parseFontSize = (size?: string | number): number => {
@@ -102,7 +104,7 @@ const getTerminalTheme = (theme?: 'dark' | 'day' | 'gray') => {
   }
 };
 
-export function TerminalTab({ sessionId, cwd, command, args, env, initialCommand, spawnDelay, isVisible, isFocused, onFocus, theme, fontSize }: TerminalTabProps) {
+export function TerminalTab({ sessionId, cwd, command, args, env, initialCommand, spawnDelay, isVisible, isFocused, onFocus, theme, fontSize, borderColor, borderStyle }: TerminalTabProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const outerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
@@ -681,9 +683,10 @@ export function TerminalTab({ sessionId, cwd, command, args, env, initialCommand
         margin: '0px',
         overflow: 'hidden',
         position: 'relative',
-        borderRadius: '4px',
-        border: '1px solid var(--border-subtle, #27272a)',
-        boxSizing: 'border-box'
+        borderRadius: borderStyle ? undefined : '4px',
+        border: borderStyle ? undefined : (borderColor ? `2px solid ${borderColor}` : '1px solid var(--border-subtle, #27272a)'),
+        boxSizing: 'border-box',
+        ...borderStyle,
       }}
     >
       <style>{`

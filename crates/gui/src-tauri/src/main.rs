@@ -892,6 +892,26 @@ fn set_restore_terminals(enabled: bool) -> Result<(), String> {
     cstore::set_restore_terminals(enabled).map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+fn get_shell_border_enabled() -> Result<bool, String> {
+    cstore::get_shell_border_enabled().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn set_shell_border_enabled(enabled: bool) -> Result<(), String> {
+    cstore::set_shell_border_enabled(enabled).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn get_shell_border_color() -> Result<String, String> {
+    cstore::get_shell_border_color().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn set_shell_border_color(color: String) -> Result<(), String> {
+    cstore::set_shell_border_color(color).map_err(|e| e.to_string())
+}
+
 fn execute_test_command(cmd: &str, args_json: &str) -> Result<String, String> {
     let args: serde_json::Value = serde_json::from_str(args_json)
         .map_err(|e| format!("Failed to parse TAURI_TEST_ARGS: {}", e))?;
@@ -1560,6 +1580,28 @@ fn execute_test_command(cmd: &str, args_json: &str) -> Result<String, String> {
             set_restore_terminals(enabled)?;
             Ok("null".to_string())
         }
+        "get_shell_border_enabled" => {
+            let res = get_shell_border_enabled()?;
+            serde_json::to_string(&res).map_err(|e| e.to_string())
+        }
+        "set_shell_border_enabled" => {
+            let enabled = args["enabled"]
+                .as_bool()
+                .ok_or_else(|| "Missing argument 'enabled'".to_string())?;
+            set_shell_border_enabled(enabled)?;
+            Ok("null".to_string())
+        }
+        "get_shell_border_color" => {
+            let res = get_shell_border_color()?;
+            serde_json::to_string(&res).map_err(|e| e.to_string())
+        }
+        "set_shell_border_color" => {
+            let color = args["color"]
+                .as_str()
+                .ok_or_else(|| "Missing argument 'color'".to_string())?;
+            set_shell_border_color(color.to_string())?;
+            Ok("null".to_string())
+        }
         _ => Err(format!("Unknown command '{}'", cmd)),
     }
 }
@@ -2226,7 +2268,11 @@ fn main() {
             save_project_layout,
             clear_project_terminals,
             get_restore_terminals,
-            set_restore_terminals
+            set_restore_terminals,
+            get_shell_border_enabled,
+            set_shell_border_enabled,
+            get_shell_border_color,
+            set_shell_border_color
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

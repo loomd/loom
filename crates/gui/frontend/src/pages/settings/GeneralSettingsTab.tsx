@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import { useI18n } from "../../I18nContext";
 import { useToast } from "../../ToastContext";
 import WhatsNewDialog from "../../components/WhatsNewDialog";
-import { getAutostart, setAutostart, getUpdateCheckInterval, setUpdateCheckInterval, getRestoreTerminals, setRestoreTerminals, getWhatsNewAll } from "../../api";
+import { getAutostart, setAutostart, getUpdateCheckInterval, setUpdateCheckInterval, getRestoreTerminals, setRestoreTerminals, getShellBorderEnabled, setShellBorderEnabled, getShellBorderColor, setShellBorderColor, getWhatsNewAll } from "../../api";
 import type { DownloadProgress } from "../../hooks/useUpdateChecker";
 
 interface Props {
@@ -35,6 +35,10 @@ interface Props {
 	onSidebarCollapseEnabledChange: (enabled: boolean) => void;
 	bottomPanelMode: "embedded" | "floating";
 	onBottomPanelModeChange: (mode: "embedded" | "floating") => void;
+	shellBorderEnabled?: boolean;
+	onShellBorderEnabledChange?: (enabled: boolean) => void;
+	shellBorderColor?: string;
+	onShellBorderColorChange?: (color: string) => void;
 }
 
 const PRESETS = [
@@ -45,6 +49,21 @@ const PRESETS = [
 	"Outfit",
 	"JetBrains Mono",
 	"Fira Code",
+];
+
+const SHELL_BORDER_PRESET_COLORS = [
+	{ label: "紫色 (默认)", value: "#8b5cf6" },
+	{ label: "科技蓝", value: "#3b82f6" },
+	{ label: "青翠绿", value: "#10b981" },
+	{ label: "电光青", value: "#06b6d4" },
+	{ label: "亮黄色", value: "#eab308" },
+	{ label: "落日橙", value: "#f97316" },
+	{ label: "玫红色", value: "#f43f5e" },
+	{ label: "亮粉色", value: "#ec4899" },
+	{ label: "霓虹紫", value: "#a855f7" },
+	{ label: "薄荷绿", value: "#14b8a6" },
+	{ label: "琥珀色", value: "#f59e0b" },
+	{ label: "纯洁白", value: "#e4e4e7" },
 ];
 
 export default function GeneralSettingsTab({
@@ -71,12 +90,23 @@ export default function GeneralSettingsTab({
 	onSidebarCollapseEnabledChange,
 	bottomPanelMode,
 	onBottomPanelModeChange,
+	shellBorderEnabled,
+	onShellBorderEnabledChange,
+	shellBorderColor,
+	onShellBorderColorChange,
 }: Props) {
 	const { t, language, setLanguage } = useI18n();
 	const toast = useToast();
 	const [appVersion, setAppVersion] = useState<string>("0.1.5");
 	const [autostartEnabled, setAutostartEnabled] = useState<boolean>(false);
 	const [restoreTerminalsEnabled, setRestoreTerminalsEnabled] = useState<boolean>(true);
+	const [internalBorderEnabled, setInternalBorderEnabled] = useState<boolean>(false);
+	const [internalBorderColor, setInternalBorderColor] = useState<string>("#8b5cf6");
+	const [showColorModal, setShowColorModal] = useState<boolean>(false);
+	const [tempColor, setTempColor] = useState<string>("#8b5cf6");
+
+	const isShellBorderEnabled = shellBorderEnabled !== undefined ? shellBorderEnabled : internalBorderEnabled;
+	const currentShellBorderColor = shellBorderColor || internalBorderColor;
 	const [isChecking, setIsChecking] = useState<boolean>(false);
 	const [checkInterval, setCheckInterval] = useState<string>("");
 	const [showChangelog, setShowChangelog] = useState<boolean>(false);
@@ -115,6 +145,21 @@ export default function GeneralSettingsTab({
 		getRestoreTerminals()
 			.then((enabled) => setRestoreTerminalsEnabled(enabled))
 			.catch((err) => console.error("Failed to fetch restore terminals status:", err));
+
+		getShellBorderEnabled()
+			.then((enabled) => {
+				if (typeof enabled === "boolean") setInternalBorderEnabled(enabled);
+			})
+			.catch(() => {});
+
+		getShellBorderColor()
+			.then((color) => {
+				if (typeof color === "string" && color) {
+					setInternalBorderColor(color);
+					setTempColor(color);
+				}
+			})
+			.catch(() => {});
 
 		getUpdateCheckInterval()
 			.then((interval) => setCheckInterval(interval || ""))
@@ -165,6 +210,36 @@ export default function GeneralSettingsTab({
 			console.error("Failed to set restore terminals status:", err);
 			toast.error(t("settings.toast.restoreTerminalsSaveFailed"));
 		}
+	};
+
+	const handleShellBorderToggle = async (enabled: boolean) => {
+		try {
+			await setShellBorderEnabled(enabled);
+			setInternalBorderEnabled(enabled);
+			onShellBorderEnabledChange?.(enabled);
+			toast.success(t("settings.toast.shellBorderSaved"));
+		} catch (err) {
+			console.error("Failed to set shell border status:", err);
+			toast.error(t("settings.toast.shellBorderSaveFailed"));
+		}
+	};
+
+	const handleSaveBorderColor = async (color: string) => {
+		try {
+			await setShellBorderColor(color);
+			setInternalBorderColor(color);
+			onShellBorderColorChange?.(color);
+			toast.success(t("settings.toast.shellBorderColorSaved"));
+			setShowColorModal(false);
+		} catch (err) {
+			console.error("Failed to set shell border color:", err);
+			toast.error(t("settings.toast.shellBorderColorSaveFailed"));
+		}
+	};
+
+	const handleOpenColorModal = () => {
+		setTempColor(currentShellBorderColor);
+		setShowColorModal(true);
 	};
 
 	const handleThemeSelect = async (newTheme: "dark" | "day" | "gray") => {
@@ -1310,6 +1385,140 @@ export default function GeneralSettingsTab({
 						</button>
 					</div>
 
+					{/* Shell Border Toggle */}
+					<div
+						style={{
+							display: "flex",
+							alignItems: "center",
+							justifyContent: "space-between",
+							paddingTop: "16px",
+							borderTop: "1px solid var(--border-subtle)",
+						}}
+					>
+						<div>
+							<div
+								style={{
+									fontSize: "14px",
+									fontWeight: 500,
+									color: "var(--text-primary)",
+								}}
+							>
+								{t("settings.system.shellBorder")}
+							</div>
+							<div
+								style={{
+									fontSize: "12px",
+									color: "var(--text-secondary)",
+									marginTop: "4px",
+								}}
+							>
+								{t("settings.system.shellBorderDesc")}
+							</div>
+						</div>
+						<button
+							data-testid="shell-border-toggle"
+							onClick={() => handleShellBorderToggle(!isShellBorderEnabled)}
+							style={{
+								background: isShellBorderEnabled
+									? "var(--accent-purple)"
+									: "var(--bg-elevated)",
+								border: isShellBorderEnabled
+									? "1px solid var(--accent-purple)"
+									: "1px solid var(--border-mid)",
+								borderRadius: "20px",
+								width: "48px",
+								height: "24px",
+								position: "relative",
+								cursor: "pointer",
+								transition: "all 200ms ease",
+								padding: 0,
+							}}
+						>
+							<div
+								style={{
+									width: "18px",
+									height: "18px",
+									borderRadius: "50%",
+									background: isShellBorderEnabled
+										? "#ffffff"
+										: "var(--text-secondary)",
+									position: "absolute",
+									top: "2px",
+									left: isShellBorderEnabled ? "26px" : "3px",
+									transition: "all 200ms ease",
+								}}
+							/>
+						</button>
+					</div>
+
+					{/* Shell Border Color Selection */}
+					<div
+						style={{
+							display: "flex",
+							alignItems: "center",
+							justifyContent: "space-between",
+							paddingTop: "16px",
+							borderTop: "1px solid var(--border-subtle)",
+						}}
+					>
+						<div>
+							<div
+								style={{
+									fontSize: "14px",
+									fontWeight: 500,
+									color: "var(--text-primary)",
+								}}
+							>
+								{t("settings.system.shellBorderColor")}
+							</div>
+							<div
+								style={{
+									fontSize: "12px",
+									color: "var(--text-secondary)",
+									marginTop: "4px",
+								}}
+							>
+								{t("settings.system.shellBorderColorDesc")}
+							</div>
+						</div>
+						<button
+							data-testid="shell-border-color-btn"
+							onClick={handleOpenColorModal}
+							style={{
+								display: "inline-flex",
+								alignItems: "center",
+								gap: "8px",
+								padding: "6px 12px",
+								backgroundColor: "var(--bg-elevated, #18181b)",
+								border: "1px solid var(--border-mid, #3f3f46)",
+								borderRadius: "6px",
+								cursor: "pointer",
+								transition: "border-color 150ms ease",
+							}}
+						>
+							<span
+								style={{
+									width: "14px",
+									height: "14px",
+									borderRadius: "3px",
+									backgroundColor: currentShellBorderColor,
+									border: "1px solid rgba(255, 255, 255, 0.25)",
+									display: "inline-block",
+								}}
+							/>
+							<span
+								style={{
+									color: "var(--text-primary)",
+									fontSize: "13px",
+									fontFamily: "monospace",
+									fontWeight: 500,
+								}}
+							>
+								{currentShellBorderColor}
+							</span>
+						</button>
+					</div>
+
 					</div>
 			</div>
 
@@ -1662,6 +1871,217 @@ export default function GeneralSettingsTab({
 					closeOnBackdrop={true}
 					onClose={() => setShowChangelog(false)}
 				/>
+			)}
+
+			{showColorModal && (
+				<div
+					data-testid="shell-border-color-modal"
+					style={{
+						position: "fixed",
+						top: 0,
+						left: 0,
+						right: 0,
+						bottom: 0,
+						backgroundColor: "rgba(0, 0, 0, 0.65)",
+						backdropFilter: "blur(4px)",
+						display: "flex",
+						alignItems: "center",
+						justifyContent: "center",
+						zIndex: 1000,
+					}}
+					onClick={() => setShowColorModal(false)}
+				>
+					<div
+						style={{
+							backgroundColor: "var(--bg-elevated, #18181b)",
+							border: "1px solid var(--border-mid, #3f3f46)",
+							borderRadius: "12px",
+							padding: "24px",
+							width: "90%",
+							maxWidth: "420px",
+							boxShadow: "0 20px 40px rgba(0, 0, 0, 0.4)",
+							display: "flex",
+							flexDirection: "column",
+							gap: "18px",
+						}}
+						onClick={(e) => e.stopPropagation()}
+					>
+						{/* Header */}
+						<div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+							<div style={{ fontSize: "15px", fontWeight: 600, color: "var(--text-primary)" }}>
+								选择 shell 边框颜色
+							</div>
+							<button
+								onClick={() => setShowColorModal(false)}
+								style={{
+									background: "transparent",
+									border: "none",
+									color: "var(--text-secondary)",
+									fontSize: "18px",
+									cursor: "pointer",
+									padding: "4px 8px",
+									borderRadius: "4px",
+									lineHeight: 1,
+								}}
+							>
+								✕
+							</button>
+						</div>
+
+						{/* Presets Palette */}
+						<div>
+							<div style={{ fontSize: "12px", color: "var(--text-secondary)", marginBottom: "8px" }}>
+								预设色彩画板
+							</div>
+							<div style={{ display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: "8px" }}>
+								{SHELL_BORDER_PRESET_COLORS.map((c) => {
+									const isSelected = tempColor.toLowerCase() === c.value.toLowerCase();
+									return (
+										<button
+											key={c.value}
+											title={c.label}
+											onClick={() => setTempColor(c.value)}
+											style={{
+												width: "100%",
+												aspectRatio: "1",
+												backgroundColor: c.value,
+												borderRadius: "6px",
+												border: isSelected ? "2px solid #ffffff" : "1px solid rgba(255,255,255,0.15)",
+												outline: isSelected ? `2px solid ${c.value}` : "none",
+												outlineOffset: "2px",
+												cursor: "pointer",
+												display: "flex",
+												alignItems: "center",
+												justifyContent: "center",
+												transition: "transform 120ms ease",
+												transform: isSelected ? "scale(1.06)" : "none",
+											}}
+										>
+											{isSelected && (
+												<span style={{ color: "#ffffff", fontSize: "13px", fontWeight: "bold" }}>
+													✓
+												</span>
+											)}
+										</button>
+									);
+								})}
+							</div>
+						</div>
+
+						{/* Custom Color Row */}
+						<div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+							<div style={{ fontSize: "12px", color: "var(--text-secondary)" }}>
+								自定义取色
+							</div>
+							<div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+								<input
+									type="color"
+									value={tempColor.startsWith("#") && tempColor.length === 7 ? tempColor : "#8b5cf6"}
+									onChange={(e) => setTempColor(e.target.value)}
+									style={{
+										width: "44px",
+										height: "36px",
+										padding: "0",
+										border: "1px solid var(--border-mid, #3f3f46)",
+										borderRadius: "6px",
+										cursor: "pointer",
+										backgroundColor: "transparent",
+									}}
+								/>
+								<input
+									type="text"
+									value={tempColor}
+									onChange={(e) => setTempColor(e.target.value)}
+									placeholder="#8b5cf6"
+									style={{
+										flex: 1,
+										padding: "8px 12px",
+										backgroundColor: "var(--bg-input, #09090b)",
+										border: "1px solid var(--border-subtle, #27272a)",
+										borderRadius: "6px",
+										color: "var(--text-primary, #ffffff)",
+										fontSize: "13px",
+										fontFamily: "monospace",
+										outline: "none",
+									}}
+								/>
+							</div>
+						</div>
+
+						{/* Preview */}
+						<div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+							<div style={{ fontSize: "12px", color: "var(--text-secondary)" }}>
+								边框线条效果预览
+							</div>
+							<div
+								style={{
+									height: "52px",
+									backgroundColor: "#121214",
+									borderRadius: "4px",
+									border: `2px solid ${tempColor}`,
+									display: "flex",
+									alignItems: "center",
+									justifyContent: "space-between",
+									padding: "0 14px",
+									color: "var(--text-secondary)",
+									fontSize: "12px",
+									fontFamily: "monospace",
+								}}
+							>
+								<span>$ bash (已派生 Shell)</span>
+								<span style={{ color: tempColor, fontWeight: 600 }}>{tempColor}</span>
+							</div>
+						</div>
+
+						{/* Footer Actions */}
+						<div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: "4px" }}>
+							<button
+								onClick={() => setTempColor("#8b5cf6")}
+								style={{
+									background: "transparent",
+									border: "none",
+									color: "var(--text-tertiary, #71717a)",
+									fontSize: "12px",
+									cursor: "pointer",
+									textDecoration: "underline",
+								}}
+							>
+								重置默认
+							</button>
+							<div style={{ display: "flex", gap: "8px" }}>
+								<button
+									onClick={() => setShowColorModal(false)}
+									style={{
+										padding: "6px 14px",
+										backgroundColor: "var(--bg-elevated, #27272a)",
+										border: "1px solid var(--border-mid, #3f3f46)",
+										borderRadius: "6px",
+										color: "var(--text-secondary)",
+										fontSize: "13px",
+										cursor: "pointer",
+									}}
+								>
+									取消
+								</button>
+								<button
+									onClick={() => handleSaveBorderColor(tempColor)}
+									style={{
+										padding: "6px 16px",
+										backgroundColor: "var(--accent-purple, #8b5cf6)",
+										border: "none",
+										borderRadius: "6px",
+										color: "#ffffff",
+										fontSize: "13px",
+										fontWeight: 500,
+										cursor: "pointer",
+									}}
+								>
+									确定
+								</button>
+							</div>
+						</div>
+					</div>
+				</div>
 			)}
 		</div>
 	);

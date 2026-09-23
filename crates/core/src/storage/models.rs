@@ -110,6 +110,14 @@ pub fn default_restore_terminals() -> bool {
     true
 }
 
+pub fn default_shell_border_enabled() -> bool {
+    false
+}
+
+pub fn default_shell_border_color() -> String {
+    "#8b5cf6".to_string()
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Project {
     pub id: String,
@@ -208,6 +216,10 @@ pub struct LoomStorage {
     pub bottom_panel_height: u32,
     #[serde(default = "default_restore_terminals")]
     pub restore_terminals: bool,
+    #[serde(default = "default_shell_border_enabled")]
+    pub shell_border_enabled: bool,
+    #[serde(default = "default_shell_border_color")]
+    pub shell_border_color: String,
     #[serde(default)]
     pub agent_skill_map: HashMap<String, String>,
 }
@@ -240,6 +252,8 @@ impl Default for LoomStorage {
             bottom_panel_mode: default_bottom_panel_mode(),
             bottom_panel_height: default_bottom_panel_height(),
             restore_terminals: default_restore_terminals(),
+            shell_border_enabled: default_shell_border_enabled(),
+            shell_border_color: default_shell_border_color(),
             agent_skill_map: HashMap::new(),
         }
     }
