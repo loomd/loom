@@ -17,6 +17,7 @@ pub use manager::{
     get_floating_sidebar_position, set_floating_sidebar_position,
     get_sidebar_width, set_sidebar_width,
     get_bottom_panel_mode, set_bottom_panel_mode,
+    get_bottom_panel_height, set_bottom_panel_height,
     get_restore_terminals, set_restore_terminals,
     get_current_state_path, get_current_state, save_current_state,
     get_selected_project_id, save_selected_project_id,

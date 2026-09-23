@@ -48,6 +48,7 @@ describe("App", () => {
       if (cmd === "get_floating_sidebar_enabled") return Promise.resolve(false);
       if (cmd === "get_floating_sidebar_position") return Promise.resolve("right");
       if (cmd === "get_bottom_panel_mode") return Promise.resolve("embedded");
+      if (cmd === "get_bottom_panel_height") return Promise.resolve(0);
       return Promise.resolve(undefined);
     });
 
@@ -74,6 +75,7 @@ describe("App", () => {
       if (cmd === "get_floating_sidebar_enabled") return Promise.resolve(false);
       if (cmd === "get_floating_sidebar_position") return Promise.resolve("right");
       if (cmd === "get_bottom_panel_mode") return Promise.resolve("embedded");
+      if (cmd === "get_bottom_panel_height") return Promise.resolve(0);
       return Promise.resolve(undefined);
     });
 
@@ -101,6 +103,7 @@ describe("App", () => {
       if (cmd === "get_floating_sidebar_enabled") return Promise.resolve(false);
       if (cmd === "get_floating_sidebar_position") return Promise.resolve("right");
       if (cmd === "get_bottom_panel_mode") return Promise.resolve("embedded");
+      if (cmd === "get_bottom_panel_height") return Promise.resolve(0);
       return Promise.resolve(undefined);
     });
 

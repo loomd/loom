@@ -21,7 +21,7 @@ import { useUpdateChecker } from "./hooks/useUpdateChecker";
 import { useWhatsNew } from "./hooks/useWhatsNew";
 import { useProjectCompositeStates } from "./hooks/useProjectCompositeStates";
 import { markStartup } from "./startupTiming";
-import { getFloatingSidebarEnabled, setFloatingSidebarEnabled as apiSetFloatingSidebarEnabled, getFloatingSidebarPosition, setFloatingSidebarPosition as apiSetFloatingSidebarPosition, getSidebarWidth, setSidebarWidth as setSidebarWidthBackend, getBottomPanelMode, setBottomPanelMode as apiSetBottomPanelMode } from "./api";
+import { getFloatingSidebarEnabled, setFloatingSidebarEnabled as apiSetFloatingSidebarEnabled, getFloatingSidebarPosition, setFloatingSidebarPosition as apiSetFloatingSidebarPosition, getSidebarWidth, setSidebarWidth as setSidebarWidthBackend, getBottomPanelMode, setBottomPanelMode as apiSetBottomPanelMode, getBottomPanelHeight, setBottomPanelHeight as apiSetBottomPanelHeight } from "./api";
 import { AgentManagementPage } from "./pages/AgentManagementPage";
 import { listen } from "@tauri-apps/api/event";
 import type { Template } from "./types";
@@ -121,6 +121,12 @@ function App() {
 		return "embedded";
 	});
 	const [bottomPanelHeight, setBottomPanelHeight] = useState<number>(50);
+	const [bottomPanelUserHeight, setBottomPanelUserHeight] = useState<number | null>(() => {
+		const saved = safeGetItem("loom_bottom_panel_height");
+		if (saved === null) return null;
+		const v = parseInt(saved, 10);
+		return Number.isFinite(v) && v > 0 ? v : null;
+	});
 
 	useEffect(() => {
 		safeSetItem("loom_sidebar_width", sidebarWidth.toString());
@@ -131,6 +137,10 @@ function App() {
 	useEffect(() => { safeSetItem("loom_floating_sidebar_enabled", floatingSidebarEnabled.toString()); }, [floatingSidebarEnabled]);
 	useEffect(() => { safeSetItem("loom_floating_sidebar_position", floatingSidebarPosition); }, [floatingSidebarPosition]);
 	useEffect(() => { safeSetItem("loom_bottom_panel_mode", bottomPanelMode); }, [bottomPanelMode]);
+	useEffect(() => {
+		safeSetItem("loom_bottom_panel_height", bottomPanelUserHeight === null ? "0" : String(bottomPanelUserHeight));
+		apiSetBottomPanelHeight(bottomPanelUserHeight ?? 0).catch(() => {});
+	}, [bottomPanelUserHeight]);
 
 	// Load sidebar width from Rust file-backed config on mount
 	useEffect(() => {
@@ -153,6 +163,9 @@ function App() {
 			.then((mode) => {
 				if (mode === "embedded" || mode === "floating") setBottomPanelMode(mode);
 			})
+			.catch(() => {});
+		getBottomPanelHeight()
+			.then((h) => { if (h > 0) setBottomPanelUserHeight(h); })
 			.catch(() => {});
 	}, []);
 
@@ -427,6 +440,8 @@ function App() {
 				onRegisterProject={() => p.setShowModal(true)}
 				onHeightChange={(h: number) => setBottomPanelHeight(h)}
 				page={page}
+				userHeight={bottomPanelUserHeight}
+				onUserHeightChange={setBottomPanelUserHeight}
 			/>
 		</div>
 	);

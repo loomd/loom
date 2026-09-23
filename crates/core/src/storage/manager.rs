@@ -2234,6 +2234,18 @@ pub fn set_bottom_panel_mode(mode: String) -> Result<()> {
     Ok(())
 }
 
+pub fn get_bottom_panel_height() -> Result<u32> {
+    let config = load_config()?;
+    Ok(config.bottom_panel_height)
+}
+
+pub fn set_bottom_panel_height(height: u32) -> Result<()> {
+    let mut config = load_config()?;
+    config.bottom_panel_height = height;
+    save_config(&config)?;
+    Ok(())
+}
+
 pub fn get_restore_terminals() -> Result<bool> {
     let config = load_config()?;
     Ok(config.restore_terminals)

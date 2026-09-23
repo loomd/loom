@@ -276,6 +276,25 @@ body.theme-day {
   background: var(--accent-purple);
 }
 
+/* ─── Bottom Panel Resizer Drag Handle ─── */
+.bottom-panel-resizer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 4px;
+  margin-top: -2px;
+  cursor: row-resize;
+  background: transparent;
+  z-index: 10001;
+  transition: background-color 200ms;
+}
+
+.bottom-panel-resizer:hover,
+.bottom-panel-resizer:active {
+  background: var(--accent-purple);
+}
+
 /* ─── Sidebar Toggle Mini Button ─── */
 .sidebar-toggle-mini-btn {
   display: inline-flex;

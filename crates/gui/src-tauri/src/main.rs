@@ -331,6 +331,16 @@ fn set_bottom_panel_mode(mode: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn get_bottom_panel_height() -> Result<u32, String> {
+    cstore::get_bottom_panel_height().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn set_bottom_panel_height(height: u32) -> Result<(), String> {
+    cstore::set_bottom_panel_height(height).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 fn get_projects() -> Result<Vec<Project>, String> {
     cstore::get_projects().map_err(|e| e.to_string())
 }
@@ -1231,6 +1241,17 @@ fn execute_test_command(cmd: &str, args_json: &str) -> Result<String, String> {
             set_bottom_panel_mode(mode.to_string())?;
             Ok("null".to_string())
         }
+        "get_bottom_panel_height" => {
+            let res = get_bottom_panel_height()?;
+            serde_json::to_string(&res).map_err(|e| e.to_string())
+        }
+        "set_bottom_panel_height" => {
+            let height = args["height"]
+                .as_u64()
+                .ok_or_else(|| "Missing argument 'height'".to_string())?;
+            set_bottom_panel_height(height as u32)?;
+            Ok("null".to_string())
+        }
         "get_global_env_vars" => {
             let res = get_global_env_vars()?;
             serde_json::to_string(&res).map_err(|e| e.to_string())
@@ -2128,6 +2149,8 @@ fn main() {
             set_floating_sidebar_position,
             get_bottom_panel_mode,
             set_bottom_panel_mode,
+            get_bottom_panel_height,
+            set_bottom_panel_height,
             log_frontend,
             get_projects,
             create_project,

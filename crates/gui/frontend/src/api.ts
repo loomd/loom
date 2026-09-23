@@ -224,6 +224,12 @@ export const getBottomPanelMode = (): Promise<string> =>
 export const setBottomPanelMode = (mode: string): Promise<void> =>
   invoke("set_bottom_panel_mode", { mode });
 
+export const getBottomPanelHeight = (): Promise<number> =>
+  invoke("get_bottom_panel_height");
+
+export const setBottomPanelHeight = (height: number): Promise<void> =>
+  invoke("set_bottom_panel_height", { height });
+
 // ─── Projects ─────────────────────────────────────────────
 export const getProjects = (): Promise<Project[]> => invoke("get_projects");
 

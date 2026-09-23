@@ -88,6 +88,7 @@ let original = AppConfig {
 		has_onboarded: false,
 		sidebar_width: 170,
 		bottom_panel_mode: "embedded".to_string(),
+		bottom_panel_height: 0,
 		restore_terminals: true,
 		agent_skill_map: HashMap::new(),
 		floating_sidebar_enabled: true,

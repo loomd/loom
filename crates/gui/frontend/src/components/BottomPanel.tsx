@@ -15,6 +15,8 @@ interface BottomPanelProps {
   onRegisterProject?: () => void;
   onHeightChange?: (height: number) => void;
   page?: string;
+  userHeight?: number | null;
+  onUserHeightChange?: (h: number | null) => void;
 }
 
 export default function BottomPanel({
@@ -29,6 +31,8 @@ export default function BottomPanel({
   onRegisterProject,
   onHeightChange,
   page,
+  userHeight,
+  onUserHeightChange,
 }: BottomPanelProps) {
   const { t } = useI18n();
   const [isVisible, setIsVisible] = useState(false);
@@ -63,7 +67,8 @@ export default function BottomPanel({
     return () => ro.disconnect();
   }, [calcRows]);
 
-  const panelHeight = rowCount <= 1 ? 45 : 78;
+  const autoHeight = rowCount <= 1 ? 42 : 78;
+  const panelHeight = userHeight != null ? userHeight : autoHeight;
 
   useEffect(() => {
     if (!onHeightChange || !enabled) return;
@@ -112,6 +117,31 @@ export default function BottomPanel({
     }, 100);
   }, [isEmbedded]);
 
+  // ─── Embedded mode: drag top edge to resize height ────────
+  const handleResizerMouseDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const startY = e.clientY;
+    const startHeight = panelHeight;
+    const handleMouseMove = (moveEvent: MouseEvent) => {
+      const deltaY = startY - moveEvent.clientY;
+      let newHeight = startHeight + deltaY;
+      if (newHeight < 42) newHeight = 42;
+      if (newHeight > 240) newHeight = 240;
+      onUserHeightChange?.(newHeight);
+    };
+    const handleMouseUp = () => {
+      document.removeEventListener("mousemove", handleMouseMove);
+      document.removeEventListener("mouseup", handleMouseUp);
+    };
+    document.addEventListener("mousemove", handleMouseMove);
+    document.addEventListener("mouseup", handleMouseUp);
+  }, [panelHeight, autoHeight, onUserHeightChange]);
+
+  const handleResizerDoubleClick = useCallback(() => {
+    onUserHeightChange?.(null);
+  }, [onUserHeightChange]);
+
   if (!enabled) return null;
 
   return (
@@ -140,6 +170,14 @@ export default function BottomPanel({
           boxSizing: "border-box",
         }}
     >
+      {isEmbedded && (
+        <div
+          className="bottom-panel-resizer"
+          onMouseDown={handleResizerMouseDown}
+          onDoubleClick={handleResizerDoubleClick}
+          title="拖动调整高度 / 双击恢复自动"
+        />
+      )}
       {/* Projects list */}
       <div
         ref={listRef}
@@ -149,7 +187,7 @@ export default function BottomPanel({
           flexWrap: "wrap",
           alignItems: "center",
           alignContent: rowCount >= 3 ? "flex-start" : "center",
-          gap: "4px 4px",
+          gap: "0px 0px",
              padding: "7px 8px 10px 8px",
            overflowY: rowCount >= 3 ? "auto" : "hidden",
           scrollbarWidth: "none",

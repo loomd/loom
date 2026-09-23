@@ -102,6 +102,10 @@ pub fn default_bottom_panel_mode() -> String {
     "embedded".to_string()
 }
 
+pub fn default_bottom_panel_height() -> u32 {
+    0
+}
+
 pub fn default_restore_terminals() -> bool {
     true
 }
@@ -200,6 +204,8 @@ pub struct LoomStorage {
     pub sidebar_width: u32,
     #[serde(default = "default_bottom_panel_mode")]
     pub bottom_panel_mode: String,
+    #[serde(default = "default_bottom_panel_height")]
+    pub bottom_panel_height: u32,
     #[serde(default = "default_restore_terminals")]
     pub restore_terminals: bool,
     #[serde(default)]
@@ -232,6 +238,7 @@ impl Default for LoomStorage {
             floating_sidebar_position: default_floating_sidebar_position(),
             sidebar_width: default_sidebar_width(),
             bottom_panel_mode: default_bottom_panel_mode(),
+            bottom_panel_height: default_bottom_panel_height(),
             restore_terminals: default_restore_terminals(),
             agent_skill_map: HashMap::new(),
         }
