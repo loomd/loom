@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import { useI18n } from "../../I18nContext";
 import { useToast } from "../../ToastContext";
 import WhatsNewDialog from "../../components/WhatsNewDialog";
-import { getAutostart, setAutostart, getUpdateCheckInterval, setUpdateCheckInterval, getRestoreTerminals, setRestoreTerminals, getShellBorderEnabled, setShellBorderEnabled, getShellBorderColor, setShellBorderColor, getWhatsNewAll } from "../../api";
+import { getAutostart, setAutostart, getUpdateCheckInterval, setUpdateCheckInterval, getRestoreTerminals, setRestoreTerminals, getWhatsNewAll } from "../../api";
 import type { DownloadProgress } from "../../hooks/useUpdateChecker";
 
 interface Props {
@@ -90,9 +90,9 @@ export default function GeneralSettingsTab({
 	onSidebarCollapseEnabledChange,
 	bottomPanelMode,
 	onBottomPanelModeChange,
-	shellBorderEnabled,
+	shellBorderEnabled = false,
 	onShellBorderEnabledChange,
-	shellBorderColor,
+	shellBorderColor = "#8b5cf6",
 	onShellBorderColorChange,
 }: Props) {
 	const { t, language, setLanguage } = useI18n();
@@ -100,13 +100,8 @@ export default function GeneralSettingsTab({
 	const [appVersion, setAppVersion] = useState<string>("0.1.5");
 	const [autostartEnabled, setAutostartEnabled] = useState<boolean>(false);
 	const [restoreTerminalsEnabled, setRestoreTerminalsEnabled] = useState<boolean>(true);
-	const [internalBorderEnabled, setInternalBorderEnabled] = useState<boolean>(false);
-	const [internalBorderColor, setInternalBorderColor] = useState<string>("#8b5cf6");
 	const [showColorModal, setShowColorModal] = useState<boolean>(false);
-	const [tempColor, setTempColor] = useState<string>("#8b5cf6");
-
-	const isShellBorderEnabled = shellBorderEnabled !== undefined ? shellBorderEnabled : internalBorderEnabled;
-	const currentShellBorderColor = shellBorderColor || internalBorderColor;
+	const [tempColor, setTempColor] = useState<string>(shellBorderColor);
 	const [isChecking, setIsChecking] = useState<boolean>(false);
 	const [checkInterval, setCheckInterval] = useState<string>("");
 	const [showChangelog, setShowChangelog] = useState<boolean>(false);
@@ -145,21 +140,6 @@ export default function GeneralSettingsTab({
 		getRestoreTerminals()
 			.then((enabled) => setRestoreTerminalsEnabled(enabled))
 			.catch((err) => console.error("Failed to fetch restore terminals status:", err));
-
-		getShellBorderEnabled()
-			.then((enabled) => {
-				if (typeof enabled === "boolean") setInternalBorderEnabled(enabled);
-			})
-			.catch(() => {});
-
-		getShellBorderColor()
-			.then((color) => {
-				if (typeof color === "string" && color) {
-					setInternalBorderColor(color);
-					setTempColor(color);
-				}
-			})
-			.catch(() => {});
 
 		getUpdateCheckInterval()
 			.then((interval) => setCheckInterval(interval || ""))
@@ -212,33 +192,19 @@ export default function GeneralSettingsTab({
 		}
 	};
 
-	const handleShellBorderToggle = async (enabled: boolean) => {
-		try {
-			await setShellBorderEnabled(enabled);
-			setInternalBorderEnabled(enabled);
-			onShellBorderEnabledChange?.(enabled);
-			toast.success(t("settings.toast.shellBorderSaved"));
-		} catch (err) {
-			console.error("Failed to set shell border status:", err);
-			toast.error(t("settings.toast.shellBorderSaveFailed"));
-		}
+	const handleShellBorderToggle = (enabled: boolean) => {
+		onShellBorderEnabledChange?.(enabled);
+		toast.success(t("settings.toast.shellBorderSaved"));
 	};
 
-	const handleSaveBorderColor = async (color: string) => {
-		try {
-			await setShellBorderColor(color);
-			setInternalBorderColor(color);
-			onShellBorderColorChange?.(color);
-			toast.success(t("settings.toast.shellBorderColorSaved"));
-			setShowColorModal(false);
-		} catch (err) {
-			console.error("Failed to set shell border color:", err);
-			toast.error(t("settings.toast.shellBorderColorSaveFailed"));
-		}
+	const handleSaveBorderColor = (color: string) => {
+		onShellBorderColorChange?.(color);
+		toast.success(t("settings.toast.shellBorderColorSaved"));
+		setShowColorModal(false);
 	};
 
 	const handleOpenColorModal = () => {
-		setTempColor(currentShellBorderColor);
+		setTempColor(shellBorderColor);
 		setShowColorModal(true);
 	};
 
@@ -1417,12 +1383,12 @@ export default function GeneralSettingsTab({
 						</div>
 						<button
 							data-testid="shell-border-toggle"
-							onClick={() => handleShellBorderToggle(!isShellBorderEnabled)}
+							onClick={() => handleShellBorderToggle(!shellBorderEnabled)}
 							style={{
-								background: isShellBorderEnabled
+								background: shellBorderEnabled
 									? "var(--accent-purple)"
 									: "var(--bg-elevated)",
-								border: isShellBorderEnabled
+								border: shellBorderEnabled
 									? "1px solid var(--accent-purple)"
 									: "1px solid var(--border-mid)",
 								borderRadius: "20px",
@@ -1439,12 +1405,12 @@ export default function GeneralSettingsTab({
 									width: "18px",
 									height: "18px",
 									borderRadius: "50%",
-									background: isShellBorderEnabled
+									background: shellBorderEnabled
 										? "#ffffff"
 										: "var(--text-secondary)",
 									position: "absolute",
 									top: "2px",
-									left: isShellBorderEnabled ? "26px" : "3px",
+									left: shellBorderEnabled ? "26px" : "3px",
 									transition: "all 200ms ease",
 								}}
 							/>
@@ -1501,7 +1467,7 @@ export default function GeneralSettingsTab({
 									width: "14px",
 									height: "14px",
 									borderRadius: "3px",
-									backgroundColor: currentShellBorderColor,
+									backgroundColor: shellBorderColor,
 									border: "1px solid rgba(255, 255, 255, 0.25)",
 									display: "inline-block",
 								}}
@@ -1514,7 +1480,7 @@ export default function GeneralSettingsTab({
 									fontWeight: 500,
 								}}
 							>
-								{currentShellBorderColor}
+								{shellBorderColor}
 							</span>
 						</button>
 					</div>

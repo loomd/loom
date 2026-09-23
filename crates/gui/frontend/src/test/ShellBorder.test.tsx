@@ -5,7 +5,8 @@ import { I18nProvider } from "../I18nContext";
 import { ToastProvider } from "../ToastContext";
 import { DialogProvider } from "../DialogContext";
 import GeneralSettingsTab from "../pages/settings/GeneralSettingsTab";
-import { TerminalPanel, computeCollapsedBorders } from "../components/TerminalPanel";
+import { TerminalPanel } from "../components/TerminalPanel";
+import { computeCollapsedBorders } from "../utils";
 import { TerminalTab } from "../components/TerminalTab";
 import type { ConsoleTab } from "../hooks/useTabs";
 
@@ -296,11 +297,6 @@ describe("Shell Border Settings & Features", () => {
     });
 
     it("does not collapse border if adjacent neighbor is an empty slot", () => {
-      // Slot A has shell, Slot B is null (empty)
-      const activeSlots: (ConsoleTab | null)[] = [
-        { id: "tab-a", title: "A", cwd: "" },
-        null,
-      ];
       const areas = '"a b" "a b"';
 
       // If A is null and B has shell

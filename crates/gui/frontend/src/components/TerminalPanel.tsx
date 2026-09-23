@@ -3,6 +3,7 @@ import { TerminalPlaceholder } from './TerminalPlaceholder';
 import { SplitGrid } from './SplitGrid';
 import type { ConsoleTab, GridLayout } from '../hooks/useTabs';
 import { gridCellAreas, gridCellCount, gridDims, layoutPreview } from '../hooks/useTabs';
+import { computeCollapsedBorders } from '../utils';
 
 const TerminalTab = React.lazy(() => import('./TerminalTab').then(m => ({ default: m.TerminalTab })));
 
@@ -20,105 +21,6 @@ interface TerminalPanelProps {
   projectId?: string;
   shellBorderEnabled?: boolean;
   shellBorderColor?: string;
-}
-
-export interface CollapsedBorderInfo {
-  borderTop: string;
-  borderRight: string;
-  borderBottom: string;
-  borderLeft: string;
-  borderTopLeftRadius: string;
-  borderTopRightRadius: string;
-  borderBottomLeftRadius: string;
-  borderBottomRightRadius: string;
-}
-
-export function computeCollapsedBorders(
-  slotLetter: string,
-  areasStr: string,
-  activeSlots: (ConsoleTab | null)[],
-  color: string,
-): CollapsedBorderInfo {
-  const matrix = areasStr
-    .split('"')
-    .map(s => s.trim())
-    .filter(Boolean)
-    .map(row => row.split(/\s+/).filter(Boolean));
-
-  const totalRows = matrix.length;
-  const totalCols = totalRows > 0 ? matrix[0].length : 0;
-  const solid = `2px solid ${color}`;
-
-  if (totalRows === 0 || totalCols === 0) {
-    return {
-      borderTop: solid,
-      borderRight: solid,
-      borderBottom: solid,
-      borderLeft: solid,
-      borderTopLeftRadius: '4px',
-      borderTopRightRadius: '4px',
-      borderBottomLeftRadius: '4px',
-      borderBottomRightRadius: '4px',
-    };
-  }
-
-  let minR = totalRows;
-  let maxR = -1;
-  let minC = totalCols;
-  let maxC = -1;
-
-  for (let r = 0; r < totalRows; r++) {
-    for (let c = 0; c < totalCols; c++) {
-      if (matrix[r][c] === slotLetter) {
-        if (r < minR) minR = r;
-        if (r > maxR) maxR = r;
-        if (c < minC) minC = c;
-        if (c > maxC) maxC = c;
-      }
-    }
-  }
-
-  // 必须所有覆盖的上方相邻列都有已派生的 shell，上方中缝才合并由上邻居绘制底边框
-  let hasTopNeighbor = minR > 0;
-  if (minR > 0) {
-    for (let c = minC; c <= maxC; c++) {
-      const topLetter = matrix[minR - 1][c];
-      const topSlotIdx = topLetter.charCodeAt(0) - 97;
-      if (topSlotIdx < 0 || topSlotIdx >= activeSlots.length || activeSlots[topSlotIdx] === null) {
-        hasTopNeighbor = false;
-        break;
-      }
-    }
-  }
-
-  // 必须所有覆盖的左侧相邻行都有已派生的 shell，左侧中缝才合并由左邻居绘制右边框
-  let hasLeftNeighbor = minC > 0;
-  if (minC > 0) {
-    for (let r = minR; r <= maxR; r++) {
-      const leftLetter = matrix[r][minC - 1];
-      const leftSlotIdx = leftLetter.charCodeAt(0) - 97;
-      if (leftSlotIdx < 0 || leftSlotIdx >= activeSlots.length || activeSlots[leftSlotIdx] === null) {
-        hasLeftNeighbor = false;
-        break;
-      }
-    }
-  }
-
-  const isTopLeft = minR === 0 && minC === 0;
-  const isTopRight = minR === 0 && maxC === totalCols - 1;
-  const isBottomLeft = maxR === totalRows - 1 && minC === 0;
-  const isBottomRight = maxR === totalRows - 1 && maxC === totalCols - 1;
-
-  return {
-    borderTop: hasTopNeighbor ? '0px' : solid,
-    borderLeft: hasLeftNeighbor ? '0px' : solid,
-    borderRight: solid,
-    borderBottom: solid,
-    borderTopLeftRadius: isTopLeft ? '4px' : '0px',
-    borderTopRightRadius: isTopRight ? '4px' : '0px',
-    borderBottomLeftRadius: isBottomLeft ? '4px' : '0px',
-    borderBottomRightRadius: isBottomRight ? '4px' : '0px',
-  };
 }
 
 export function TerminalPanel({ terminals, terminalSlots, activeTabId, layoutMode, showGrid, isVisible, theme, fontSize, onAddTerminal, onPaneFocus, projectId, shellBorderEnabled, shellBorderColor }: TerminalPanelProps) {
@@ -195,7 +97,7 @@ export function TerminalPanel({ terminals, terminalSlots, activeTabId, layoutMod
             flexDirection: 'column',
             minWidth: 0,
             minHeight: 0,
-            overflow: (isMultiSplit && shellBorderEnabled) ? 'visible' : 'hidden',
+            overflow: isMultiSplit ? 'visible' : 'hidden',
             backgroundColor: '#121214',
             gridArea: areaName,
           }}
@@ -279,7 +181,7 @@ export function TerminalPanel({ terminals, terminalSlots, activeTabId, layoutMod
       backgroundColor: '#121214',
       boxSizing: 'border-box',
       overflow: 'hidden',
-      padding: (showGrid && dims && shellBorderEnabled) ? '2px' : 0,
+      padding: (showGrid && dims) ? '2px' : 0,
     }}>
       <SplitGrid cols={dims?.cols ?? 1} rows={dims?.rows ?? 1} areas={areas ?? '"a"'} grid={!!dims} layoutKey={layoutMode} projectId={projectId}>
         {terminalPanes}
