@@ -172,25 +172,35 @@ impl AgentMonitor {
             | OpenFlags::SQLITE_OPEN_NO_MUTEX
             | OpenFlags::SQLITE_OPEN_URI;
         let conn = Connection::open_with_flags(db_path, flags)?;
-        let _ = conn.execute_batch("PRAGMA query_only = ON;");
+        let _ = conn.execute_batch("PRAGMA query_only = ON; PRAGMA busy_timeout = 200;");
         Ok(conn)
     }
 
     fn find_latest_opencode_session(conn: &Connection, workspace_dir: &str) -> Option<(String, i64)> {
         let pattern = format!("{}%", workspace_dir.replace('\\', "/"));
         let mut stmt = conn.prepare(
-            "SELECT s.id, COALESCE(MAX(p.time_created), s.time_created) AS last_active \
+            "SELECT s.id, COALESCE((SELECT MAX(p.time_created) FROM part p WHERE p.session_id = s.id), s.time_created) AS last_active \
              FROM session s \
-             LEFT JOIN part p ON p.session_id = s.id \
              WHERE s.directory LIKE ?1 AND (s.parent_id IS NULL OR s.parent_id = '') \
-             GROUP BY s.id \
-             ORDER BY last_active DESC LIMIT 1"
+             ORDER BY s.time_created DESC LIMIT 10"
         ).ok()?;
-        stmt.query_row(rusqlite::params![pattern], |row| {
-            let id: String = row.get(0)?;
-            let ts: i64 = row.get(1)?;
-            Ok((id, ts))
-        }).ok()
+        let mut rows = stmt.query(rusqlite::params![pattern]).ok()?;
+        let mut best: Option<(String, i64)> = None;
+        while let Ok(Some(row)) = rows.next() {
+            let id: String = match row.get(0) {
+                Ok(v) => v,
+                Err(_) => continue,
+            };
+            let ts: i64 = match row.get(1) {
+                Ok(v) => v,
+                Err(_) => continue,
+            };
+            match &best {
+                Some((_, max_ts)) if ts <= *max_ts => {}
+                _ => best = Some((id, ts)),
+            }
+        }
+        best
     }
 
     fn find_latest_mcode_session(conn: &Connection, workspace_dir: &str) -> Option<(String, i64)> {

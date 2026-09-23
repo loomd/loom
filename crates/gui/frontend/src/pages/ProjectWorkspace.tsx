@@ -1,4 +1,4 @@
-import React, { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
+import React, { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import WindowControlButtons from '../components/WindowControlButtons';
 import { useTabs } from '../hooks/useTabs';
 import { useWorkspaceData } from '../hooks/useWorkspaceData';
@@ -48,9 +48,13 @@ export default function ProjectWorkspace({ project, isVisible, onUnregisterProje
 	}, []);
 
 	const [agentStateMap, setAgentStateMap] = useState<Record<string, AgentStateInfo>>({});
+	const agentStateMapRef = useRef(agentStateMap);
+	useEffect(() => {
+		agentStateMapRef.current = agentStateMap;
+	}, [agentStateMap]);
 
 	const getTerminalAgentType = useCallback((t: ConsoleTab): 'opencode' | 'mcode' | undefined => {
-		const sessionId = t.opencodeSessionId || agentStateMap[t.id]?.session_id;
+		const sessionId = t.opencodeSessionId || agentStateMapRef.current[t.id]?.session_id;
 		if (sessionId && sessionId.startsWith('mvs_')) return 'mcode';
 		if (sessionId && (sessionId.startsWith('ses_') || sessionId.startsWith('session_'))) return 'opencode';
 
@@ -58,7 +62,7 @@ export default function ProjectWorkspace({ project, isVisible, onUnregisterProje
 		if (str.includes('mcode') || str.includes('minimax')) return 'mcode';
 		if (str.includes('opencode')) return 'opencode';
 		return undefined;
-	}, [agentStateMap]);
+	}, []);
 
 	const opencodeTerms = useMemo(() => terminals.filter(t => isAgentTerminal(t)), [terminals, isAgentTerminal]);
 const [pendingGridMode, setPendingGridMode] = useState<GridLayout | null>(null);
@@ -212,6 +216,8 @@ const handleDismissRestore = useCallback(() => {
   setPendingRestoreLayout(null);
 }, [project.id]);
 
+const lastSavedJsonRef = useRef<string>('');
+
 // Auto-save terminals to current.json when tabs, agent sessions or layout change
 useEffect(() => {
   if (!restoreReady || pendingRestoreTerminals !== null) return;
@@ -252,6 +258,13 @@ useEffect(() => {
         initial_command: initCmd,
       };
     });
+
+    const currentSnapshot = JSON.stringify({ list, layoutMode });
+    if (lastSavedJsonRef.current === currentSnapshot) {
+      return;
+    }
+    lastSavedJsonRef.current = currentSnapshot;
+
     saveProjectTerminals(project.id, list).catch((e) => {
       console.error('Failed to save project terminals:', e);
     });
@@ -322,17 +335,28 @@ const closeActiveByShortcut = useCallback(() => {
 }, [removeTabById, activeTabId, maybeRestoreGrid]);
 
   // 1. 轮询存活的 opencode/mcode 终端状态，并保证仅保留当前有效终端的记录
+  const opencodeTermIds = useMemo(() => opencodeTerms.map(t => t.id).join(','), [opencodeTerms]);
+  const opencodeTermsRef = useRef(opencodeTerms);
   useEffect(() => {
-    if (opencodeTerms.length === 0) return;
+    opencodeTermsRef.current = opencodeTerms;
+  }, [opencodeTerms]);
+
+  useEffect(() => {
+    if (!opencodeTermIds) return;
 
     const interval = setInterval(async () => {
-      const activeIds = new Set(opencodeTerms.map(t => t.id));
-      for (const term of opencodeTerms) {
+      const currentTerms = opencodeTermsRef.current;
+      const activeIds = new Set(currentTerms.map((t: ConsoleTab) => t.id));
+      for (const term of currentTerms) {
         try {
           const agentType = getTerminalAgentType(term);
           const info = await pollAgentState(project.root_path, term.id, agentType);
           if (info) {
             setAgentStateMap(prev => {
+              const existing = prev[term.id];
+              if (existing && existing.state === info.state && existing.session_id === info.session_id) {
+                return prev;
+              }
               const next: Record<string, AgentStateInfo> = {};
               for (const [id, state] of Object.entries(prev)) {
                 if (activeIds.has(id)) next[id] = state;
@@ -346,7 +370,7 @@ const closeActiveByShortcut = useCallback(() => {
     }, 2000);
 
     return () => clearInterval(interval);
-  }, [project.root_path, opencodeTerms, getTerminalAgentType]);
+  }, [project.root_path, opencodeTermIds, getTerminalAgentType]);
 
   // 2. 基于当前存活终端全量快照投影，同步项目综合状态
   useEffect(() => {

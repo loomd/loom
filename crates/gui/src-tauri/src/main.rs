@@ -814,12 +814,20 @@ fn get_onboarded_status() -> Result<bool, String> {
 }
 
 #[tauri::command]
-fn poll_agent_state(workspace_dir: String, pty_session_id: Option<String>, agent_type: Option<String>) -> Result<Option<agent_monitor::AgentStateInfo>, String> {
-    let monitor = agent_monitor::AgentMonitor::new();
-    match pty_session_id {
-        Some(pid) => Ok(monitor.poll_state_for_pty(&workspace_dir, &pid, agent_type.as_deref())),
-        None => Ok(monitor.poll_state(&workspace_dir, agent_type.as_deref())),
-    }
+async fn poll_agent_state(
+    workspace_dir: String,
+    pty_session_id: Option<String>,
+    agent_type: Option<String>,
+) -> Result<Option<agent_monitor::AgentStateInfo>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let monitor = agent_monitor::AgentMonitor::new();
+        match pty_session_id {
+            Some(pid) => Ok(monitor.poll_state_for_pty(&workspace_dir, &pid, agent_type.as_deref())),
+            None => Ok(monitor.poll_state(&workspace_dir, agent_type.as_deref())),
+        }
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
@@ -1863,26 +1871,48 @@ fn spawn_config_watcher(app_handle: tauri::AppHandle) {
             return;
         }
         println!("[ConfigWatcher] watching {:?} for changes", dir);
-        for ev in rx.into_iter().flatten() {
-            let is_target = ev.paths.iter().any(|p| {
-                p.file_name()
-                    .map(|n| n.to_string_lossy() == file_name.as_str())
-                    .unwrap_or(false)
-            });
+        let mut last_emit = std::time::Instant::now() - std::time::Duration::from_secs(10);
+        while let Ok(ev) = rx.recv() {
+            let is_target = match ev {
+                Ok(event) => event.paths.iter().any(|p| {
+                    p.file_name()
+                        .map(|n| n.to_string_lossy() == file_name.as_str())
+                        .unwrap_or(false)
+                }),
+                Err(_) => false,
+            };
             if !is_target {
                 continue;
             }
-            // Debounce: atomic writes (tmp -> rename) emit a burst of events.
-            std::thread::sleep(std::time::Duration::from_millis(300));
-            use tauri::Emitter;
-            if let Err(e) = app_handle.emit("config-changed", ()) {
-                eprintln!("[ConfigWatcher] failed to emit config-changed: {}", e);
+            // 排空 channel 中紧随而来的突发重复事件，防止写操作触发事件洪泛
+            std::thread::sleep(std::time::Duration::from_millis(150));
+            while rx.try_recv().is_ok() {}
+
+            if last_emit.elapsed() >= std::time::Duration::from_millis(500) {
+                last_emit = std::time::Instant::now();
+                use tauri::Emitter;
+                if let Err(e) = app_handle.emit("config-changed", ()) {
+                    eprintln!("[ConfigWatcher] failed to emit config-changed: {}", e);
+                }
             }
         }
     });
 }
 
 fn main() {
+    #[cfg(all(debug_assertions, target_os = "windows"))]
+    {
+        if std::env::var_os("WEBVIEW2_USER_DATA_FOLDER").is_none() {
+            if let Ok(local_app_data) = std::env::var("LOCALAPPDATA") {
+                let dev_udd = std::path::PathBuf::from(local_app_data)
+                    .join("com.loom.app.dev")
+                    .join("EBWebView");
+                let _ = std::fs::create_dir_all(&dev_udd);
+                std::env::set_var("WEBVIEW2_USER_DATA_FOLDER", dev_udd);
+            }
+        }
+    }
+
     crash_shield::install();
     PROCESS_START.get_or_init(std::time::Instant::now);
     eprintln!("[Startup] process created t=+0ms ({})", if cfg!(debug_assertions) { "debug build" } else { "release build" });

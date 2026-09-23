@@ -189,12 +189,7 @@ pub static PTY_SPAWN_TIMES: OnceLock<Mutex<HashMap<String, u128>>> = OnceLock::n
 
 pub fn init_process_session_job() {
     if let Ok(job) = JobObject::new() {
-        unsafe {
-            let current = GetCurrentProcess();
-            if job.assign_process(current).is_ok() {
-                let _ = GLOBAL_JOB.set(job);
-            }
-        }
+        let _ = GLOBAL_JOB.set(job);
     }
 }
 
@@ -599,6 +594,10 @@ fn create_process_with_pty(
                 "CreateProcessW failed: {}",
                 std::io::Error::last_os_error()
             ));
+        }
+
+        if let Some(job) = GLOBAL_JOB.get() {
+            let _ = job.assign_process(pi.hProcess);
         }
 
         CloseHandle(pi.hThread);
