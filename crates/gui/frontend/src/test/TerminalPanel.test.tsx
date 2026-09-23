@@ -628,4 +628,70 @@ describe("TerminalPanel", () => {
     const buttons = Array.from(container.querySelectorAll("button")).filter(b => b.textContent === "+ 新派生");
     expect(buttons).toHaveLength(0);
   });
+
+  it("does not destroy or respawn any terminal when switching from multi-split to fewer splits and activating unslotted terminal", async () => {
+    const { invoke } = await import("@tauri-apps/api/core");
+    const invokeMock = invoke as ReturnType<typeof vi.fn>;
+    invokeMock.mockClear();
+    invokeMock.mockResolvedValue([]);
+
+    const { TerminalPanel } = await import("../components/TerminalPanel");
+    const t1 = makeTerminal("t1");
+    const t2 = makeTerminal("t2");
+    const t3 = makeTerminal("t3");
+    const countSpawns = (sessionId: string) =>
+      invokeMock.mock.calls.filter(c => c[0] === "pty_spawn" && c[1]?.sessionId === sessionId).length;
+    const countCloses = (sessionId: string) =>
+      invokeMock.mock.calls.filter(c => c[0] === "pty_close" && c[1]?.sessionId === sessionId).length;
+
+    // 1. 初始 3 开
+    const { rerender } = render(
+      <TerminalPanel
+        terminals={[t1, t2, t3]}
+        terminalSlots={["t1", "t2", "t3"]}
+        activeTabId="t1"
+        layoutMode="3x1"
+        showGrid={true}
+        isVisible={true}
+      />
+    );
+    await vi.waitFor(() => {
+      expect(countSpawns("t1")).toBe(1);
+      expect(countSpawns("t2")).toBe(1);
+      expect(countSpawns("t3")).toBe(1);
+    });
+    expect(countCloses("t1")).toBe(0);
+    expect(countCloses("t2")).toBe(0);
+    expect(countCloses("t3")).toBe(0);
+
+    // 2. 切到 2 开 (t3 不在双开槽位内，但应在同一列表维持存活)
+    rerender(
+      <TerminalPanel
+        terminals={[t1, t2, t3]}
+        terminalSlots={["t1", "t2"]}
+        activeTabId="t1"
+        layoutMode="2x1"
+        showGrid={true}
+        isVisible={true}
+      />
+    );
+    expect(countCloses("t3")).toBe(0);
+    expect(countSpawns("t3")).toBe(1);
+
+    // 3. 点击不在双开内的 t3，切换回单屏激活 t3
+    rerender(
+      <TerminalPanel
+        terminals={[t1, t2, t3]}
+        terminalSlots={[]}
+        activeTabId="t3"
+        layoutMode={null}
+        showGrid={false}
+        isVisible={true}
+      />
+    );
+    expect(countCloses("t3")).toBe(0);
+    expect(countSpawns("t3")).toBe(1);
+    expect(countCloses("t1")).toBe(0);
+    expect(countCloses("t2")).toBe(0);
+  });
 });

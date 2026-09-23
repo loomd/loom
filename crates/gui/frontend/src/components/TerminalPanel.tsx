@@ -69,57 +69,44 @@ export function TerminalPanel({ terminals, terminalSlots, activeTabId, layoutMod
     </Suspense>
   );
 
-  let gridPanes: React.ReactNode[];
-  if (dims) {
-    gridPanes = activeSlots.map((tab, slotIdx) => {
-      const areaName = areas ? String.fromCharCode(97 + slotIdx) : undefined;
-      if (tab) {
-        const isTabFocused = tab.id === effectiveFocusTabId;
-        return (
-          <div key={tab.id} data-testid={`pane-${tab.id}`} onClick={() => { onPaneFocus?.(tab.id); }} style={{
-            display: 'flex',
+  // 保持所有存在的终端在同一个单一列表中渲染（key={tab.id} 始终稳定在同一层级），
+  // 避免在分屏网格、单屏模式或不同槽位布局切换时发生 React Keyed 卸载与销毁重建。
+  const terminalPanes = terminals.map((tab) => {
+    if (dims) {
+      const slotIdx = activeSlots.findIndex(s => s?.id === tab.id);
+      const isSlotted = slotIdx !== -1;
+      const areaName = isSlotted && areas ? String.fromCharCode(97 + slotIdx) : undefined;
+      const isTabFocused = isSlotted && tab.id === effectiveFocusTabId;
+
+      return (
+        <div
+          key={tab.id}
+          data-testid={`pane-${tab.id}`}
+          onClick={() => { if (isSlotted) onPaneFocus?.(tab.id); }}
+          style={{
+            display: isSlotted ? 'flex' : 'none',
             flexDirection: 'column',
             minWidth: 0,
             minHeight: 0,
             overflow: 'hidden',
             backgroundColor: '#121214',
             gridArea: areaName,
-          }}>
-            {renderTerminal(tab, true, isTabFocused)}
-          </div>
-        );
-      }
-      return (
-        <div key={`empty-${slotIdx}`} style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          minWidth: 0,
-          minHeight: 0,
-          overflow: 'hidden',
-          backgroundColor: '#121214',
-          gridArea: areaName,
-        }}>
-          <button
-            onClick={() => onAddTerminal?.(slotIdx)}
-            style={{
-              display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '6px 12px',
-              fontSize: '0.82rem', borderRadius: 'var(--radius-sm, 6px)', cursor: 'pointer',
-              backgroundColor: 'var(--bg-elevated, #18181b)', border: '1px dashed var(--border-subtle, #3e3e42)',
-              color: 'var(--text-tertiary, #71717a)', userSelect: 'none',
-            }}
-          >
-            + 新派生
-          </button>
+          }}
+        >
+          {renderTerminal(tab, isSlotted, isTabFocused)}
         </div>
       );
-    });
-  } else {
-    gridPanes = terminals.map((tab) => {
-      const isTabVisible = tab.id === activeTabId;
-      const isTabFocused = isTabVisible && tab.id === effectiveFocusTabId;
-      return (
-        <div key={tab.id} data-testid={`pane-${tab.id}`} onClick={() => { onPaneFocus?.(tab.id); }} style={{
+    }
+
+    const isTabVisible = tab.id === activeTabId;
+    const isTabFocused = isTabVisible && tab.id === effectiveFocusTabId;
+
+    return (
+      <div
+        key={tab.id}
+        data-testid={`pane-${tab.id}`}
+        onClick={() => { onPaneFocus?.(tab.id); }}
+        style={{
           display: isTabVisible ? 'flex' : 'none',
           flexDirection: 'column',
           minWidth: 0,
@@ -127,19 +114,54 @@ export function TerminalPanel({ terminals, terminalSlots, activeTabId, layoutMod
           overflow: 'hidden',
           backgroundColor: '#121214',
           flex: 1,
-        }}>
-          {renderTerminal(tab, isTabVisible, isTabFocused)}
-        </div>
-      );
-    });
-  }
+        }}
+      >
+        {renderTerminal(tab, isTabVisible, isTabFocused)}
+      </div>
+    );
+  });
 
-  // 保留未在网格中展示的终端进程实例，避免状态被销毁
-  const hiddenPanes = dims ? terminals.filter(tab => !activeSlots.some(s => s?.id === tab.id)).map(tab => (
-    <div key={tab.id} style={{ display: 'none' }}>
-      {renderTerminal(tab, false, false)}
-    </div>
-  )) : [];
+  // 在分屏模式下，如果有空槽位，渲染对应的占位 "+ 新派生" 按钮
+  const emptyPanes = dims
+    ? activeSlots.map((tab, slotIdx) => {
+        if (tab !== null) return null;
+        const areaName = areas ? String.fromCharCode(97 + slotIdx) : undefined;
+        return (
+          <div
+            key={`empty-${slotIdx}`}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              minWidth: 0,
+              minHeight: 0,
+              overflow: 'hidden',
+              backgroundColor: '#121214',
+              gridArea: areaName,
+            }}
+          >
+            <button
+              onClick={() => onAddTerminal?.(slotIdx)}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+                padding: '6px 12px',
+                fontSize: '0.82rem',
+                borderRadius: 'var(--radius-sm, 6px)',
+                cursor: 'pointer',
+                backgroundColor: 'var(--bg-elevated, #18181b)',
+                border: '1px dashed var(--border-subtle, #3e3e42)',
+                color: 'var(--text-tertiary, #71717a)',
+                userSelect: 'none',
+              }}
+            >
+              + 新派生
+            </button>
+          </div>
+        );
+      }).filter(Boolean)
+    : [];
 
   return (
     <div style={{
@@ -152,8 +174,8 @@ export function TerminalPanel({ terminals, terminalSlots, activeTabId, layoutMod
       overflow: 'hidden'
     }}>
       <SplitGrid cols={dims?.cols ?? 1} rows={dims?.rows ?? 1} areas={areas ?? '"a"'} grid={!!dims} layoutKey={layoutMode} projectId={projectId}>
-        {gridPanes}
-        {hiddenPanes}
+        {terminalPanes}
+        {emptyPanes}
       </SplitGrid>
     </div>
   );
