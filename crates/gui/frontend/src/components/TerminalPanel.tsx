@@ -21,9 +21,10 @@ interface TerminalPanelProps {
   projectId?: string;
   shellBorderEnabled?: boolean;
   shellBorderColor?: string;
+  shellBorderWidth?: string;
 }
 
-export function TerminalPanel({ terminals, terminalSlots, activeTabId, layoutMode, showGrid, isVisible, theme, fontSize, onAddTerminal, onPaneFocus, projectId, shellBorderEnabled, shellBorderColor }: TerminalPanelProps) {
+export function TerminalPanel({ terminals, terminalSlots, activeTabId, layoutMode, showGrid, isVisible, theme, fontSize, onAddTerminal, onPaneFocus, projectId, shellBorderEnabled, shellBorderColor, shellBorderWidth }: TerminalPanelProps) {
   const dims = showGrid && layoutMode ? gridDims(layoutMode) : null;
   const areas = showGrid && layoutMode ? (gridCellAreas(layoutMode) ?? layoutPreview(layoutMode).areas) : null;
   const cellCount = dims ? gridCellCount(layoutMode!) : 0;
@@ -70,6 +71,7 @@ export function TerminalPanel({ terminals, terminalSlots, activeTabId, layoutMod
         onFocus={() => onPaneFocus?.(tab.id)}
         theme={theme}
         fontSize={fontSize}
+        borderWidth={shellBorderWidth}
         borderStyle={borderStyle}
       />
     </Suspense>
@@ -84,7 +86,7 @@ export function TerminalPanel({ terminals, terminalSlots, activeTabId, layoutMod
       const areaName = isSlotted && areas ? String.fromCharCode(97 + slotIdx) : undefined;
       const isTabFocused = isSlotted && tab.id === effectiveFocusTabId;
       const appliedBorderStyle = isMultiSplit && isSlotted && shellBorderEnabled && areaName
-        ? (computeCollapsedBorders(areaName, areas ?? '"a"', activeSlots, shellBorderColor || '#8b5cf6') as React.CSSProperties)
+        ? (computeCollapsedBorders(areaName, areas ?? '"a"', activeSlots, shellBorderColor || '#8b5cf6', shellBorderWidth || '1px') as React.CSSProperties)
         : undefined;
 
       return (
@@ -181,7 +183,7 @@ export function TerminalPanel({ terminals, terminalSlots, activeTabId, layoutMod
       backgroundColor: '#121214',
       boxSizing: 'border-box',
       overflow: 'hidden',
-      padding: (showGrid && dims) ? '2px' : 0,
+      padding: (showGrid && dims) ? '0 1px 0 0' : 0,
     }}>
       <SplitGrid cols={dims?.cols ?? 1} rows={dims?.rows ?? 1} areas={areas ?? '"a"'} grid={!!dims} layoutKey={layoutMode} projectId={projectId}>
         {terminalPanes}

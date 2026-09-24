@@ -3,6 +3,7 @@ import { useI18n } from "../../I18nContext";
 import { useToast } from "../../ToastContext";
 import WhatsNewDialog from "../../components/WhatsNewDialog";
 import { getAutostart, setAutostart, getUpdateCheckInterval, setUpdateCheckInterval, getRestoreTerminals, setRestoreTerminals, getWhatsNewAll } from "../../api";
+import { parseArgbColor, createArgbColor, normalizeBorderColorToCss } from "../../utils";
 import type { DownloadProgress } from "../../hooks/useUpdateChecker";
 
 interface Props {
@@ -39,6 +40,8 @@ interface Props {
 	onShellBorderEnabledChange?: (enabled: boolean) => void;
 	shellBorderColor?: string;
 	onShellBorderColorChange?: (color: string) => void;
+	shellBorderWidth?: string;
+	onShellBorderWidthChange?: (width: string) => void;
 }
 
 const PRESETS = [
@@ -49,6 +52,14 @@ const PRESETS = [
 	"Outfit",
 	"JetBrains Mono",
 	"Fira Code",
+];
+
+const SHELL_BORDER_WIDTH_OPTIONS = [
+	{ label: "1", value: "1px" },
+	{ label: "1.5", value: "1.5px" },
+	{ label: "2", value: "2px" },
+	{ label: "2.5", value: "2.5px" },
+	{ label: "3", value: "3px" },
 ];
 
 const SHELL_BORDER_PRESET_COLORS = [
@@ -94,6 +105,8 @@ export default function GeneralSettingsTab({
 	onShellBorderEnabledChange,
 	shellBorderColor = "#8b5cf6",
 	onShellBorderColorChange,
+	shellBorderWidth = "1px",
+	onShellBorderWidthChange,
 }: Props) {
 	const { t, language, setLanguage } = useI18n();
 	const toast = useToast();
@@ -201,6 +214,11 @@ export default function GeneralSettingsTab({
 		onShellBorderColorChange?.(color);
 		toast.success(t("settings.toast.shellBorderColorSaved"));
 		setShowColorModal(false);
+	};
+
+	const handleShellBorderWidthSelect = (width: string) => {
+		onShellBorderWidthChange?.(width);
+		toast.success(t("settings.toast.shellBorderWidthSaved"));
 	};
 
 	const handleOpenColorModal = () => {
@@ -1467,7 +1485,7 @@ export default function GeneralSettingsTab({
 									width: "14px",
 									height: "14px",
 									borderRadius: "3px",
-									backgroundColor: shellBorderColor,
+									backgroundColor: normalizeBorderColorToCss(shellBorderColor),
 									border: "1px solid rgba(255, 255, 255, 0.25)",
 									display: "inline-block",
 								}}
@@ -1483,6 +1501,69 @@ export default function GeneralSettingsTab({
 								{shellBorderColor}
 							</span>
 						</button>
+					</div>
+
+					{/* Shell Border Width Selection */}
+					<div
+						style={{
+							display: "flex",
+							alignItems: "center",
+							justifyContent: "space-between",
+							paddingTop: "16px",
+							borderTop: "1px solid var(--border-subtle)",
+						}}
+					>
+						<div>
+							<div
+								style={{
+									fontSize: "14px",
+									fontWeight: 500,
+									color: "var(--text-primary)",
+								}}
+							>
+								{t("settings.system.shellBorderWidth")}
+							</div>
+							<div
+								style={{
+									fontSize: "12px",
+									color: "var(--text-secondary)",
+									marginTop: "4px",
+								}}
+							>
+								{t("settings.system.shellBorderWidthDesc")}
+							</div>
+						</div>
+						<div style={{ display: "flex", gap: "6px" }}>
+							{SHELL_BORDER_WIDTH_OPTIONS.map((opt) => {
+								const isSelected = shellBorderWidth === opt.value || shellBorderWidth === opt.label;
+								return (
+									<button
+										key={opt.value}
+										type="button"
+										data-testid={`shell-border-width-${opt.label}`}
+										onClick={() => handleShellBorderWidthSelect(opt.value)}
+										style={{
+											padding: "5px 12px",
+											fontSize: "13px",
+											fontFamily: "monospace",
+											fontWeight: 500,
+											borderRadius: "6px",
+											cursor: "pointer",
+											backgroundColor: isSelected
+												? "var(--accent-purple, #8b5cf6)"
+												: "var(--bg-elevated, #18181b)",
+											color: isSelected ? "#ffffff" : "var(--text-secondary)",
+											border: isSelected
+												? "1px solid var(--accent-purple, #8b5cf6)"
+												: "1px solid var(--border-mid, #3f3f46)",
+											transition: "all 150ms ease",
+										}}
+									>
+										{opt.label}
+									</button>
+								);
+							})}
+						</div>
 					</div>
 
 					</div>
@@ -1839,216 +1920,299 @@ export default function GeneralSettingsTab({
 				/>
 			)}
 
-			{showColorModal && (
-				<div
-					data-testid="shell-border-color-modal"
-					style={{
-						position: "fixed",
-						top: 0,
-						left: 0,
-						right: 0,
-						bottom: 0,
-						backgroundColor: "rgba(0, 0, 0, 0.65)",
-						backdropFilter: "blur(4px)",
-						display: "flex",
-						alignItems: "center",
-						justifyContent: "center",
-						zIndex: 1000,
-					}}
-					onClick={() => setShowColorModal(false)}
-				>
+			{showColorModal && (() => {
+				const parsedTemp = parseArgbColor(tempColor);
+				return (
 					<div
+						data-testid="shell-border-color-modal"
 						style={{
-							backgroundColor: "var(--bg-elevated, #18181b)",
-							border: "1px solid var(--border-mid, #3f3f46)",
-							borderRadius: "12px",
-							padding: "24px",
-							width: "90%",
-							maxWidth: "420px",
-							boxShadow: "0 20px 40px rgba(0, 0, 0, 0.4)",
+							position: "fixed",
+							top: 0,
+							left: 0,
+							right: 0,
+							bottom: 0,
+							backgroundColor: "rgba(0, 0, 0, 0.65)",
+							backdropFilter: "blur(4px)",
 							display: "flex",
-							flexDirection: "column",
-							gap: "18px",
+							alignItems: "center",
+							justifyContent: "center",
+							zIndex: 1000,
 						}}
-						onClick={(e) => e.stopPropagation()}
+						onClick={() => setShowColorModal(false)}
 					>
-						{/* Header */}
-						<div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-							<div style={{ fontSize: "15px", fontWeight: 600, color: "var(--text-primary)" }}>
-								选择 shell 边框颜色
-							</div>
-							<button
-								onClick={() => setShowColorModal(false)}
-								style={{
-									background: "transparent",
-									border: "none",
-									color: "var(--text-secondary)",
-									fontSize: "18px",
-									cursor: "pointer",
-									padding: "4px 8px",
-									borderRadius: "4px",
-									lineHeight: 1,
-								}}
-							>
-								✕
-							</button>
-						</div>
-
-						{/* Presets Palette */}
-						<div>
-							<div style={{ fontSize: "12px", color: "var(--text-secondary)", marginBottom: "8px" }}>
-								预设色彩画板
-							</div>
-							<div style={{ display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: "8px" }}>
-								{SHELL_BORDER_PRESET_COLORS.map((c) => {
-									const isSelected = tempColor.toLowerCase() === c.value.toLowerCase();
-									return (
-										<button
-											key={c.value}
-											title={c.label}
-											onClick={() => setTempColor(c.value)}
-											style={{
-												width: "100%",
-												aspectRatio: "1",
-												backgroundColor: c.value,
-												borderRadius: "6px",
-												border: isSelected ? "2px solid #ffffff" : "1px solid rgba(255,255,255,0.15)",
-												outline: isSelected ? `2px solid ${c.value}` : "none",
-												outlineOffset: "2px",
-												cursor: "pointer",
-												display: "flex",
-												alignItems: "center",
-												justifyContent: "center",
-												transition: "transform 120ms ease",
-												transform: isSelected ? "scale(1.06)" : "none",
-											}}
-										>
-											{isSelected && (
-												<span style={{ color: "#ffffff", fontSize: "13px", fontWeight: "bold" }}>
-													✓
-												</span>
-											)}
-										</button>
-									);
-								})}
-							</div>
-						</div>
-
-						{/* Custom Color Row */}
-						<div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-							<div style={{ fontSize: "12px", color: "var(--text-secondary)" }}>
-								自定义取色
-							</div>
-							<div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-								<input
-									type="color"
-									value={tempColor.startsWith("#") && tempColor.length === 7 ? tempColor : "#8b5cf6"}
-									onChange={(e) => setTempColor(e.target.value)}
-									style={{
-										width: "44px",
-										height: "36px",
-										padding: "0",
-										border: "1px solid var(--border-mid, #3f3f46)",
-										borderRadius: "6px",
-										cursor: "pointer",
-										backgroundColor: "transparent",
-									}}
-								/>
-								<input
-									type="text"
-									value={tempColor}
-									onChange={(e) => setTempColor(e.target.value)}
-									placeholder="#8b5cf6"
-									style={{
-										flex: 1,
-										padding: "8px 12px",
-										backgroundColor: "var(--bg-input, #09090b)",
-										border: "1px solid var(--border-subtle, #27272a)",
-										borderRadius: "6px",
-										color: "var(--text-primary, #ffffff)",
-										fontSize: "13px",
-										fontFamily: "monospace",
-										outline: "none",
-									}}
-								/>
-							</div>
-						</div>
-
-						{/* Preview */}
-						<div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-							<div style={{ fontSize: "12px", color: "var(--text-secondary)" }}>
-								边框线条效果预览
-							</div>
-							<div
-								style={{
-									height: "52px",
-									backgroundColor: "#121214",
-									borderRadius: "4px",
-									border: `2px solid ${tempColor}`,
-									display: "flex",
-									alignItems: "center",
-									justifyContent: "space-between",
-									padding: "0 14px",
-									color: "var(--text-secondary)",
-									fontSize: "12px",
-									fontFamily: "monospace",
-								}}
-							>
-								<span>$ bash (已派生 Shell)</span>
-								<span style={{ color: tempColor, fontWeight: 600 }}>{tempColor}</span>
-							</div>
-						</div>
-
-						{/* Footer Actions */}
-						<div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: "4px" }}>
-							<button
-								onClick={() => setTempColor("#8b5cf6")}
-								style={{
-									background: "transparent",
-									border: "none",
-									color: "var(--text-tertiary, #71717a)",
-									fontSize: "12px",
-									cursor: "pointer",
-									textDecoration: "underline",
-								}}
-							>
-								重置默认
-							</button>
-							<div style={{ display: "flex", gap: "8px" }}>
+						<div
+							style={{
+								backgroundColor: "var(--bg-elevated, #18181b)",
+								border: "1px solid var(--border-mid, #3f3f46)",
+								borderRadius: "12px",
+								padding: "24px",
+								width: "90%",
+								maxWidth: "440px",
+								boxShadow: "0 20px 40px rgba(0, 0, 0, 0.4)",
+								display: "flex",
+								flexDirection: "column",
+								gap: "18px",
+							}}
+							onClick={(e) => e.stopPropagation()}
+						>
+							{/* Header */}
+							<div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+								<div style={{ fontSize: "15px", fontWeight: 600, color: "var(--text-primary)" }}>
+									选择 shell 边框颜色
+								</div>
 								<button
 									onClick={() => setShowColorModal(false)}
 									style={{
-										padding: "6px 14px",
-										backgroundColor: "var(--bg-elevated, #27272a)",
-										border: "1px solid var(--border-mid, #3f3f46)",
-										borderRadius: "6px",
-										color: "var(--text-secondary)",
-										fontSize: "13px",
-										cursor: "pointer",
-									}}
-								>
-									取消
-								</button>
-								<button
-									onClick={() => handleSaveBorderColor(tempColor)}
-									style={{
-										padding: "6px 16px",
-										backgroundColor: "var(--accent-purple, #8b5cf6)",
+										background: "transparent",
 										border: "none",
-										borderRadius: "6px",
-										color: "#ffffff",
-										fontSize: "13px",
-										fontWeight: 500,
+										color: "var(--text-secondary)",
+										fontSize: "18px",
 										cursor: "pointer",
+										padding: "4px 8px",
+										borderRadius: "4px",
+										lineHeight: 1,
 									}}
 								>
-									确定
+									✕
 								</button>
+							</div>
+
+							{/* Presets Palette */}
+							<div>
+								<div style={{ fontSize: "12px", color: "var(--text-secondary)", marginBottom: "8px" }}>
+									预设色彩画板
+								</div>
+								<div style={{ display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: "8px" }}>
+									{SHELL_BORDER_PRESET_COLORS.map((c) => {
+										const isSelected = parsedTemp.hexRgb.toLowerCase() === c.value.toLowerCase();
+										return (
+											<button
+												key={c.value}
+												title={c.label}
+												onClick={() => {
+													const presetParsed = parseArgbColor(c.value);
+													const updated = createArgbColor(parsedTemp.a, presetParsed.r, presetParsed.g, presetParsed.b);
+													setTempColor(parsedTemp.a < 1 ? updated.hexArgb : updated.hexRgb);
+												}}
+												style={{
+													width: "100%",
+													aspectRatio: "1",
+													backgroundColor: c.value,
+													borderRadius: "6px",
+													border: isSelected ? "2px solid #ffffff" : "1px solid rgba(255,255,255,0.15)",
+													outline: isSelected ? `2px solid ${c.value}` : "none",
+													outlineOffset: "2px",
+													cursor: "pointer",
+													display: "flex",
+													alignItems: "center",
+													justifyContent: "center",
+													transition: "transform 120ms ease",
+													transform: isSelected ? "scale(1.06)" : "none",
+												}}
+											>
+												{isSelected && (
+													<span style={{ color: "#ffffff", fontSize: "13px", fontWeight: "bold" }}>
+														✓
+													</span>
+												)}
+											</button>
+										);
+									})}
+								</div>
+							</div>
+
+							{/* Custom Color Row */}
+							<div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+								<div style={{ fontSize: "12px", color: "var(--text-secondary)" }}>
+									自定义取色 & 颜色值输入
+								</div>
+								<div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+									<input
+										type="color"
+										value={parsedTemp.hexRgb}
+										onChange={(e) => {
+											const rgbParsed = parseArgbColor(e.target.value);
+											const updated = createArgbColor(parsedTemp.a, rgbParsed.r, rgbParsed.g, rgbParsed.b);
+											setTempColor(parsedTemp.a < 1 ? updated.hexArgb : updated.hexRgb);
+										}}
+										style={{
+											width: "44px",
+											height: "36px",
+											padding: "0",
+											border: "1px solid var(--border-mid, #3f3f46)",
+											borderRadius: "6px",
+											cursor: "pointer",
+											backgroundColor: "transparent",
+										}}
+									/>
+									<input
+										type="text"
+										value={tempColor}
+										onChange={(e) => setTempColor(e.target.value)}
+										placeholder="#8b5cf6 或 #cc8b5cf6"
+										style={{
+											flex: 1,
+											padding: "8px 12px",
+											backgroundColor: "var(--bg-input, #09090b)",
+											border: "1px solid var(--border-subtle, #27272a)",
+											borderRadius: "6px",
+											color: "var(--text-primary, #ffffff)",
+											fontSize: "13px",
+											fontFamily: "monospace",
+											outline: "none",
+										}}
+									/>
+								</div>
+							</div>
+
+							{/* Alpha Channel (Opacity) Control */}
+							<div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+								<div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+									<span style={{ fontSize: "12px", color: "var(--text-secondary)" }}>
+										Alpha 通道 (不透明度)
+									</span>
+									<div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+										<span style={{ fontSize: "12px", fontFamily: "monospace", color: "var(--text-primary)" }}>
+											{parsedTemp.alphaPercent}%
+										</span>
+										<span style={{ fontSize: "11px", fontFamily: "monospace", color: "var(--text-tertiary, #71717a)" }}>
+											(0x{parsedTemp.alphaHex.toUpperCase()})
+										</span>
+									</div>
+								</div>
+								<div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+									<input
+										type="range"
+										data-testid="shell-border-alpha-slider"
+										min="0"
+										max="100"
+										step="1"
+										value={parsedTemp.alphaPercent}
+										onChange={(e) => {
+											const newAlpha = parseInt(e.target.value, 10) / 100;
+											const updated = createArgbColor(newAlpha, parsedTemp.r, parsedTemp.g, parsedTemp.b);
+											setTempColor(newAlpha === 1 ? updated.hexRgb : updated.hexArgb);
+										}}
+										style={{
+											flex: 1,
+											accentColor: "var(--accent-purple, #8b5cf6)",
+											cursor: "pointer",
+										}}
+									/>
+									<div style={{ display: "flex", gap: "4px" }}>
+										{[100, 80, 50, 20].map((pct) => (
+											<button
+												key={pct}
+												type="button"
+												onClick={() => {
+													const newAlpha = pct / 100;
+													const updated = createArgbColor(newAlpha, parsedTemp.r, parsedTemp.g, parsedTemp.b);
+													setTempColor(newAlpha === 1 ? updated.hexRgb : updated.hexArgb);
+												}}
+												style={{
+													padding: "2px 6px",
+													fontSize: "11px",
+													fontFamily: "monospace",
+													backgroundColor: parsedTemp.alphaPercent === pct ? "var(--accent-purple, #8b5cf6)" : "var(--bg-input, #27272a)",
+													color: parsedTemp.alphaPercent === pct ? "#ffffff" : "var(--text-secondary)",
+													border: "1px solid var(--border-subtle, #3f3f46)",
+													borderRadius: "4px",
+													cursor: "pointer",
+												}}
+											>
+												{pct}%
+											</button>
+										))}
+									</div>
+								</div>
+							</div>
+
+							{/* Preview */}
+							<div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+								<div style={{ fontSize: "12px", color: "var(--text-secondary)" }}>
+									边框线条效果预览
+								</div>
+								<div
+									style={{
+										height: "56px",
+										backgroundColor: "#121214",
+										backgroundImage: "linear-gradient(45deg, rgba(255,255,255,0.03) 25%, transparent 25%, transparent 75%, rgba(255,255,255,0.03) 75%), linear-gradient(45deg, rgba(255,255,255,0.03) 25%, transparent 25%, transparent 75%, rgba(255,255,255,0.03) 75%)",
+										backgroundSize: "16px 16px",
+										backgroundPosition: "0 0, 8px 8px",
+										borderRadius: "6px",
+										border: `${shellBorderWidth || "1px"} solid ${parsedTemp.cssRgba}`,
+										display: "flex",
+										alignItems: "center",
+										justifyContent: "space-between",
+										padding: "0 14px",
+										color: "var(--text-secondary)",
+										fontSize: "12px",
+										fontFamily: "monospace",
+									}}
+								>
+									<span>$ bash (已派生 Shell)</span>
+									<div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end" }}>
+										<span style={{ color: parsedTemp.cssRgba, fontWeight: 600 }}>
+											{tempColor}
+										</span>
+										<span style={{ fontSize: "10px", color: "var(--text-tertiary, #71717a)" }}>
+											{parsedTemp.cssRgba}
+										</span>
+									</div>
+								</div>
+							</div>
+
+							{/* Footer Actions */}
+							<div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: "4px" }}>
+								<button
+									onClick={() => setTempColor("#8b5cf6")}
+									style={{
+										background: "transparent",
+										border: "none",
+										color: "var(--text-tertiary, #71717a)",
+										fontSize: "12px",
+										cursor: "pointer",
+										textDecoration: "underline",
+									}}
+								>
+									重置默认
+								</button>
+								<div style={{ display: "flex", gap: "8px" }}>
+									<button
+										onClick={() => setShowColorModal(false)}
+										style={{
+											padding: "6px 14px",
+											backgroundColor: "var(--bg-elevated, #27272a)",
+											border: "1px solid var(--border-mid, #3f3f46)",
+											borderRadius: "6px",
+											color: "var(--text-secondary)",
+											fontSize: "13px",
+											cursor: "pointer",
+										}}
+									>
+										取消
+									</button>
+									<button
+										onClick={() => handleSaveBorderColor(tempColor)}
+										style={{
+											padding: "6px 16px",
+											backgroundColor: "var(--accent-purple, #8b5cf6)",
+											border: "none",
+											borderRadius: "6px",
+											color: "#ffffff",
+											fontSize: "13px",
+											fontWeight: 500,
+											cursor: "pointer",
+										}}
+									>
+										确定
+									</button>
+								</div>
 							</div>
 						</div>
 					</div>
-				</div>
-			)}
+				);
+			})()}
 		</div>
 	);
 }

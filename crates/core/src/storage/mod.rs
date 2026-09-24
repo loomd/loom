@@ -21,6 +21,7 @@ pub use manager::{
     get_restore_terminals, set_restore_terminals,
     get_shell_border_enabled, set_shell_border_enabled,
     get_shell_border_color, set_shell_border_color,
+    get_shell_border_width, set_shell_border_width,
     get_current_state_path, get_current_state, save_current_state,
     get_selected_project_id, save_selected_project_id,
     get_project_terminals, save_project_terminals, clear_project_terminals,

@@ -155,12 +155,134 @@ export interface CollapsedBorderInfo {
   borderBottomRightRadius: string;
 }
 
+export interface ArgbColor {
+  a: number; // 0.0 - 1.0
+  r: number; // 0 - 255
+  g: number; // 0 - 255
+  b: number; // 0 - 255
+  alphaPercent: number; // 0 - 100
+  alphaHex: string; // '00' - 'ff'
+  hexRgb: string; // '#8b5cf6'
+  hexArgb: string; // '#ff8b5cf6' or '#808b5cf6'
+  cssRgba: string; // 'rgba(139, 92, 246, 0.5)'
+}
+
+export function createArgbColor(a: number, r: number, g: number, b: number): ArgbColor {
+  const clampedA = Math.min(1, Math.max(0, a));
+  const clampedR = Math.min(255, Math.max(0, Math.round(r)));
+  const clampedG = Math.min(255, Math.max(0, Math.round(g)));
+  const clampedB = Math.min(255, Math.max(0, Math.round(b)));
+
+  const aByte = Math.round(clampedA * 255);
+  const aHex = aByte.toString(16).padStart(2, '0');
+  const rHex = clampedR.toString(16).padStart(2, '0');
+  const gHex = clampedG.toString(16).padStart(2, '0');
+  const bHex = clampedB.toString(16).padStart(2, '0');
+
+  const alphaPercent = Math.round(clampedA * 100);
+  const hexRgb = `#${rHex}${gHex}${bHex}`;
+  const hexArgb = `#${aHex}${rHex}${gHex}${bHex}`;
+  const aFormatted = Number(clampedA.toFixed(3));
+  const cssRgba = `rgba(${clampedR}, ${clampedG}, ${clampedB}, ${aFormatted})`;
+
+  return {
+    a: clampedA,
+    r: clampedR,
+    g: clampedG,
+    b: clampedB,
+    alphaPercent,
+    alphaHex: aHex,
+    hexRgb,
+    hexArgb,
+    cssRgba,
+  };
+}
+
+export function parseArgbColor(input?: string): ArgbColor {
+  const fallback = createArgbColor(1, 139, 92, 246);
+
+  if (!input || typeof input !== 'string') return fallback;
+  const str = input.trim().toLowerCase();
+
+  // 1. rgba(...) or rgb(...)
+  const rgbaMatch = str.match(/^rgba?\s*\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})(?:\s*,\s*([\d.]+))?\s*\)$/);
+  if (rgbaMatch) {
+    const r = Math.min(255, Math.max(0, parseInt(rgbaMatch[1], 10)));
+    const g = Math.min(255, Math.max(0, parseInt(rgbaMatch[2], 10)));
+    const b = Math.min(255, Math.max(0, parseInt(rgbaMatch[3], 10)));
+    let a = rgbaMatch[4] !== undefined ? parseFloat(rgbaMatch[4]) : 1;
+    if (isNaN(a)) a = 1;
+    a = Math.min(1, Math.max(0, a));
+    return createArgbColor(a, r, g, b);
+  }
+
+  // 2. Hex formats
+  if (str.startsWith('#')) {
+    const hex = str.slice(1);
+    // #RGB -> 3 chars
+    if (hex.length === 3) {
+      const r = parseInt(hex[0] + hex[0], 16);
+      const g = parseInt(hex[1] + hex[1], 16);
+      const b = parseInt(hex[2] + hex[2], 16);
+      if (!isNaN(r) && !isNaN(g) && !isNaN(b)) {
+        return createArgbColor(1, r, g, b);
+      }
+    }
+    // #RGBA -> 4 chars (treat as #ARGB or #RGBA; standardize on #RGBA)
+    if (hex.length === 4) {
+      const r = parseInt(hex[0] + hex[0], 16);
+      const g = parseInt(hex[1] + hex[1], 16);
+      const b = parseInt(hex[2] + hex[2], 16);
+      const a = parseInt(hex[3] + hex[3], 16) / 255;
+      if (!isNaN(r) && !isNaN(g) && !isNaN(b) && !isNaN(a)) {
+        return createArgbColor(a, r, g, b);
+      }
+    }
+    // #RRGGBB -> 6 chars
+    if (hex.length === 6) {
+      const r = parseInt(hex.slice(0, 2), 16);
+      const g = parseInt(hex.slice(2, 4), 16);
+      const b = parseInt(hex.slice(4, 6), 16);
+      if (!isNaN(r) && !isNaN(g) && !isNaN(b)) {
+        return createArgbColor(1, r, g, b);
+      }
+    }
+    // #AARRGGBB -> 8 chars (ARGB format: AA RR GG BB)
+    if (hex.length === 8) {
+      const a = parseInt(hex.slice(0, 2), 16) / 255;
+      const r = parseInt(hex.slice(2, 4), 16);
+      const g = parseInt(hex.slice(4, 6), 16);
+      const b = parseInt(hex.slice(6, 8), 16);
+      if (!isNaN(a) && !isNaN(r) && !isNaN(g) && !isNaN(b)) {
+        return createArgbColor(a, r, g, b);
+      }
+    }
+  }
+
+  return fallback;
+}
+
+export function normalizeBorderColorToCss(color?: string): string {
+  if (!color) return '#8b5cf6';
+  const trimmed = color.trim();
+  if (/^#[0-9a-fA-F]{6}$/.test(trimmed) || /^#[0-9a-fA-F]{3}$/.test(trimmed)) {
+    return trimmed;
+  }
+  const parsed = parseArgbColor(trimmed);
+  if (parsed.a === 1) {
+    return parsed.hexRgb;
+  }
+  return parsed.cssRgba;
+}
+
 export function computeCollapsedBorders(
   slotLetter: string,
   areasStr: string,
   activeSlots: ({ id: string } | null)[],
   color: string,
+  width: string = '1px',
 ): CollapsedBorderInfo {
+  const normalizedWidth = typeof width === 'number' || (!width.endsWith('px') && !isNaN(Number(width))) ? `${width}px` : width || '1px';
   const matrix = areasStr
     .split('"')
     .map(s => s.trim())
@@ -169,7 +291,8 @@ export function computeCollapsedBorders(
 
   const totalRows = matrix.length;
   const totalCols = totalRows > 0 ? matrix[0].length : 0;
-  const solid = `2px solid ${color}`;
+  const cssColor = normalizeBorderColorToCss(color);
+  const solid = `${normalizedWidth} solid ${cssColor}`;
 
   if (totalRows === 0 || totalCols === 0) {
     return {

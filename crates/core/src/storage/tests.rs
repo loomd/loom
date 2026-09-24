@@ -92,6 +92,7 @@ let original = AppConfig {
 		restore_terminals: true,
 		shell_border_enabled: false,
 		shell_border_color: "#8b5cf6".to_string(),
+		shell_border_width: "1px".to_string(),
 		agent_skill_map: HashMap::new(),
 		floating_sidebar_enabled: true,
 		floating_sidebar_position: "right".to_string(),

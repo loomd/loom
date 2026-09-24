@@ -533,3 +533,9 @@ export const getShellBorderColor = (): Promise<string> =>
 export const setShellBorderColor = (color: string): Promise<void> =>
 	invoke("set_shell_border_color", { color });
 
+export const getShellBorderWidth = (): Promise<string> =>
+	invoke("get_shell_border_width");
+
+export const setShellBorderWidth = (width: string): Promise<void> =>
+	invoke("set_shell_border_width", { width });
+

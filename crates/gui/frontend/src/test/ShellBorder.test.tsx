@@ -6,7 +6,7 @@ import { ToastProvider } from "../ToastContext";
 import { DialogProvider } from "../DialogContext";
 import GeneralSettingsTab from "../pages/settings/GeneralSettingsTab";
 import { TerminalPanel } from "../components/TerminalPanel";
-import { computeCollapsedBorders } from "../utils";
+import { computeCollapsedBorders, parseArgbColor, createArgbColor, normalizeBorderColorToCss } from "../utils";
 import { TerminalTab } from "../components/TerminalTab";
 import type { ConsoleTab } from "../hooks/useTabs";
 
@@ -20,7 +20,7 @@ vi.mock("@tauri-apps/api/event", () => ({
 }));
 
 vi.mock("@tauri-apps/api/app", () => ({
-  getVersion: vi.fn(() => Promise.resolve("0.7.9")),
+  getVersion: vi.fn(() => Promise.resolve("0.7.10")),
 }));
 
 vi.mock("../api", () => ({
@@ -34,6 +34,8 @@ vi.mock("../api", () => ({
   setShellBorderEnabled: vi.fn(() => Promise.resolve()),
   getShellBorderColor: vi.fn(() => Promise.resolve("#8b5cf6")),
   setShellBorderColor: vi.fn(() => Promise.resolve()),
+  getShellBorderWidth: vi.fn(() => Promise.resolve("1px")),
+  setShellBorderWidth: vi.fn(() => Promise.resolve()),
   getWhatsNewAll: vi.fn(() => Promise.resolve([])),
   openUrl: vi.fn(),
 }));
@@ -112,6 +114,8 @@ describe("Shell Border Settings & Features", () => {
     onShellBorderEnabledChange: vi.fn(),
     shellBorderColor: "#8b5cf6",
     onShellBorderColorChange: vi.fn(),
+    shellBorderWidth: "1px",
+    onShellBorderWidthChange: vi.fn(),
   };
 
   beforeEach(() => {
@@ -201,7 +205,7 @@ describe("Shell Border Settings & Features", () => {
     );
 
     const outer = container.firstChild as HTMLElement;
-    expect(outer.style.border).toBe("2px solid rgb(59, 130, 246)");
+    expect(outer.style.border).toBe("1px solid rgb(59, 130, 246)");
     expect(outer.style.boxShadow).toBe("");
   });
 
@@ -265,14 +269,14 @@ describe("Shell Border Settings & Features", () => {
       const borderB = computeCollapsedBorders("b", areas, activeSlots, "#8b5cf6");
 
       // Slot A: left side, keeps left and right borders
-      expect(borderA.borderLeft).toBe("2px solid #8b5cf6");
-      expect(borderA.borderRight).toBe("2px solid #8b5cf6");
+      expect(borderA.borderLeft).toBe("1px solid #8b5cf6");
+      expect(borderA.borderRight).toBe("1px solid #8b5cf6");
       expect(borderA.borderTopLeftRadius).toBe("4px");
       expect(borderA.borderTopRightRadius).toBe("0px");
 
       // Slot B: right side, has left neighbor A with shell -> borderLeft collapsed to 0px
       expect(borderB.borderLeft).toBe("0px");
-      expect(borderB.borderRight).toBe("2px solid #8b5cf6");
+      expect(borderB.borderRight).toBe("1px solid #8b5cf6");
       expect(borderB.borderTopLeftRadius).toBe("0px");
       expect(borderB.borderTopRightRadius).toBe("4px");
     });
@@ -288,12 +292,12 @@ describe("Shell Border Settings & Features", () => {
       const borderB = computeCollapsedBorders("b", areas, activeSlots, "#8b5cf6");
 
       // Slot A: top, keeps top and bottom borders
-      expect(borderA.borderTop).toBe("2px solid #8b5cf6");
-      expect(borderA.borderBottom).toBe("2px solid #8b5cf6");
+      expect(borderA.borderTop).toBe("1px solid #8b5cf6");
+      expect(borderA.borderBottom).toBe("1px solid #8b5cf6");
 
       // Slot B: bottom, has top neighbor A with shell -> borderTop collapsed to 0px
       expect(borderB.borderTop).toBe("0px");
-      expect(borderB.borderBottom).toBe("2px solid #8b5cf6");
+      expect(borderB.borderBottom).toBe("1px solid #8b5cf6");
     });
 
     it("does not collapse border if adjacent neighbor is an empty slot", () => {
@@ -307,8 +311,184 @@ describe("Shell Border Settings & Features", () => {
       const borderB = computeCollapsedBorders("b", areas, activeSlotsWithBOnly, "#8b5cf6");
 
       // Since neighbor A is empty, B must NOT collapse its borderLeft
-      expect(borderB.borderLeft).toBe("2px solid #8b5cf6");
-      expect(borderB.borderRight).toBe("2px solid #8b5cf6");
+      expect(borderB.borderLeft).toBe("1px solid #8b5cf6");
+      expect(borderB.borderRight).toBe("1px solid #8b5cf6");
+    });
+  });
+
+  describe("ARGB & Alpha Channel Color Capabilities", () => {
+    it("parses 6-digit RGB hex and calculates full opacity", () => {
+      const parsed = parseArgbColor("#8b5cf6");
+      expect(parsed.a).toBe(1);
+      expect(parsed.alphaPercent).toBe(100);
+      expect(parsed.hexRgb).toBe("#8b5cf6");
+      expect(parsed.hexArgb).toBe("#ff8b5cf6");
+      expect(parsed.cssRgba).toBe("rgba(139, 92, 246, 1)");
+
+      const created = createArgbColor(0.8, 139, 92, 246);
+      expect(created.alphaPercent).toBe(80);
+      expect(created.hexArgb).toBe("#cc8b5cf6");
+    });
+
+    it("parses 8-digit ARGB hex correctly", () => {
+      // #808B5CF6 -> A: 0x80 (128 / 255 ≈ 0.502), R: 0x8B, G: 0x5C, B: 0xF6
+      const parsed = parseArgbColor("#808b5cf6");
+      expect(parsed.alphaPercent).toBe(50);
+      expect(parsed.hexRgb).toBe("#8b5cf6");
+      expect(parsed.hexArgb).toBe("#808b5cf6");
+      expect(parsed.cssRgba).toBe("rgba(139, 92, 246, 0.502)");
+    });
+
+    it("parses css rgba strings and converts to ARGB", () => {
+      const parsed = parseArgbColor("rgba(59, 130, 246, 0.8)");
+      expect(parsed.alphaPercent).toBe(80);
+      expect(parsed.hexRgb).toBe("#3b82f6");
+      expect(parsed.hexArgb).toBe("#cc3b82f6");
+    });
+
+    it("normalizeBorderColorToCss preserves 6-digit hex and transforms ARGB to valid CSS rgba", () => {
+      expect(normalizeBorderColorToCss("#8b5cf6")).toBe("#8b5cf6");
+      expect(normalizeBorderColorToCss("#808b5cf6")).toBe("rgba(139, 92, 246, 0.502)");
+      expect(normalizeBorderColorToCss("rgba(16, 185, 129, 0.6)")).toBe("rgba(16, 185, 129, 0.6)");
+    });
+
+    it("allows adjusting alpha channel via slider in settings modal", async () => {
+      const onColorChange = vi.fn();
+      await act(async () => {
+        renderWithProviders(
+          <GeneralSettingsTab
+            {...defaultSettingsProps}
+            shellBorderColor="#8b5cf6"
+            onShellBorderColorChange={onColorChange}
+          />
+        );
+      });
+
+      // Open color modal
+      await act(async () => {
+        fireEvent.click(screen.getByTestId("shell-border-color-btn"));
+      });
+
+      expect(screen.getByTestId("shell-border-color-modal")).toBeInTheDocument();
+      expect(screen.getByText("Alpha 通道 (不透明度)")).toBeInTheDocument();
+
+      // Adjust alpha slider to 80%
+      const slider = screen.getByTestId("shell-border-alpha-slider");
+      await act(async () => {
+        fireEvent.change(slider, { target: { value: "80" } });
+      });
+
+      // Confirm
+      await act(async () => {
+        fireEvent.click(screen.getByText("确定"));
+      });
+
+      expect(onColorChange).toHaveBeenCalledWith("#cc8b5cf6");
+    });
+
+    it("allows selecting quick alpha preset button (e.g. 50%) in settings modal", async () => {
+      const onColorChange = vi.fn();
+      await act(async () => {
+        renderWithProviders(
+          <GeneralSettingsTab
+            {...defaultSettingsProps}
+            shellBorderColor="#3b82f6"
+            onShellBorderColorChange={onColorChange}
+          />
+        );
+      });
+
+      await act(async () => {
+        fireEvent.click(screen.getByTestId("shell-border-color-btn"));
+      });
+
+      const preset50Btn = screen.getByText("50%");
+      await act(async () => {
+        fireEvent.click(preset50Btn);
+      });
+
+      await act(async () => {
+        fireEvent.click(screen.getByText("确定"));
+      });
+
+      expect(onColorChange).toHaveBeenCalledWith("#803b82f6");
+    });
+
+    it("TerminalTab renders semi-transparent CSS rgba border when ARGB color is passed", () => {
+      const { container } = render(
+        <TerminalTab
+          sessionId="s-argb"
+          cwd="/test"
+          isVisible={true}
+          borderColor="#803b82f6"
+        />
+      );
+
+      const outer = container.firstChild as HTMLElement;
+      expect(outer.style.border).toBe("1px solid rgba(59, 130, 246, 0.502)");
+    });
+  });
+
+  describe("Shell Border Width Settings & Renderings", () => {
+    it("renders shell border width option buttons (1, 1.5, 2, 2.5, 3)", async () => {
+      await act(async () => {
+        renderWithProviders(<GeneralSettingsTab {...defaultSettingsProps} />);
+      });
+
+      expect(screen.getByText("shell边框宽度")).toBeInTheDocument();
+      expect(screen.getByTestId("shell-border-width-1")).toBeInTheDocument();
+      expect(screen.getByTestId("shell-border-width-1.5")).toBeInTheDocument();
+      expect(screen.getByTestId("shell-border-width-2")).toBeInTheDocument();
+      expect(screen.getByTestId("shell-border-width-2.5")).toBeInTheDocument();
+      expect(screen.getByTestId("shell-border-width-3")).toBeInTheDocument();
+    });
+
+    it("triggers onShellBorderWidthChange when selecting a width button", async () => {
+      const onWidthChange = vi.fn();
+      await act(async () => {
+        renderWithProviders(
+          <GeneralSettingsTab
+            {...defaultSettingsProps}
+            shellBorderWidth="1px"
+            onShellBorderWidthChange={onWidthChange}
+          />
+        );
+      });
+
+      const btn25 = screen.getByTestId("shell-border-width-2.5");
+      await act(async () => {
+        fireEvent.click(btn25);
+      });
+
+      expect(onWidthChange).toHaveBeenCalledWith("2.5px");
+    });
+
+    it("computeCollapsedBorders uses customized border width", () => {
+      const activeSlots: (ConsoleTab | null)[] = [
+        { id: "tab-a", type: "terminal", title: "A", cwd: "" },
+      ];
+      const areas = '"a"';
+
+      const borderA = computeCollapsedBorders("a", areas, activeSlots, "#8b5cf6", "2.5px");
+      expect(borderA.borderTop).toBe("2.5px solid #8b5cf6");
+      expect(borderA.borderRight).toBe("2.5px solid #8b5cf6");
+      expect(borderA.borderBottom).toBe("2.5px solid #8b5cf6");
+      expect(borderA.borderLeft).toBe("2.5px solid #8b5cf6");
+    });
+
+    it("TerminalTab renders custom border width", () => {
+      const { container } = render(
+        <TerminalTab
+          sessionId="s-w"
+          cwd="/test"
+          isVisible={true}
+          borderColor="#3b82f6"
+          borderWidth="3px"
+        />
+      );
+
+      const outer = container.firstChild as HTMLElement;
+      expect(outer.style.border).toBe("3px solid rgb(59, 130, 246)");
     });
   });
 });

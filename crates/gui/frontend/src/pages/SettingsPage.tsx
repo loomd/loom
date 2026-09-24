@@ -40,6 +40,8 @@ interface Props {
 	onShellBorderEnabledChange?: (enabled: boolean) => void;
 	shellBorderColor?: string;
 	onShellBorderColorChange?: (color: string) => void;
+	shellBorderWidth?: string;
+	onShellBorderWidthChange?: (width: string) => void;
 }
 
 type Tab = "general" | "tools" | "env" | "libs";
@@ -72,6 +74,8 @@ export default function SettingsPage({
 	onShellBorderEnabledChange,
 	shellBorderColor,
 	onShellBorderColorChange,
+	shellBorderWidth,
+	onShellBorderWidthChange,
 }: Props) {
 	const { t } = useI18n();
 	const [activeSubTab, setActiveSubTab] = useState<Tab>("general");
@@ -183,6 +187,8 @@ export default function SettingsPage({
 						onShellBorderEnabledChange={onShellBorderEnabledChange}
 						shellBorderColor={shellBorderColor}
 						onShellBorderColorChange={onShellBorderColorChange}
+						shellBorderWidth={shellBorderWidth}
+						onShellBorderWidthChange={onShellBorderWidthChange}
 					/>
 				)}
 				{activeSubTab === "tools" && <CliToolsTab />}

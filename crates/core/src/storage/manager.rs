@@ -2282,6 +2282,18 @@ pub fn set_shell_border_color(color: String) -> Result<()> {
     Ok(())
 }
 
+pub fn get_shell_border_width() -> Result<String> {
+    let config = load_config()?;
+    Ok(config.shell_border_width.clone())
+}
+
+pub fn set_shell_border_width(width: String) -> Result<()> {
+    let mut config = load_config()?;
+    config.shell_border_width = width;
+    save_config(&config)?;
+    Ok(())
+}
+
 pub fn get_global_env_vars() -> Result<Vec<GlobalEnvVar>> {
     let config = load_config()?;
     Ok(config.env_vars.clone())

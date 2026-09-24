@@ -5,6 +5,7 @@ import { WebLinksAddon } from '@xterm/addon-web-links';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { openUrl } from '../api';
+import { normalizeBorderColorToCss } from '../utils';
 import '@xterm/xterm/css/xterm.css';
 
 interface TerminalTabProps {
@@ -21,6 +22,7 @@ interface TerminalTabProps {
   theme?: 'dark' | 'day' | 'gray';
   fontSize?: string | number;
   borderColor?: string;
+  borderWidth?: string;
   borderStyle?: React.CSSProperties;
 }
 
@@ -104,7 +106,7 @@ const getTerminalTheme = (theme?: 'dark' | 'day' | 'gray') => {
   }
 };
 
-export function TerminalTab({ sessionId, cwd, command, args, env, initialCommand, spawnDelay, isVisible, isFocused, onFocus, theme, fontSize, borderColor, borderStyle }: TerminalTabProps) {
+export function TerminalTab({ sessionId, cwd, command, args, env, initialCommand, spawnDelay, isVisible, isFocused, onFocus, theme, fontSize, borderColor, borderWidth, borderStyle }: TerminalTabProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const outerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
@@ -684,7 +686,7 @@ export function TerminalTab({ sessionId, cwd, command, args, env, initialCommand
         overflow: 'hidden',
         position: 'relative',
         borderRadius: borderStyle ? undefined : '4px',
-        border: borderStyle ? undefined : (borderColor ? `2px solid ${borderColor}` : '1px solid var(--border-subtle, #27272a)'),
+        border: borderStyle ? undefined : (borderColor ? `${borderWidth ? (borderWidth.endsWith('px') ? borderWidth : `${borderWidth}px`) : '1px'} solid ${normalizeBorderColorToCss(borderColor)}` : '1px solid var(--border-subtle, #27272a)'),
         boxSizing: 'border-box',
         ...borderStyle,
       }}
