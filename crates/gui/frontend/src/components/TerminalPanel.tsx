@@ -183,7 +183,7 @@ export function TerminalPanel({ terminals, terminalSlots, activeTabId, layoutMod
       backgroundColor: '#121214',
       boxSizing: 'border-box',
       overflow: 'hidden',
-      padding: (showGrid && dims) ? '0 1px 0 0' : 0,
+      padding: (showGrid && dims) ? '0 1px 1.5px 0' : 0,
     }}>
       <SplitGrid cols={dims?.cols ?? 1} rows={dims?.rows ?? 1} areas={areas ?? '"a"'} grid={!!dims} layoutKey={layoutMode} projectId={projectId}>
         {terminalPanes}
