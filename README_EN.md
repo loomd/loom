@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/loomd/loom/actions/workflows/ci.yml"><img src="https://github.com/loomd/loom/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>&nbsp;<a href="https://github.com/loomd/loom/releases"><img src="https://img.shields.io/github/v/release/loomd/loom?color=blue" alt="Release" /></a>&nbsp;<a href="LICENSE"><img src="https://img.shields.io/badge/license-FSL--1.1--ALv2-blue" alt="FSL-1.1-ALv2" /></a>
+  <a href="https://github.com/loomd/loom/actions/workflows/ci.yml"><img src="https://github.com/loomd/loom/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>&nbsp;<a href="https://github.com/loomd/loom/releases"><img src="https://img.shields.io/github/v/release/loomd/loom?color=blue" alt="Release" /></a>&nbsp;<a href="LICENSE"><img src="https://img.shields.io/badge/license-FSL--1.1--ALv2-blue" alt="FSL-1.1-ALv2" /></a>&nbsp;<a href="README.md"><img src="https://img.shields.io/badge/%E4%B8%AD%E6%96%87-lightgrey" alt="中文" /></a>
 </p>
 
 ## Loom
@@ -52,17 +52,3 @@ Run in development mode:
 ```bash
 cargo tauri dev
 ```
-
-## License
-
-**Functional Source License, Version 1.1, ALv2 Future License (FSL-1.1-ALv2)**
-
-Loom is licensed under Fair Source. You may freely use, modify, fork and redistribute it, including publishing closed-source derivatives; however, you may **not** use Loom to build a commercial product or service that competes with this project. Internal use, non-commercial research, and professional services for licensees are all permitted.
-
-Each version automatically **converts to Apache-2.0** two years after its release (irrevocably). The "Loom" trademark is not included in the grant.
-
-See [LICENSING.md](LICENSING.md) for per-version license history and commercial licensing contacts, and [TRADEMARKS.md](TRADEMARKS.md) for trademark rules.
-
----
-
-[中文](README.md)
