@@ -9,6 +9,7 @@ members = [
 [workspace.package]
 version = "0.7.11"
 edition = "2021"
+license = "LicenseRef-FSL-1.1-ALv2"
 
 
 # Centralized dependency management

@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/loomd/loom/actions/workflows/ci.yml"><img src="https://github.com/loomd/loom/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>&nbsp;<a href="https://github.com/loomd/loom/releases"><img src="https://img.shields.io/github/v/release/loomd/loom?color=blue" alt="Release" /></a>&nbsp;<a href="LICENSE"><img src="https://img.shields.io/github/license/loomd/loom?color=green" alt="MIT" /></a>
+  <a href="https://github.com/loomd/loom/actions/workflows/ci.yml"><img src="https://github.com/loomd/loom/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>&nbsp;<a href="https://github.com/loomd/loom/releases"><img src="https://img.shields.io/github/v/release/loomd/loom?color=blue" alt="Release" /></a>&nbsp;<a href="LICENSE"><img src="https://img.shields.io/badge/license-FSL--1.1--ALv2-blue" alt="FSL-1.1-ALv2" /></a>
 </p>
 
 Loom 是一个支持多项目统一管理，多 agent 并行开发的终端管理工具，集成了文件管理和skills管理的功能。
@@ -54,7 +54,13 @@ cargo tauri dev
 
 ## 许可证
 
-MIT 开源协议。
+**Functional Source License, Version 1.1, ALv2 Future License（FSL-1.1-ALv2）**
+
+Loom 采用 Fair Source 协议。你可以自由使用、修改、fork 与再分发，包括发布闭源的衍生作品；但**禁止将 Loom 用于构建与本项目竞争的商业产品或服务**。内部使用、非商业研究、以及为已获许可用户提供专业服务均属允许。
+
+每个版本在发布满两年后，会**自动转为 Apache-2.0**（不可撤销）。商标 "Loom" 不在授权范围内。
+
+版本协议历史与商业授权请联系见 [LICENSING.md](LICENSING.md)，商标规则见 [TRADEMARKS.md](TRADEMARKS.md)。
 
 ---
 
