@@ -24,6 +24,7 @@
   "bundle": {
     "active": true,
     "targets": ["nsis"],
+    "publisher": "Loomd",
     "createUpdaterArtifacts": true,
     "resources": {
       "whats-new/*.md": "whats-new/"
