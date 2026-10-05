@@ -13,6 +13,8 @@ function FakeTerminal(this: Record<string, unknown>, opts?: Record<string, unkno
     loadAddon: vi.fn(),
     open: vi.fn(),
     onData: vi.fn(() => ({ dispose: vi.fn() })),
+    onResize: vi.fn(() => ({ dispose: vi.fn() })),
+    onRender: vi.fn(() => ({ dispose: vi.fn() })),
     write: vi.fn(),
     focus: vi.fn(),
     dispose: vi.fn(),

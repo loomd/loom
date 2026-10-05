@@ -7,12 +7,40 @@ let mockTerminalInstance: Record<string, unknown>;
 function FakeTerminal(this: Record<string, unknown>, opts?: Record<string, unknown>) {
   const textarea = document.createElement("textarea");
   const element = document.createElement("div");
+  const compositionView = document.createElement("div");
+  compositionView.className = "composition-view";
+  element.append(textarea, compositionView);
+  let composing = false;
+  const syncTextArea = vi.fn(() => {
+    if (composing) return;
+    textarea.style.left = "30px";
+    textarea.style.top = "40px";
+  });
+  const updateCompositionElements = vi.fn(() => {
+    if (!composing) return;
+    compositionView.style.left = textarea.style.left = "30px";
+    compositionView.style.top = textarea.style.top = "40px";
+  });
+  const nativeStart = vi.fn(() => {
+    composing = true;
+    return { left: textarea.style.left, top: textarea.style.top };
+  });
+  textarea.addEventListener("compositionstart", nativeStart);
+  textarea.addEventListener("compositionupdate", updateCompositionElements);
+  textarea.addEventListener("compositionend", () => { composing = false; });
   const line = { getCell: vi.fn() };
   Object.assign(this, {
     options: { fontSize: opts?.fontSize ?? 13 },
     loadAddon: vi.fn(),
-    open: vi.fn(),
+    open: vi.fn((container: HTMLElement) => container.append(element)),
     onData: vi.fn(() => ({ dispose: vi.fn() })),
+    onResize: vi.fn(() => ({ dispose: vi.fn() })),
+    onRender: vi.fn(() => ({ dispose: vi.fn() })),
+    _core: {
+      _syncTextArea: syncTextArea,
+      _compositionHelper: { updateCompositionElements },
+    },
+    nativeStart,
     write: vi.fn(),
     focus: vi.fn(),
     dispose: vi.fn(),
@@ -70,6 +98,69 @@ afterEach(() => {
 });
 
 describe("TerminalTab", () => {
+  it("resynchronizes before native composition starts and aligns both IME elements immediately", async () => {
+    const { TerminalTab } = await import("../components/TerminalTab");
+    const { container } = render(<TerminalTab sessionId="ime-start" cwd="/tmp" isVisible={true} />);
+    await vi.advanceTimersByTimeAsync(100);
+    const textarea = mockTerminalInstance.textarea as HTMLTextAreaElement;
+    textarea.style.left = "790px";
+    textarea.style.top = "460px";
+    textarea.value = "existing";
+    const event = new CompositionEvent("compositionstart", { bubbles: true, cancelable: true });
+    textarea.dispatchEvent(event);
+
+    expect(mockTerminalInstance.nativeStart).toHaveReturnedWith({ left: "30px", top: "40px" });
+    const view = container.querySelector<HTMLElement>(".composition-view")!;
+    expect(view.style.left).toBe("30px");
+    expect(view.style.top).toBe("40px");
+    expect(view.parentElement!.parentElement!.style.getPropertyValue("--ime-left")).toBe("30px");
+    expect(textarea.value).toBe("existing");
+    expect(event.defaultPrevented).toBe(false);
+  });
+
+  it("keeps repeated preedit updates aligned without replacing composed text", async () => {
+    const { TerminalTab } = await import("../components/TerminalTab");
+    const { container } = render(<TerminalTab sessionId="ime-update" cwd="/tmp" isVisible={true} />);
+    await vi.advanceTimersByTimeAsync(100);
+    const textarea = mockTerminalInstance.textarea as HTMLTextAreaElement;
+    for (const value of ["ni", "你好", "hao"]) {
+      textarea.dispatchEvent(new CompositionEvent("compositionstart"));
+      textarea.value = value;
+      textarea.dispatchEvent(new CompositionEvent("compositionupdate", { data: value }));
+      const view = container.querySelector<HTMLElement>(".composition-view")!;
+      expect(textarea.style.left).toBe(view.style.left);
+      expect(textarea.style.top).toBe(view.style.top);
+      expect(textarea.value).toBe(value);
+      textarea.dispatchEvent(new CompositionEvent("compositionend", { data: value }));
+      expect(textarea.value).toBe(value);
+    }
+  });
+
+  it("refreshes stale coordinates on resize/render and disposes the synchronization listeners", async () => {
+    const { TerminalTab } = await import("../components/TerminalTab");
+    const { unmount } = render(<TerminalTab sessionId="ime-resize" cwd="/tmp" isVisible={true} />);
+    await vi.advanceTimersByTimeAsync(100);
+    const textarea = mockTerminalInstance.textarea as HTMLTextAreaElement;
+    const onResize = mockTerminalInstance.onResize as ReturnType<typeof vi.fn>;
+    const onRender = mockTerminalInstance.onRender as ReturnType<typeof vi.fn>;
+    expect(onResize).toHaveBeenCalled();
+    expect(onRender).toHaveBeenCalled();
+    for (const subscribe of [onResize, onRender]) {
+      textarea.style.left = "790px";
+      textarea.style.top = "460px";
+      subscribe.mock.calls[0][0]();
+      expect(textarea.style.left).toBe("30px");
+      expect(textarea.style.top).toBe("40px");
+    }
+    unmount();
+    for (const subscribe of [onResize, onRender]) {
+      expect(subscribe.mock.results[0].value.dispose).toHaveBeenCalled();
+    }
+    textarea.style.left = "790px";
+    textarea.dispatchEvent(new CompositionEvent("compositionstart"));
+    expect(textarea.style.left).toBe("790px");
+  });
+
   it("renders container div", async () => {
     const { TerminalTab } = await import("../components/TerminalTab");
     const { container } = render(
