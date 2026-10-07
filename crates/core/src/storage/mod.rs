@@ -26,6 +26,7 @@ pub use manager::{
     get_selected_project_id, save_selected_project_id,
     get_project_terminals, save_project_terminals, clear_project_terminals,
     get_project_layout, save_project_layout,
+    get_project_agent_history, save_project_agent_history, delete_project_agent_history,
     import_cli_tool, import_global_doc_to_project,
     import_global_skill_to_project, kill_cli_instance, parse_local_skill_dir, read_agent_logs,
     reorder_cli_tools, reorder_projects, reorder_templates, run_cli_template, scan_and_classify_agents, create_agent_templates, scan_directory, toggle_cli_tool_agent,
@@ -36,7 +37,7 @@ pub use manager::{
     update_global_skill, update_cli_alias, update_template, StorageManager, ScanResult,
 };
 pub use models::{
-    AgentDoc, AgentInstance, AppConfig, Category, CliTool, CurrentState, GlobalDocTemplate, GlobalEnvVar,
+    AgentDoc, AgentHistoryEntry, AgentInstance, AppConfig, Category, CliTool, CurrentState, GlobalDocTemplate, GlobalEnvVar,
     GlobalSkillTemplate, LoomStorage, PersistedTerminal, Project, ProjectSkill, Template,
 };
 

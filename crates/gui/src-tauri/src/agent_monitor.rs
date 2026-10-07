@@ -21,6 +21,49 @@ pub enum AgentState {
 pub struct AgentStateInfo {
     pub state: AgentState,
     pub session_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session_title: Option<String>,
+}
+
+/// 从 opencode 或 mcode 本地数据库查询指定 session 的真实标题
+pub fn get_session_title(agent_type: &str, session_id: &str) -> Option<String> {
+    if session_id.is_empty() {
+        return None;
+    }
+    let is_mcode = agent_type.eq_ignore_ascii_case("mcode") || session_id.starts_with("mvs_");
+    let is_opencode = agent_type.eq_ignore_ascii_case("opencode") || session_id.starts_with("ses_");
+
+    if is_mcode {
+        if let Some(db_path) = AgentMonitor::get_mcode_db_path() {
+            if let Ok(conn) = AgentMonitor::open_readonly_conn(&db_path) {
+                if let Ok(mut stmt) = conn.prepare("SELECT title FROM local_runtime_sessions WHERE session_id = ?1 LIMIT 1") {
+                    if let Ok(Some(t)) = stmt.query_row(rusqlite::params![session_id], |row| row.get::<_, Option<String>>(0)) {
+                        let trimmed = t.trim().to_string();
+                        if !trimmed.is_empty() {
+                            return Some(trimmed);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if is_opencode {
+        if let Some(db_path) = AgentMonitor::get_db_path() {
+            if let Ok(conn) = AgentMonitor::open_readonly_conn(&db_path) {
+                if let Ok(mut stmt) = conn.prepare("SELECT title FROM session WHERE id = ?1 LIMIT 1") {
+                    if let Ok(Some(t)) = stmt.query_row(rusqlite::params![session_id], |row| row.get::<_, Option<String>>(0)) {
+                        let trimmed = t.trim().to_string();
+                        if !trimmed.is_empty() {
+                            return Some(trimmed);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    None
 }
 
 /// Monotonic counter to resolve sub-millisecond input ordering.
@@ -241,6 +284,7 @@ impl AgentMonitor {
         let waiting = || AgentStateInfo {
             state: AgentState::Waiting,
             session_id: String::new(),
+            session_title: None,
         };
 
         let opencode_conn = Self::get_db_path().and_then(|p| Self::open_readonly_conn(&p).ok());
@@ -264,6 +308,7 @@ impl AgentMonitor {
         let waiting = || AgentStateInfo {
             state: AgentState::Waiting,
             session_id: String::new(),
+            session_title: None,
         };
 
         let is_opencode = agent_type.is_none_or(|t| t.eq_ignore_ascii_case("opencode"));
@@ -329,6 +374,7 @@ impl AgentMonitor {
         let waiting = || AgentStateInfo {
             state: AgentState::Waiting,
             session_id: String::new(),
+            session_title: None,
         };
 
         let opencode_conn = Self::get_db_path().and_then(|p| Self::open_readonly_conn(&p).ok());
@@ -353,6 +399,7 @@ impl AgentMonitor {
         let waiting = || AgentStateInfo {
             state: AgentState::Waiting,
             session_id: String::new(),
+            session_title: None,
         };
 
         let now = now_ms();
@@ -557,6 +604,18 @@ impl AgentMonitor {
     }
 
     fn poll_mcode_parts(&self, conn: &Connection, session_id: &str) -> Option<AgentStateInfo> {
+        let session_title: Option<String> = if let Ok(mut stmt) = conn.prepare("SELECT title FROM local_runtime_sessions WHERE session_id = ?1 LIMIT 1") {
+            stmt.query_row(rusqlite::params![session_id], |r| r.get::<_, Option<String>>(0))
+                .ok()
+                .flatten()
+                .and_then(|t| {
+                    let tr = t.trim().to_string();
+                    if tr.is_empty() { None } else { Some(tr) }
+                })
+        } else {
+            None
+        };
+
         // 1. Check questionnaire_requests for pending user interaction (Question state)
         if let Ok(mut stmt) = conn.prepare("SELECT status FROM questionnaire_requests WHERE session_id = ?1 AND status = 'pending' LIMIT 1") {
             if let Ok(mut rows) = stmt.query(rusqlite::params![session_id]) {
@@ -565,6 +624,7 @@ impl AgentMonitor {
                     return Some(AgentStateInfo {
                         state: AgentState::Question,
                         session_id: session_id.to_string(),
+                        session_title,
                     });
                 }
             }
@@ -578,6 +638,7 @@ impl AgentMonitor {
                     return Some(AgentStateInfo {
                         state: AgentState::AgentCall,
                         session_id: session_id.to_string(),
+                        session_title,
                     });
                 }
             }
@@ -596,6 +657,7 @@ impl AgentMonitor {
                             return Some(AgentStateInfo {
                                 state: AgentState::Error,
                                 session_id: session_id.to_string(),
+                                session_title,
                             });
                         }
                     }
@@ -609,6 +671,7 @@ impl AgentMonitor {
                     return Some(AgentStateInfo {
                         state,
                         session_id: session_id.to_string(),
+                        session_title,
                     });
                 }
             }
@@ -617,22 +680,35 @@ impl AgentMonitor {
         Some(AgentStateInfo {
             state: AgentState::Waiting,
             session_id: session_id.to_string(),
+            session_title,
         })
     }
 
     fn poll_parts(&self, conn: &Connection, session_id: &str) -> Option<AgentStateInfo> {
+        let session_title: Option<String> = if let Ok(mut stmt) = conn.prepare("SELECT title FROM session WHERE id = ?1 LIMIT 1") {
+            stmt.query_row(rusqlite::params![session_id], |r| r.get::<_, Option<String>>(0))
+                .ok()
+                .flatten()
+                .and_then(|t| {
+                    let tr = t.trim().to_string();
+                    if tr.is_empty() { None } else { Some(tr) }
+                })
+        } else {
+            None
+        };
+
         let mut stmt = match conn.prepare("SELECT data, time_created FROM part WHERE session_id = ?1 ORDER BY time_created DESC") {
             Ok(s) => s,
             Err(_) => {
                 eprintln!("[AgentPoll] parts query prepare failed, Waiting");
-                return Some(AgentStateInfo { state: AgentState::Waiting, session_id: session_id.to_string() });
+                return Some(AgentStateInfo { state: AgentState::Waiting, session_id: session_id.to_string(), session_title });
             }
         };
         let mut rows = match stmt.query(rusqlite::params![session_id]) {
             Ok(r) => r,
             Err(_) => {
                 eprintln!("[AgentPoll] parts query failed, Waiting");
-                return Some(AgentStateInfo { state: AgentState::Waiting, session_id: session_id.to_string() });
+                return Some(AgentStateInfo { state: AgentState::Waiting, session_id: session_id.to_string(), session_title });
             }
         };
 
@@ -651,7 +727,7 @@ impl AgentMonitor {
 
         if parts.is_empty() {
             eprintln!("[AgentPoll] no parts, Waiting, session: {}", session_id);
-            return Some(AgentStateInfo { state: AgentState::Waiting, session_id: session_id.to_string() });
+            return Some(AgentStateInfo { state: AgentState::Waiting, session_id: session_id.to_string(), session_title });
         }
 
         // Scan parts for active tool status
@@ -672,11 +748,11 @@ impl AgentMonitor {
 
         if question_running {
             eprintln!("[AgentPoll] Question, session: {}", session_id);
-            return Some(AgentStateInfo { state: AgentState::Question, session_id: session_id.to_string() });
+            return Some(AgentStateInfo { state: AgentState::Question, session_id: session_id.to_string(), session_title });
         }
         if task_running {
             eprintln!("[AgentPoll] AgentCall, session: {}", session_id);
-            return Some(AgentStateInfo { state: AgentState::AgentCall, session_id: session_id.to_string() });
+            return Some(AgentStateInfo { state: AgentState::AgentCall, session_id: session_id.to_string(), session_title });
         }
 
         // Check if latest part is step-finish with reason="stop" -> Waiting
@@ -686,13 +762,13 @@ impl AgentMonitor {
             let reason = val.get("reason").and_then(|r| r.as_str());
             if part_type == Some("step-finish") && reason == Some("stop") {
                 eprintln!("[AgentPoll] step-finish stop, Waiting, session: {}", session_id);
-                return Some(AgentStateInfo { state: AgentState::Waiting, session_id: session_id.to_string() });
+                return Some(AgentStateInfo { state: AgentState::Waiting, session_id: session_id.to_string(), session_title });
             }
         }
 
         let state = Self::parse_state(latest_data);
         eprintln!("[AgentPoll] parse_state: {:?}, parts={}, session: {}", state, parts.len(), session_id);
-        Some(AgentStateInfo { state, session_id: session_id.to_string() })
+        Some(AgentStateInfo { state, session_id: session_id.to_string(), session_title })
     }
 
     pub fn reset_idle(&self) {}

@@ -303,6 +303,30 @@ pub struct PersistedTerminal {
     pub initial_command: Option<String>,
 }
 
+/// 单条 Agent 历史会话记录（仅 AI agent 终端）
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct AgentHistoryEntry {
+    /// Agent session ID（mvs_xxx 或 ses_xxx）
+    pub session_id: String,
+    /// 会话标题（对应终端的 title）
+    pub title: String,
+    /// Agent 会话真实标题（可选，来自 mcode/opencode 数据库）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session_title: Option<String>,
+    /// agent 类型："mcode" | "opencode"
+    pub agent_type: String,
+    /// 恢复时使用的 cwd
+    pub cwd: String,
+    /// 恢复时使用的 command（可选）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub command: Option<String>,
+    /// 恢复时使用的 args（可选）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub args: Option<Vec<String>>,
+    /// 最后活跃时间戳（Unix 秒）
+    pub last_seen: u64,
+}
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct CurrentState {
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -311,5 +335,8 @@ pub struct CurrentState {
     pub project_terminals: HashMap<String, Vec<PersistedTerminal>>,
     #[serde(default)]
     pub project_layouts: HashMap<String, String>,
+    /// 每个项目最近 6 条 agent 历史会话
+    #[serde(default)]
+    pub project_agent_history: HashMap<String, Vec<AgentHistoryEntry>>,
 }
 

@@ -9,10 +9,10 @@ import { useToast } from '../ToastContext';
 import { useI18n } from '../I18nContext';
 import { TemplateModal } from './TemplatesPage';
 import { EditorPlaceholder } from '../components/EditorPlaceholder';
-import { clearProjectTerminals, getProjectLayout, getProjectTerminals, getRestoreTerminals, pollAgentState, saveProjectLayout, saveProjectTerminals } from '../api';
+import { clearProjectTerminals, deleteProjectAgentHistory, getProjectAgentHistory, getProjectLayout, getProjectTerminals, getRestoreTerminals, pollAgentState, saveProjectAgentHistory, saveProjectLayout, saveProjectTerminals } from '../api';
 import { syncProjectShells } from '../hooks/useProjectCompositeStates';
 import type { CompositeState } from '../hooks/useProjectCompositeStates';
-import type { Project, AgentStateInfo, PersistedTerminal } from '../types';
+import type { Project, AgentStateInfo, PersistedTerminal, AgentHistoryEntry } from '../types';
 import type { ConsoleTab, GridLayout } from '../hooks/useTabs';
 import { gridCellCount } from '../hooks/useTabs';
 const FileEditor = React.lazy(() => import('../components/FileEditor').then(m => ({ default: m.FileEditor })));
@@ -72,6 +72,26 @@ const [pendingRestoreTerminals, setPendingRestoreTerminals] = useState<Persisted
 const [pendingRestoreLayout, setPendingRestoreLayout] = useState<GridLayout | null>(null);
 const [restoreReady, setRestoreReady] = useState(false);
 const gridCount = layoutMode ? gridCellCount(layoutMode) : 0;
+
+// ─── Agent 历史会话 ────────────────────────────────────────
+const [agentHistory, setAgentHistory] = useState<AgentHistoryEntry[]>([]);
+useEffect(() => {
+  getProjectAgentHistory(project.id).then(setAgentHistory).catch(() => {});
+}, [project.id]);
+
+// 历史会话右键菜单
+const [historyCtxMenu, setHistoryCtxMenu] = useState<{ x: number; y: number; sessionId: string } | null>(null);
+const historyCtxMenuRef = useRef<HTMLDivElement | null>(null);
+useEffect(() => {
+  if (!historyCtxMenu) return;
+  const handler = (e: MouseEvent) => {
+    if (historyCtxMenuRef.current && !historyCtxMenuRef.current.contains(e.target as Node)) {
+      setHistoryCtxMenu(null);
+    }
+  };
+  document.addEventListener('mousedown', handler);
+  return () => document.removeEventListener('mousedown', handler);
+}, [historyCtxMenu]);
 
 const performRestore = useCallback((list: PersistedTerminal[], layout: GridLayout | null = null, notify = true) => {
   if (!list || list.length === 0) return;
@@ -365,6 +385,23 @@ const closeActiveByShortcut = useCallback(() => {
               next[term.id] = info;
               return next;
             });
+            // 有 session_id 时写入历史记录
+            if (info.session_id) {
+              const agentType = getTerminalAgentType(term) || 'mcode';
+              const entry: AgentHistoryEntry = {
+                session_id: info.session_id,
+                title: term.title || info.session_id,
+                session_title: info.session_title,
+                agent_type: agentType,
+                cwd: term.cwd,
+                command: term.command,
+                args: term.args,
+                last_seen: Math.floor(Date.now() / 1000),
+              };
+              saveProjectAgentHistory(project.id, entry)
+                .then(() => getProjectAgentHistory(project.id).then(setAgentHistory))
+                .catch(() => {});
+            }
           }
         } catch { /* DB not available */ }
       }
@@ -475,24 +512,13 @@ const closeActiveByShortcut = useCallback(() => {
               onClick={() => { if (showGrid && layoutMode) setPendingGridMode(layoutMode); setLayoutMode(null); setActiveTabId(tab.id); }}
               className={`workspace-tab-item ${tab.id === activeTabId && !showGrid ? 'active' : ''}`}
               style={{
-                gap: '6px', padding: '4px 4px', cursor: 'pointer',
+                gap: '6px', padding: '4px 4px', cursor: 'pointer', marginRight: '2px',
               }}>
               <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'inline-block', lineHeight: 1.3, transform: 'translateY(-0.06em)', maxWidth: tab.id === 'overview' ? '80px' : '60px' }}>
                 {tab.title}
               </span>
             </div>
           ))}
-          <div
-            onClick={() => openSpawnPanel()}
-            className="workspace-tab-item"
-            title={t('proj.btn.spawn') || '派生'}
-            style={{
-              gap: '6px', padding: '4px 4px', cursor: 'pointer',
-            }}>
-            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'inline-block', lineHeight: 1.3, transform: 'translateY(-0.06em)' }}>
-              {t('proj.btn.spawn') || '派生'}
-            </span>
-          </div>
           <LayoutSelector
             layoutMode={layoutMode}
             pendingLayout={pendingGridMode}
@@ -504,6 +530,30 @@ const closeActiveByShortcut = useCallback(() => {
         <div data-tauri-drag-region onWheel={(e) => { e.currentTarget.scrollLeft += e.deltaY; }}
           style={{ display: 'flex', alignItems: 'center', gap: '2px', overflowX: 'auto', flex: 1, scrollbarWidth: 'none', msOverflowStyle: 'none' }} className="titlebar-tabs-scroll"
         >
+          <button
+            onClick={() => openSpawnPanel()}
+            title={t('proj.btn.spawn') || '派生'}
+            style={{
+              flexShrink: 0,
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              width: '24px',
+              height: '24px',
+              borderRadius: '5px',
+              border: 'none',
+              cursor: 'pointer',
+              backgroundColor: 'var(--bg-elevated, rgba(255,255,255,0.08))',
+              color: 'var(--text-primary)',
+              padding: 0,
+              marginRight: '0px',
+            }}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+              <line x1="12" y1="4" x2="12" y2="20"/>
+              <line x1="4" y1="12" x2="20" y2="12"/>
+            </svg>
+          </button>
           {tabs.filter(tab => tab.id !== 'overview').map(tab => {
             const isTabInGrid = showGrid && tab.type === 'terminal' && terminalSlots.includes(tab.id);
             const isActive = showGrid ? isTabInGrid : tab.id === activeTabId;
@@ -551,8 +601,8 @@ const closeActiveByShortcut = useCallback(() => {
                 <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'inline-block', lineHeight: 1.3, transform: 'translateY(-0.06em)', minWidth: tab.type === 'terminal' ? '24px' : 0, maxWidth: tab.type === 'terminal' ? 'none' : '60px' }}>
                   {tab.title}
                 </span>
-                <span onClick={(e) => { if (!isActive) return; setAgentStateMap(prev => { const n = { ...prev }; delete n[tab.id]; return n; }); closeTerminalTab(tab.id, e); }}
-                  style={{ marginLeft: '2px', cursor: 'pointer', display: 'inline-block', width: '12px', height: '12px', textAlign: 'center', lineHeight: '12px', fontSize: tab.isDirty ? '0.6rem' : '0.7rem', visibility: isActive ? 'visible' : 'hidden', pointerEvents: isActive ? 'auto' : 'none' }}
+                <span onClick={(e) => { e.stopPropagation(); setAgentStateMap(prev => { const n = { ...prev }; delete n[tab.id]; return n; }); closeTerminalTab(tab.id, e); }}
+                  style={{ marginLeft: '2px', cursor: 'pointer', display: 'inline-block', width: '12px', height: '12px', textAlign: 'center', lineHeight: '12px', fontSize: tab.isDirty ? '0.6rem' : '0.7rem' }}
                   className={`tab-close-icon ${tab.isDirty ? 'dirty' : ''}`}
                   title={tab.isDirty ? '有未保存的更改' : undefined}
                 />
@@ -697,9 +747,11 @@ const closeActiveByShortcut = useCallback(() => {
                 })}
               </div>
             </div>
-            <div style={{ flex: 4, display: 'flex', flexDirection: 'column', gap: '16px', paddingTop: '2px', overflow: 'hidden' }}>
-              <h3 style={{ margin: 0, fontSize: '1.0rem', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>📁 {t('proj.explorer.title') || 'File Explorer'}</span>
+            <div style={{ flex: 4, display: 'flex', flexDirection: 'column', gap: '12px', paddingTop: '2px', overflow: 'hidden', minHeight: 0 }}>
+              {/* 文件区域（自适应高度：最少 50%，中间按内容撑开，最高 65%） */}
+              <div style={{ flex: '0 0 auto', minHeight: '50%', maxHeight: '65%', display: 'flex', flexDirection: 'column', gap: '8px', overflow: 'hidden' }}>
+              <h3 style={{ margin: 0, fontSize: '1.0rem', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
+                <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>{t('proj.explorer.title') || 'File Explorer'}</span>
                 <button onClick={() => onUnregisterProject(project)} className="btn-delete-project" style={{ fontSize: '0.75rem', padding: '3px 8px' }}>
                   🗑 {t('proj.modal.btn.delete')}
                 </button>
@@ -721,6 +773,166 @@ const closeActiveByShortcut = useCallback(() => {
                 onOpenInManager={data.handleOpenInManager}
                 onDeleteFile={data.handleDeleteFile}
               />
+              </div>
+
+              {/* 近期 Agent 会话（自适应填充剩下的区域） */}
+              <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', gap: '8px', overflow: 'hidden' }}>
+                <h3 style={{ margin: 0, fontSize: '1.0rem', color: 'var(--text-primary)', flexShrink: 0 }}>
+                  历史会话
+                </h3>
+                {agentHistory.length === 0 ? (
+                  <div style={{ fontSize: '0.82rem', color: 'var(--text-tertiary)', fontStyle: 'italic', padding: '8px 0' }}>
+                    暂无历史会话
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', overflowY: 'auto', scrollbarWidth: 'none' }}>
+                    {agentHistory.map((entry) => {
+                      const timeAgo = (() => {
+                        const diff = Math.floor(Date.now() / 1000) - entry.last_seen;
+                        if (diff < 60) return '刚刚';
+                        if (diff < 3600) return `${Math.floor(diff / 60)} 分钟前`;
+                        if (diff < 86400) return `${Math.floor(diff / 3600)} 小时前`;
+                        return `${Math.floor(diff / 86400)} 天前`;
+                      })();
+                      const isMcode = entry.agent_type === 'mcode';
+                      const isRealTitle = !!(entry.session_title && !entry.session_title.startsWith('New session - '));
+                      const displayTitle = isRealTitle ? entry.session_title! : (entry.title || entry.session_id);
+                      return (
+                        <button
+                          key={entry.session_id}
+                          onClick={() => {
+                            const newId = crypto.randomUUID();
+                            const isEntryMcode = entry.agent_type === 'mcode' || entry.session_id.startsWith('mvs_');
+                            let command = entry.command;
+                            let args = entry.args ? [...entry.args] : undefined;
+                            let initialCommand: string | undefined = undefined;
+                            const sessionId = entry.session_id;
+
+                            if (isEntryMcode) {
+                              if (command && (command.toLowerCase().includes('mcode') || command.toLowerCase().includes('minimax'))) {
+                                const cleanArgs = args ? [...args] : [];
+                                const sIdx = cleanArgs.indexOf('--session');
+                                if (sIdx !== -1 && sIdx + 1 < cleanArgs.length) {
+                                  cleanArgs[sIdx + 1] = sessionId;
+                                } else {
+                                  cleanArgs.push('--session', sessionId);
+                                }
+                                args = cleanArgs;
+                              } else if (!command) {
+                                command = 'mcode';
+                                args = ['--session', sessionId];
+                              } else {
+                                initialCommand = `mcode --session ${sessionId}`;
+                              }
+                            } else {
+                              if (command && command.toLowerCase().includes('opencode')) {
+                                const cleanArgs = args ? [...args] : [];
+                                const sIdx = cleanArgs.indexOf('-s');
+                                if (sIdx !== -1 && sIdx + 1 < cleanArgs.length) {
+                                  cleanArgs[sIdx + 1] = sessionId;
+                                } else {
+                                  cleanArgs.push('-s', sessionId);
+                                }
+                                args = cleanArgs;
+                              } else if (!command) {
+                                command = 'opencode';
+                                args = ['-s', sessionId];
+                              } else {
+                                initialCommand = `opencode -s ${sessionId}`;
+                              }
+                            }
+
+                            if (showGrid && layoutMode) setPendingGridMode(layoutMode);
+                            setLayoutMode(null);
+                            addTab({
+                              id: newId,
+                              title: displayTitle,
+                              type: 'terminal',
+                              cwd: entry.cwd || project.root_path,
+                              command,
+                              args,
+                              initialCommand,
+                              isOpencode: true,
+                              opencodeSessionId: sessionId,
+                            });
+                            setActiveTabId(newId);
+                          }}
+                          onContextMenu={(e) => {
+                            e.preventDefault();
+                            setHistoryCtxMenu({ x: e.clientX, y: e.clientY, sessionId: entry.session_id });
+                          }}
+                          title={`恢复会话：${displayTitle} (${entry.session_id})`}
+                          style={{
+                            display: 'flex', alignItems: 'center', gap: '10px',
+                            padding: '8px 12px', borderRadius: 'var(--radius-sm, 6px)',
+                            border: '1px solid var(--border-subtle, #27272a)',
+                            backgroundColor: 'var(--bg-elevated, rgba(255,255,255,0.04))',
+                            cursor: 'pointer', fontSize: '0.83rem', width: '100%',
+                            textAlign: 'left', flexShrink: 0,
+                            transition: 'none',
+                          }}
+                        >
+                          <span style={{ flex: 1, minWidth: 0 }}>
+                            <span style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: 500, color: 'var(--text-primary)' }}>
+                              {displayTitle}
+                            </span>
+                            <span style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-tertiary)', marginTop: '1px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              {isMcode ? 'mcode' : 'opencode'} · {entry.title} · {timeAgo}
+                            </span>
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* 历史会话右键菜单 */}
+              {historyCtxMenu && (
+                <div
+                  ref={historyCtxMenuRef}
+                  style={{
+                    position: 'fixed',
+                    top: historyCtxMenu.y,
+                    left: historyCtxMenu.x,
+                    zIndex: 9999,
+                    backgroundColor: 'var(--bg-card, #1c1c1f)',
+                    border: '1px solid var(--border-subtle, #27272a)',
+                    borderRadius: '6px',
+                    boxShadow: '0 4px 16px rgba(0,0,0,0.4)',
+                    padding: '3px',
+                    minWidth: '110px',
+                  }}
+                >
+                  <button
+                    onClick={() => {
+                      const { sessionId } = historyCtxMenu;
+                      setHistoryCtxMenu(null);
+                      deleteProjectAgentHistory(project.id, sessionId)
+                        .then(() => getProjectAgentHistory(project.id).then(setAgentHistory))
+                        .catch(() => {});
+                    }}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: '6px',
+                      width: '100%', padding: '4px 8px',
+                      background: 'none', border: 'none', borderRadius: '4px',
+                      cursor: 'pointer', fontSize: '0.78rem',
+                      color: 'var(--color-danger, #ef4444)',
+                      textAlign: 'left',
+                    }}
+                    onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'rgba(239,68,68,0.1)'; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; }}
+                  >
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <polyline points="3 6 5 6 21 6" />
+                      <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+                      <path d="M10 11v6M14 11v6" />
+                      <path d="M9 6V4h6v2" />
+                    </svg>
+                    删除记录
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         )}

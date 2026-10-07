@@ -156,7 +156,9 @@ export function FileExplorerPanel({
       flexDirection: 'column',
       gap: '16px',
       paddingTop: '2px',
-      overflow: 'hidden'
+      overflow: 'hidden',
+      flex: 1,
+      minHeight: 0
     }}>
       {/* File Explorer Toolbar */}
       <div style={{

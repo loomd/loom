@@ -132,6 +132,7 @@ export type AgentState = 'running' | 'waiting' | 'error' | 'agent_call' | 'quest
 export interface AgentStateInfo {
   state: AgentState;
   session_id: string;
+  session_title?: string;
 }
 
 export interface SingleAgentDiscovery {
@@ -175,5 +176,16 @@ export interface PersistedTerminal {
   is_opencode?: boolean;
   opencode_session_id?: string;
   initial_command?: string;
+}
+
+export interface AgentHistoryEntry {
+  session_id: string;
+  title: string;
+  session_title?: string;
+  agent_type: string; // "mcode" | "opencode"
+  cwd: string;
+  command?: string;
+  args?: string[];
+  last_seen: number; // Unix 秒
 }
 

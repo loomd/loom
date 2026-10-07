@@ -100,11 +100,3 @@ jobs:
           prerelease: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Submit to winget-pkgs
-        uses: vedantmgoyal9/winget-releaser@v2
-        with:
-          identifier: Loomd.Loom
-          release-tag: ${{ github.ref_name }}
-          installers-regex: '_x64-setup\.exe$'
-          token: ${{ secrets.WINGET_TOKEN }}

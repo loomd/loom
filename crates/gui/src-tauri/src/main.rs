@@ -6,7 +6,7 @@ const MIN_WINDOW_HEIGHT: u32 = 560;
 use loom_core::agent_config::{discover_agents, fetch_models, write_mcode_config, write_opencode_config, DiscoveryOverview, FetchedModel};
 use loom_core::cli_install::{self as cli_install, CliInstallStatus};
 use loom_core::skills::{get_existing_skill_paths, inject_loom_skills, LOOM_SKILL_VERSION};
-use loom_core::storage::{self as cstore, AgentDoc, AgentInstance, Category, CliTool, GlobalDocTemplate, GlobalEnvVar, GlobalSkillTemplate, PersistedTerminal, Project, ProjectSkill, ScanResult, Template};
+use loom_core::storage::{self as cstore, AgentDoc, AgentHistoryEntry, AgentInstance, Category, CliTool, GlobalDocTemplate, GlobalEnvVar, GlobalSkillTemplate, PersistedTerminal, Project, ProjectSkill, ScanResult, Template};
 use std::collections::HashMap;
 use std::sync::OnceLock;
 
@@ -888,6 +888,30 @@ fn save_project_layout(project_id: String, layout: Option<String>) -> Result<(),
 #[tauri::command]
 fn clear_project_terminals(project_id: String) -> Result<(), String> {
     cstore::clear_project_terminals(&project_id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn get_project_agent_history(project_id: String) -> Result<Vec<AgentHistoryEntry>, String> {
+    let mut list = cstore::get_project_agent_history(&project_id);
+    for entry in &mut list {
+        if entry.session_title.is_none() {
+            entry.session_title = agent_monitor::get_session_title(&entry.agent_type, &entry.session_id);
+        }
+    }
+    Ok(list)
+}
+
+#[tauri::command]
+fn save_project_agent_history(project_id: String, mut entry: AgentHistoryEntry) -> Result<(), String> {
+    if entry.session_title.is_none() {
+        entry.session_title = agent_monitor::get_session_title(&entry.agent_type, &entry.session_id);
+    }
+    cstore::save_project_agent_history(&project_id, entry).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn delete_project_agent_history(project_id: String, session_id: String) -> Result<(), String> {
+    cstore::delete_project_agent_history(&project_id, &session_id).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -2318,6 +2342,9 @@ fn main() {
             get_project_layout,
             save_project_layout,
             clear_project_terminals,
+            get_project_agent_history,
+            save_project_agent_history,
+            delete_project_agent_history,
             get_restore_terminals,
             set_restore_terminals,
             get_shell_border_enabled,

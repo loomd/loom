@@ -1615,6 +1615,14 @@ body.theme-day select.input option {
 /* --- Tab Close Icon with Dirty State (VS Code Style) --- */
 .tab-close-icon {
   transition: opacity 150ms ease, color 150ms ease;
+  opacity: 0;
+  pointer-events: none;
+}
+.workspace-tab-item.active .tab-close-icon,
+.workspace-tab-item:hover .tab-close-icon,
+.tab-close-icon.dirty {
+  opacity: 1;
+  pointer-events: auto;
 }
 .tab-close-icon::before {
   content: '✕';

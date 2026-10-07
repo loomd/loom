@@ -16,6 +16,7 @@ import type {
 	AgentDiscoveryStatus,
 	FetchedModel,
 	PersistedTerminal,
+	AgentHistoryEntry,
 } from "./types";
 
 // ─── CLI Tools ────────────────────────────────────────────
@@ -520,6 +521,15 @@ export const getRestoreTerminals = (): Promise<boolean> =>
 
 export const setRestoreTerminals = (enabled: boolean): Promise<void> =>
 	invoke("set_restore_terminals", { enabled });
+
+export const getProjectAgentHistory = (projectId: string): Promise<AgentHistoryEntry[]> =>
+	invoke("get_project_agent_history", { projectId });
+
+export const saveProjectAgentHistory = (projectId: string, entry: AgentHistoryEntry): Promise<void> =>
+	invoke("save_project_agent_history", { projectId, entry });
+
+export const deleteProjectAgentHistory = (projectId: string, sessionId: string): Promise<void> =>
+	invoke("delete_project_agent_history", { projectId, sessionId });
 
 export const getShellBorderEnabled = (): Promise<boolean> =>
 	invoke("get_shell_border_enabled");

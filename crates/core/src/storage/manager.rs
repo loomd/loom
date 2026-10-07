@@ -1,6 +1,6 @@
 use crate::storage::error::{Result, StorageError};
 use crate::storage::models::{
-    AgentDoc, AgentInstance, AppConfig, Category, CliTool, CurrentState, GlobalDocTemplate, GlobalEnvVar,
+    AgentDoc, AgentHistoryEntry, AgentInstance, AppConfig, Category, CliTool, CurrentState, GlobalDocTemplate, GlobalEnvVar,
     GlobalSkillTemplate, LoomStorage, PersistedTerminal, Project, ProjectSkill, Template,
 };
 use std::collections::HashMap;
@@ -130,6 +130,43 @@ pub fn save_project_terminals(project_id: &str, terminals: Vec<PersistedTerminal
 pub fn get_project_layout(project_id: &str) -> Option<String> {
     let state = get_current_state();
     state.project_layouts.get(project_id).cloned()
+}
+
+pub fn get_project_agent_history(project_id: &str) -> Vec<AgentHistoryEntry> {
+    let state = get_current_state();
+    state.project_agent_history.get(project_id).cloned().unwrap_or_default()
+}
+
+/// 追加一条 agent 历史记录，相同 session_id 时更新 last_seen，超过 6 条时淘汰最旧的
+pub fn save_project_agent_history(project_id: &str, entry: AgentHistoryEntry) -> Result<()> {
+    let mut state = get_current_state();
+    let list = state.project_agent_history.entry(project_id.to_string()).or_default();
+    // 如果 session_id 已存在则更新，否则追加
+    if let Some(existing) = list.iter_mut().find(|e| e.session_id == entry.session_id) {
+        existing.title = entry.title;
+        if entry.session_title.is_some() {
+            existing.session_title = entry.session_title;
+        }
+        existing.last_seen = entry.last_seen;
+    } else {
+        list.push(entry);
+    }
+    // 按 last_seen 降序排序，只保留最新 6 条
+    list.sort_by_key(|a| std::cmp::Reverse(a.last_seen));
+    list.truncate(6);
+    save_current_state(&state)
+}
+
+/// 删除指定 session_id 的历史记录
+pub fn delete_project_agent_history(project_id: &str, session_id: &str) -> Result<()> {
+    let mut state = get_current_state();
+    if let Some(list) = state.project_agent_history.get_mut(project_id) {
+        list.retain(|e| e.session_id != session_id);
+        if list.is_empty() {
+            state.project_agent_history.remove(project_id);
+        }
+    }
+    save_current_state(&state)
 }
 
 pub fn save_project_layout(project_id: &str, layout: Option<String>) -> Result<()> {
