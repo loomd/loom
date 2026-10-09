@@ -1,6 +1,6 @@
 {
   "productName": "Loom",
-  "version": "0.7.13",
+  "version": "0.7.14",
   "identifier": "com.loom.app",
   "build": {
     "beforeDevCommand": "npm --prefix crates/gui/frontend run dev",
@@ -35,7 +35,12 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "windows": {
+      "nsis": {
+        "installerHooks": "nsis/hooks.nsh"
+      }
+    }
   },
   "plugins": {
     "updater": {
