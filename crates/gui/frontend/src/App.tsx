@@ -408,7 +408,7 @@ function App() {
 							{p.projects.length === 0 ? <EmptyState onAdd={() => p.setShowModal(true)} t={t} /> : (
 								p.projects.map((proj) => (
 									<div key={proj.id} style={{ display: proj.id === p.selectedProjectId ? "flex" : "none", flexDirection: "column", flex: 1, minHeight: 0, overflow: "hidden" }}>
-										<ProjectWorkspace isSidebarCollapsed={actualCollapsed} onToggleSidebar={sidebarCollapseEnabled ? () => setIsCollapsed(!isCollapsed) : undefined} project={proj} isVisible={page === "workspace" && proj.id === p.selectedProjectId} onUnregisterProject={p.handleUnregisterProject} theme={theme.theme} fontSize={theme.terminalFontSize} fontFamily={theme.terminalFontFamily} bottomPanelEmbedded={floatingSidebarEnabled && floatingSidebarPosition === "bottom" && bottomPanelMode === "embedded"} bottomPanelHeight={floatingSidebarEnabled && floatingSidebarPosition === "bottom" && bottomPanelMode === "embedded" ? bottomPanelHeight : 0} shellBorderEnabled={shellBorderEnabled} shellBorderColor={shellBorderColor} shellBorderWidth={shellBorderWidth} />
+										<ProjectWorkspace isSidebarCollapsed={actualCollapsed} onToggleSidebar={sidebarCollapseEnabled ? () => setIsCollapsed(!isCollapsed) : undefined} project={proj} isVisible={page === "workspace" && proj.id === p.selectedProjectId} onUnregisterProject={p.handleUnregisterProject} theme={theme.theme} fontSize={theme.terminalFontSize} fontFamily={theme.effectiveTerminalFontFamily} bottomPanelEmbedded={floatingSidebarEnabled && floatingSidebarPosition === "bottom" && bottomPanelMode === "embedded"} bottomPanelHeight={floatingSidebarEnabled && floatingSidebarPosition === "bottom" && bottomPanelMode === "embedded" ? bottomPanelHeight : 0} shellBorderEnabled={shellBorderEnabled} shellBorderColor={shellBorderColor} shellBorderWidth={shellBorderWidth} />
 									</div>
 								))
 							)}
@@ -423,10 +423,12 @@ function App() {
 								fontSize={theme.fontSize}
 								terminalFontSize={theme.terminalFontSize}
 								terminalFontFamily={theme.terminalFontFamily}
+								terminalCjkFontFamily={theme.terminalCjkFontFamily}
 								onFontFamilyChange={theme.handleFontFamilyChange}
 								onFontSizeChange={theme.handleFontSizeChange}
 								onTerminalFontSizeChange={theme.handleTerminalFontSizeChange}
 								onTerminalFontFamilyChange={theme.handleTerminalFontFamilyChange}
+								onTerminalCjkFontFamilyChange={theme.handleTerminalCjkFontFamilyChange}
 								updateInfo={updater.updateInfo}
 								downloadProgress={updater.downloadProgress}
 								onCheckUpdate={updater.performUpdateCheck}

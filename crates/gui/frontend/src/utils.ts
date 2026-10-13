@@ -364,8 +364,52 @@ export function computeCollapsedBorders(
   };
 }
 
-export function buildTerminalFontFamilyStack(fontFamily?: string): string {
-  const base = (fontFamily || 'Consolas, "Courier New"').trim();
-  // 确保终端等宽英文字体后面优雅追加项目内置的 HarmonyOS Sans SC 与系统中文等宽字体，避免中文回退到生硬的老宋体
-  return `${base}, "HarmonyOS Sans SC", "Microsoft YaHei Mono", "PingFang SC", monospace`;
+// 针对各款中文字体提供多名称映射，兼顾 @font-face 声明、操作系统安装名及常见别名
+const CJK_FONT_ALIASES: Record<string, string[]> = {
+  'Sarasa Term SC': ['"Sarasa Term SC"', '"Sarasa-Term-SC-Regular"', '"更纱黑体 SC"', '"更纱黑体"'],
+  'Source Han Mono SC': ['"Source Han Mono SC"', '"Source Han Mono"', '"思源等宽"', '"思源等宽 SC"'],
+  'LXGW WenKai Mono': ['"LXGW WenKai Mono"', '"LXGW WenKai Mono Regular"', '"霞鹜文楷等宽"', '"霞鹜文楷"'],
+  'Maple Mono CN': ['"Maple Mono CN"', '"Maple Mono CN Regular"', '"Maple Mono"'],
+};
+
+export function composeTerminalFontFamily(latinFont?: string, cjkFont?: string): string {
+  const specificFonts: string[] = [];
+  
+  // 1. 解析英文字体：按逗号切分，剔除提前出现的通用族关键字（如 monospace），防止其在前面过早截胡中文字符
+  const rawLatin = (latinFont || 'Consolas, "Courier New"').trim();
+  const latinTokens = rawLatin.split(',').map(s => s.trim()).filter(Boolean);
+  for (const token of latinTokens) {
+    const lower = token.toLowerCase();
+    if (lower === 'monospace' || lower === 'sans-serif' || lower === 'serif') {
+      continue;
+    }
+    const clean = token.replace(/^['"]|['"]$/g, '').trim();
+    if (clean) {
+      specificFonts.push(clean.includes(' ') ? `"${clean}"` : clean);
+    }
+  }
+
+  // 2. 解析中文字体：紧跟英文字体之后，优先于通用族 monospace 生效
+  const rawCjk = (cjkFont || '').trim();
+  if (rawCjk && rawCjk !== 'None' && rawCjk !== 'None (System Default)' && rawCjk.toLowerCase() !== 'monospace') {
+    const cleanCjk = rawCjk.replace(/^['"]|['"]$/g, '').trim();
+    if (cleanCjk) {
+      if (CJK_FONT_ALIASES[cleanCjk]) {
+        for (const alias of CJK_FONT_ALIASES[cleanCjk]) {
+          if (!specificFonts.includes(alias)) {
+            specificFonts.push(alias);
+          }
+        }
+      } else {
+        const formatted = cleanCjk.includes(' ') ? `"${cleanCjk}"` : cleanCjk;
+        if (!specificFonts.includes(formatted)) {
+          specificFonts.push(formatted);
+        }
+      }
+    }
+  }
+
+  // 3. 通用等宽族 monospace 严格置于最末尾作为终极兜底
+  specificFonts.push('monospace');
+  return specificFonts.join(', ');
 }

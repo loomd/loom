@@ -78,6 +78,10 @@ pub fn default_terminal_font_family() -> String {
     "Consolas, \"Courier New\", monospace".to_string()
 }
 
+pub fn default_terminal_cjk_font_family() -> String {
+    "Sarasa Term SC".to_string()
+}
+
 pub fn default_project_column_align() -> String {
     "top".to_string()
 }
@@ -194,6 +198,8 @@ pub struct LoomStorage {
     pub terminal_font_size: String,
     #[serde(default = "default_terminal_font_family")]
     pub terminal_font_family: String,
+    #[serde(default = "default_terminal_cjk_font_family")]
+    pub terminal_cjk_font_family: String,
     #[serde(default = "default_project_column_align")]
     pub project_column_align: String,
     #[serde(default)]
@@ -249,6 +255,7 @@ impl Default for LoomStorage {
             font_size: default_font_size(),
             terminal_font_size: default_terminal_font_size(),
             terminal_font_family: default_terminal_font_family(),
+            terminal_cjk_font_family: default_terminal_cjk_font_family(),
             project_column_align: default_project_column_align(),
             projects: Vec::new(),
             agent_instances: Vec::new(),

@@ -5,7 +5,7 @@ import { WebLinksAddon } from '@xterm/addon-web-links';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { openUrl } from '../api';
-import { normalizeBorderColorToCss, buildTerminalFontFamilyStack } from '../utils';
+import { normalizeBorderColorToCss } from '../utils';
 import '@xterm/xterm/css/xterm.css';
 
 interface TerminalTabProps {
@@ -224,7 +224,7 @@ export function TerminalTab({ sessionId, cwd, command, args, env, initialCommand
       initialized.current = true;
 
       // Create Terminal
-      const resolvedFontFamily = buildTerminalFontFamilyStack(fontFamilyRef.current);
+      const resolvedFontFamily = fontFamilyRef.current || 'Consolas, "Courier New", monospace';
       const term = new Terminal({
         cursorBlink: true,
         fontFamily: resolvedFontFamily,
@@ -622,7 +622,7 @@ export function TerminalTab({ sessionId, cwd, command, args, env, initialCommand
   // Dynamically update terminal font family when fontFamily prop changes
   useEffect(() => {
     if (!termRef.current) return;
-    const targetFamily = buildTerminalFontFamilyStack(fontFamily);
+    const targetFamily = fontFamily || 'Consolas, "Courier New", monospace';
     if (termRef.current.options && termRef.current.options.fontFamily !== targetFamily) {
       termRef.current.options.fontFamily = targetFamily;
       if (fitAddonRef.current && spawnSuccessRef.current) {

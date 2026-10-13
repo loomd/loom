@@ -306,6 +306,21 @@ describe("api - Theme & Font", () => {
     await setTerminalFontFamily("Fira Code");
     expect(mockInvoke).toHaveBeenCalledWith("set_terminal_font_family", { family: "Fira Code" });
   });
+
+  it("getTerminalCjkFontFamily calls invoke", async () => {
+    mockInvoke.mockResolvedValueOnce("Sarasa Term SC");
+    const { getTerminalCjkFontFamily } = await import("../api");
+    const result = await getTerminalCjkFontFamily();
+    expect(mockInvoke).toHaveBeenCalledWith("get_terminal_cjk_font_family");
+    expect(result).toBe("Sarasa Term SC");
+  });
+
+  it("setTerminalCjkFontFamily calls invoke", async () => {
+    mockInvoke.mockResolvedValueOnce(undefined);
+    const { setTerminalCjkFontFamily } = await import("../api");
+    await setTerminalCjkFontFamily("LXGW WenKai Mono");
+    expect(mockInvoke).toHaveBeenCalledWith("set_terminal_cjk_font_family", { family: "LXGW WenKai Mono" });
+  });
 });
 
 describe("api - Projects", () => {

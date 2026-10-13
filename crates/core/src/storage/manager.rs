@@ -2235,6 +2235,18 @@ pub fn set_terminal_font_family(family: String) -> Result<()> {
     Ok(())
 }
 
+pub fn get_terminal_cjk_font_family() -> Result<String> {
+    let config = load_config()?;
+    Ok(config.terminal_cjk_font_family.clone())
+}
+
+pub fn set_terminal_cjk_font_family(family: String) -> Result<()> {
+    let mut config = load_config()?;
+    config.terminal_cjk_font_family = family;
+    save_config(&config)?;
+    Ok(())
+}
+
 pub fn get_floating_sidebar_enabled() -> Result<bool> {
     let config = load_config()?;
     Ok(config.floating_sidebar_enabled)

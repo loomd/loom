@@ -204,6 +204,12 @@ export const getTerminalFontFamily = (): Promise<string> =>
 export const setTerminalFontFamily = (family: string): Promise<void> =>
   invoke("set_terminal_font_family", { family });
 
+export const getTerminalCjkFontFamily = (): Promise<string> =>
+  invoke("get_terminal_cjk_font_family");
+
+export const setTerminalCjkFontFamily = (family: string): Promise<void> =>
+  invoke("set_terminal_cjk_font_family", { family });
+
 // ─── Sidebar Width ─────────────────────────────────────────
 export const getSidebarWidth = (): Promise<number> =>
   invoke("get_sidebar_width");

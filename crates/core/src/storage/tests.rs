@@ -77,6 +77,7 @@ let original = AppConfig {
 		font_size: "15px".to_string(),
 		terminal_font_size: "13px".to_string(),
 		terminal_font_family: "Consolas, \"Courier New\", monospace".to_string(),
+		terminal_cjk_font_family: "Sarasa Term SC".to_string(),
 		project_column_align: "top".to_string(),
 		projects: Vec::new(),
 		agent_instances: Vec::new(),
@@ -302,6 +303,20 @@ fn test_get_set_terminal_font_family() {
         set_terminal_font_family("JetBrains Mono".to_string()).expect("Failed to set terminal font family");
         let updated = get_terminal_font_family().expect("Failed to get updated terminal font family");
         assert_eq!(updated, "JetBrains Mono");
+    });
+}
+
+#[test]
+fn test_get_set_terminal_cjk_font_family() {
+    run_test_with_temp_config(|_config_path| {
+        use super::manager::{get_terminal_cjk_font_family, set_terminal_cjk_font_family};
+
+        let default_cjk = get_terminal_cjk_font_family().expect("Failed to get default terminal CJK font family");
+        assert_eq!(default_cjk, "Sarasa Term SC");
+
+        set_terminal_cjk_font_family("LXGW WenKai Mono".to_string()).expect("Failed to set terminal CJK font family");
+        let updated = get_terminal_cjk_font_family().expect("Failed to get updated terminal CJK font family");
+        assert_eq!(updated, "LXGW WenKai Mono");
     });
 }
 

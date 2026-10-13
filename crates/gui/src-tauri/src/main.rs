@@ -311,6 +311,16 @@ fn set_terminal_font_family(family: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn get_terminal_cjk_font_family() -> Result<String, String> {
+    cstore::get_terminal_cjk_font_family().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn set_terminal_cjk_font_family(family: String) -> Result<(), String> {
+    cstore::set_terminal_cjk_font_family(family).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 fn get_floating_sidebar_enabled() -> Result<bool, String> {
     cstore::get_floating_sidebar_enabled().map_err(|e| e.to_string())
 }
@@ -1289,6 +1299,17 @@ fn execute_test_command(cmd: &str, args_json: &str) -> Result<String, String> {
                 .as_str()
                 .ok_or_else(|| "Missing argument 'family'".to_string())?;
             set_terminal_font_family(family.to_string())?;
+            Ok("null".to_string())
+        }
+        "get_terminal_cjk_font_family" => {
+            let res = get_terminal_cjk_font_family()?;
+            serde_json::to_string(&res).map_err(|e| e.to_string())
+        }
+        "set_terminal_cjk_font_family" => {
+            let family = args["family"]
+                .as_str()
+                .ok_or_else(|| "Missing argument 'family'".to_string())?;
+            set_terminal_cjk_font_family(family.to_string())?;
             Ok("null".to_string())
         }
         "get_floating_sidebar_enabled" => {
@@ -2283,6 +2304,8 @@ fn main() {
             set_terminal_font_size,
             get_terminal_font_family,
             set_terminal_font_family,
+            get_terminal_cjk_font_family,
+            set_terminal_cjk_font_family,
             get_floating_sidebar_enabled,
             set_floating_sidebar_enabled,
             get_floating_sidebar_position,

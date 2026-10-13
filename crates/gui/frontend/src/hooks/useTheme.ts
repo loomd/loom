@@ -8,11 +8,14 @@ import {
 	getFontSize,
 	getTerminalFontSize,
 	getTerminalFontFamily,
+	getTerminalCjkFontFamily,
 	setFontFamily as apiFontFamily,
 	setFontSize as apiFontSize,
 	setTerminalFontSize as apiTerminalFontSize,
 	setTerminalFontFamily as apiTerminalFontFamily,
+	setTerminalCjkFontFamily as apiTerminalCjkFontFamily,
 } from "../api";
+import { composeTerminalFontFamily } from "../utils";
 
 function applyFontToDocument(family: string, size: string) {
 	document.documentElement.style.setProperty(
@@ -34,6 +37,7 @@ export function useTheme(toast: { error: (msg: string) => void }) {
 	const [fontSize, setFontSizeState] = useState("15px");
 	const [terminalFontSize, setTerminalFontSizeState] = useState("13px");
 	const [terminalFontFamily, setTerminalFontFamilyState] = useState('Consolas, "Courier New", monospace');
+	const [terminalCjkFontFamily, setTerminalCjkFontFamilyState] = useState("Sarasa Term SC");
 	const [projectColumnAlign, setProjectColumnAlignState] = useState("top");
 
 	const fontSizeDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -64,12 +68,14 @@ export function useTheme(toast: { error: (msg: string) => void }) {
 			getFontSize(),
 			getTerminalFontSize().catch(() => "13px"),
 			getTerminalFontFamily().catch(() => 'Consolas, "Courier New", monospace'),
+			getTerminalCjkFontFamily().catch(() => "Sarasa Term SC"),
 		])
-			.then(([family, size, termSize, termFamily]) => {
+			.then(([family, size, termSize, termFamily, termCjkFamily]) => {
 				setFontFamilyState(family);
 				setFontSizeState(size);
 				setTerminalFontSizeState(termSize || "13px");
 				setTerminalFontFamilyState(termFamily || 'Consolas, "Courier New", monospace');
+				setTerminalCjkFontFamilyState(termCjkFamily || "Sarasa Term SC");
 				applyFontToDocument(family, size);
 			})
 			.catch((err) => {
@@ -145,6 +151,15 @@ export function useTheme(toast: { error: (msg: string) => void }) {
 		}
 	}, []);
 
+	const handleTerminalCjkFontFamilyChange = useCallback(async (cjkFamily: string) => {
+		setTerminalCjkFontFamilyState(cjkFamily);
+		try {
+			await apiTerminalCjkFontFamily(cjkFamily);
+		} catch (err) {
+			console.error("Failed to persist terminal CJK font family", err);
+		}
+	}, []);
+
 	const handleProjectColumnAlignChange = useCallback(async (align: string) => {
 		setProjectColumnAlignState(align);
 		try {
@@ -154,18 +169,26 @@ export function useTheme(toast: { error: (msg: string) => void }) {
 		}
 	}, []);
 
+	const effectiveTerminalFontFamily = composeTerminalFontFamily(
+		terminalFontFamily,
+		terminalCjkFontFamily
+	);
+
 	return {
 		theme,
 		fontFamily,
 		fontSize,
 		terminalFontSize,
 		terminalFontFamily,
+		terminalCjkFontFamily,
+		effectiveTerminalFontFamily,
 		projectColumnAlign,
 		handleThemeChange,
 		handleFontFamilyChange,
 		handleFontSizeChange,
 		handleTerminalFontSizeChange,
 		handleTerminalFontFamilyChange,
+		handleTerminalCjkFontFamilyChange,
 		handleProjectColumnAlignChange,
 	};
 }

@@ -3,7 +3,7 @@ import { useI18n } from "../../I18nContext";
 import { useToast } from "../../ToastContext";
 import WhatsNewDialog from "../../components/WhatsNewDialog";
 import { getAutostart, setAutostart, getUpdateCheckInterval, setUpdateCheckInterval, getRestoreTerminals, setRestoreTerminals, getWhatsNewAll } from "../../api";
-import { parseArgbColor, createArgbColor, normalizeBorderColorToCss, buildTerminalFontFamilyStack } from "../../utils";
+import { parseArgbColor, createArgbColor, normalizeBorderColorToCss, composeTerminalFontFamily } from "../../utils";
 import type { DownloadProgress } from "../../hooks/useUpdateChecker";
 
 interface Props {
@@ -15,10 +15,12 @@ interface Props {
 	fontSize: string;
 	terminalFontSize?: string;
 	terminalFontFamily?: string;
+	terminalCjkFontFamily?: string;
 	onFontFamilyChange: (family: string) => void | Promise<void>;
 	onFontSizeChange: (size: string) => void | Promise<void>;
 	onTerminalFontSizeChange?: (size: string) => void | Promise<void>;
 	onTerminalFontFamilyChange?: (family: string) => void | Promise<void>;
+	onTerminalCjkFontFamilyChange?: (family: string) => void | Promise<void>;
 	updateInfo?: {
 		hasUpdate: boolean;
 		latestVersion: string;
@@ -56,12 +58,20 @@ const PRESETS = [
 	"Fira Code",
 ];
 
-const TERMINAL_PRESETS = [
+const TERMINAL_LATIN_PRESETS = [
 	{ label: "Default Monospace", value: 'Consolas, "Courier New", monospace' },
 	{ label: "JetBrains Mono", value: "JetBrains Mono" },
 	{ label: "Fira Code", value: "Fira Code" },
 	{ label: "Consolas", value: "Consolas" },
 	{ label: "Cascadia Code", value: "Cascadia Code" },
+];
+
+const TERMINAL_CJK_PRESETS = [
+	{ label: "更纱黑体 (Sarasa Term SC)", value: "Sarasa Term SC" },
+	{ label: "思源等宽 (Source Han Mono)", value: "Source Han Mono SC" },
+	{ label: "霞鹜文楷 (LXGW WenKai Mono)", value: "LXGW WenKai Mono" },
+	{ label: "枫叶等宽 (Maple Mono CN)", value: "Maple Mono CN" },
+	{ label: "系统默认 (System CJK)", value: "None" },
 ];
 
 const SHELL_BORDER_WIDTH_OPTIONS = [
@@ -96,10 +106,12 @@ export default function GeneralSettingsTab({
 	fontSize,
 	terminalFontSize = "13px",
 	terminalFontFamily = 'Consolas, "Courier New", monospace',
+	terminalCjkFontFamily = "Sarasa Term SC",
 	onFontFamilyChange,
 	onFontSizeChange,
 	onTerminalFontSizeChange,
 	onTerminalFontFamilyChange,
+	onTerminalCjkFontFamilyChange,
 	updateInfo,
 	downloadProgress,
 	onCheckUpdate,
@@ -264,6 +276,26 @@ export default function GeneralSettingsTab({
 			toast.error(t("settings.toast.fontSaveFailed"));
 		}
 	};
+
+	const handleTerminalCjkFontFamilySelect = async (family: string) => {
+		try {
+			await onTerminalCjkFontFamilyChange?.(family);
+			toast.success(t("settings.toast.fontSaved"));
+		} catch {
+			toast.error(t("settings.toast.fontSaveFailed"));
+		}
+	};
+
+	// 监听中文字体切换，主动触发浏览器预载大字体并刷新渲染
+	const [, setFontLoadedTick] = useState(0);
+	useEffect(() => {
+		if (terminalCjkFontFamily && terminalCjkFontFamily !== "None" && typeof document !== "undefined" && document.fonts) {
+			const fontQuery = `13px "${terminalCjkFontFamily}"`;
+			document.fonts.load(fontQuery).then(() => {
+				setFontLoadedTick((v) => v + 1);
+			}).catch(() => {});
+		}
+	}, [terminalCjkFontFamily]);
 
 	return (
 		<div
@@ -715,7 +747,7 @@ export default function GeneralSettingsTab({
 									alignItems: "center",
 								}}
 							>
-								The quick brown fox jumps over the lazy dog. 1234567890
+								The quick brown fox jumps over the lazy dog. 1234567890 (永和九年，岁在癸丑，暮春之初)
 							</div>
 						</div>
 
@@ -750,6 +782,7 @@ export default function GeneralSettingsTab({
 								{t("settings.font.termSectionDesc")}
 							</div>
 
+							{/* ── Latin Font Selection ── */}
 							<div
 								style={{
 									fontSize: "13px",
@@ -765,10 +798,10 @@ export default function GeneralSettingsTab({
 									display: "grid",
 									gridTemplateColumns: "repeat(auto-fill, minmax(130px, 1fr))",
 									gap: "8px",
-									marginBottom: "14px",
+									marginBottom: "12px",
 								}}
 							>
-								{TERMINAL_PRESETS.map((preset) => {
+								{TERMINAL_LATIN_PRESETS.map((preset) => {
 									const isActive = terminalFontFamily === preset.value;
 									return (
 										<button
@@ -798,7 +831,7 @@ export default function GeneralSettingsTab({
 								})}
 							</div>
 
-							<div className="form-group" style={{ marginBottom: "20px" }}>
+							<div className="form-group" style={{ marginBottom: "16px" }}>
 								<label className="form-label" style={{ fontSize: "12px" }}>
 									{t("settings.font.custom")}
 								</label>
@@ -806,7 +839,7 @@ export default function GeneralSettingsTab({
 									className="input"
 									placeholder={t("settings.font.customTermPlaceholder")}
 									value={
-										TERMINAL_PRESETS.some((p) => p.value === terminalFontFamily)
+										TERMINAL_LATIN_PRESETS.some((p) => p.value === terminalFontFamily)
 											? ""
 											: terminalFontFamily
 									}
@@ -815,6 +848,75 @@ export default function GeneralSettingsTab({
 										onTerminalFontFamilyChange?.(
 											val || 'Consolas, "Courier New", monospace'
 										);
+									}}
+									style={{ width: "100%" }}
+								/>
+							</div>
+
+							{/* ── CJK Chinese Fallback Font Selection ── */}
+							<div
+								style={{
+									fontSize: "13px",
+									fontWeight: 600,
+									color: "var(--text-primary)",
+									marginBottom: "8px",
+								}}
+							>
+								{t("settings.font.termCjkFamily")}
+							</div>
+							<div
+								style={{
+									display: "grid",
+									gridTemplateColumns: "repeat(auto-fill, minmax(140px, 1fr))",
+									gap: "8px",
+									marginBottom: "12px",
+								}}
+							>
+								{TERMINAL_CJK_PRESETS.map((preset) => {
+									const isActive = terminalCjkFontFamily === preset.value;
+									return (
+										<button
+											key={preset.value}
+											onClick={() => handleTerminalCjkFontFamilySelect(preset.value)}
+											style={{
+												background: isActive
+													? "var(--accent-purple-dim)"
+													: "var(--bg-card, rgba(255,255,255,0.03))",
+												border: isActive
+													? "1px solid var(--accent-purple)"
+													: "1px solid var(--border-mid)",
+												borderRadius: "var(--radius-sm, 6px)",
+												padding: "8px 10px",
+												cursor: "pointer",
+												textAlign: "center",
+												fontFamily: preset.value === "None" ? "inherit" : preset.value,
+												color: "var(--text-primary)",
+												fontSize: "12px",
+												fontWeight: isActive ? 600 : 400,
+												transition: "all 150ms ease",
+											}}
+										>
+											{preset.label}
+										</button>
+									);
+								})}
+							</div>
+
+							<div className="form-group" style={{ marginBottom: "18px" }}>
+								<label className="form-label" style={{ fontSize: "12px" }}>
+									{t("settings.font.custom")}
+								</label>
+								<input
+									className="input"
+									placeholder={t("settings.font.customCjkPlaceholder")}
+									value={
+										TERMINAL_CJK_PRESETS.some((p) => p.value === terminalCjkFontFamily)
+											? ""
+											: terminalCjkFontFamily
+									}
+									onChange={(e) => {
+										const val = e.target.value;
+										onTerminalCjkFontFamilyChange?.(val || "Sarasa Term SC");
 									}}
 									style={{ width: "100%" }}
 								/>
@@ -906,8 +1008,9 @@ export default function GeneralSettingsTab({
 									border: "1px solid var(--border-subtle, #27272a)",
 									borderRadius: "var(--radius-sm, 6px)",
 									padding: "12px 14px",
-									fontFamily: buildTerminalFontFamilyStack(terminalFontFamily),
+									fontFamily: composeTerminalFontFamily(terminalFontFamily, terminalCjkFontFamily),
 									fontSize: terminalFontSize || "13px",
+									fontWeight: 400,
 									lineHeight: 1.5,
 									minHeight: "56px",
 									boxSizing: "border-box",
