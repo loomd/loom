@@ -256,7 +256,9 @@ export function TerminalTab({ sessionId, cwd, command, args, env, initialCommand
               termRef.current.refresh(0, Math.max(0, termRef.current.rows - 1));
             }
             fitAddon.fit();
-          } catch (_) {}
+          } catch (e) {
+            console.debug('Failed to refresh/fit terminal after fonts ready:', e);
+          }
         }).catch(() => {});
       }
 

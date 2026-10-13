@@ -70,7 +70,6 @@ const TERMINAL_CJK_PRESETS = [
 	{ label: "系统默认", value: "None" },
 	{ label: "霞鹜文楷", value: "LXGW WenKai Mono" },
 	{ label: "更纱黑体", value: "Sarasa Term SC" },
-	{ label: "思源等宽", value: "Source Han Mono SC" },
 ];
 
 const SHELL_BORDER_WIDTH_OPTIONS = [
