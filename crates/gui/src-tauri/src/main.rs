@@ -7,11 +7,16 @@ use loom_core::agent_config::{discover_agents, fetch_models, write_mcode_config,
 use loom_core::cli_install::{self as cli_install, CliInstallStatus};
 use loom_core::skills::{get_existing_skill_paths, inject_loom_skills, LOOM_SKILL_VERSION};
 use loom_core::storage::{self as cstore, AgentDoc, AgentHistoryEntry, AgentInstance, Category, CliTool, GlobalDocTemplate, GlobalEnvVar, GlobalSkillTemplate, PersistedTerminal, Project, ProjectSkill, ScanResult, Template};
-use std::collections::HashMap;
-use std::sync::OnceLock;
+use std::collections::{HashMap, HashSet};
+use std::sync::{Mutex, OnceLock};
 
 static PROCESS_START: OnceLock<std::time::Instant> = OnceLock::new();
 static FRONTEND_CONTACT_LOGGED: OnceLock<()> = OnceLock::new();
+static OPEN_PROJECT_WINDOWS: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
+
+fn get_open_project_windows_set() -> &'static Mutex<HashSet<String>> {
+    OPEN_PROJECT_WINDOWS.get_or_init(|| Mutex::new(HashSet::new()))
+}
 
 /// 编译期内嵌的 loom CLI 字节（release 构建由 build.rs 注入；dev 为空数组，运行时注入会优雅降级）
 #[cfg(embed_loom_cli)]
@@ -954,6 +959,66 @@ fn set_shell_border_width(width: String) -> Result<(), String> {
     cstore::set_shell_border_width(width).map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+async fn open_project_window(app: tauri::AppHandle, project_id: String, title: String) -> Result<(), String> {
+    let label = format!("project-window-{}", project_id);
+    if let Some(win) = app.get_webview_window(&label) {
+        let _ = win.show();
+        let _ = win.unminimize();
+        let _ = win.set_focus();
+        return Ok(());
+    }
+
+    let escaped_project_id = project_id.replace('\\', "\\\\").replace('"', "\\\"");
+    let init_script = format!(
+        r#"
+        window.__LOOM_PROJECT_WINDOW__ = {{ projectId: "{escaped}", windowType: "project" }};
+        try {{
+            const u = new URL(window.location.href);
+            u.searchParams.set("projectId", "{escaped}");
+            u.searchParams.set("windowType", "project");
+            window.history.replaceState(null, "", u.toString());
+        }} catch (_e) {{}}
+        "#,
+        escaped = escaped_project_id
+    );
+
+    let builder = tauri::WebviewWindowBuilder::new(
+        &app,
+        &label,
+        tauri::WebviewUrl::default(),
+    )
+    .title(format!("Loom - {}", title))
+    .inner_size(1200.0, 780.0)
+    .min_inner_size(MIN_WINDOW_WIDTH as f64, MIN_WINDOW_HEIGHT as f64)
+    .decorations(false)
+    .drag_and_drop(false)
+    .initialization_script(&init_script);
+
+    println!("[open_project_window] building window for project {}", project_id);
+    builder.build().map_err(|e| {
+        eprintln!("[open_project_window] failed to build window: {}", e);
+        e.to_string()
+    })?;
+    println!("[open_project_window] successfully built project window: {}", label);
+
+    {
+        use tauri::Emitter;
+        let mut set = get_open_project_windows_set().lock().unwrap();
+        set.insert(project_id.clone());
+        let list: Vec<String> = set.iter().cloned().collect();
+        let _ = app.emit("open-project-windows-changed", &list);
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
+fn get_open_project_windows() -> Result<Vec<String>, String> {
+    let set = get_open_project_windows_set().lock().unwrap();
+    Ok(set.iter().cloned().collect())
+}
+
 fn execute_test_command(cmd: &str, args_json: &str) -> Result<String, String> {
     let args: serde_json::Value = serde_json::from_str(args_json)
         .map_err(|e| format!("Failed to parse TAURI_TEST_ARGS: {}", e))?;
@@ -1655,6 +1720,13 @@ fn execute_test_command(cmd: &str, args_json: &str) -> Result<String, String> {
             set_shell_border_width(width.to_string())?;
             Ok("null".to_string())
         }
+        "open_project_window" => {
+            Ok("null".to_string())
+        }
+        "get_open_project_windows" => {
+            let res = get_open_project_windows()?;
+            serde_json::to_string(&res).map_err(|e| e.to_string())
+        }
         _ => Err(format!("Unknown command '{}'", cmd)),
     }
 }
@@ -2194,20 +2266,24 @@ fn main() {
         })
         .on_window_event(|window, event| match event {
             tauri::WindowEvent::Resized(size) => {
-                if !window.is_maximized().unwrap_or(false)
-                    && !window.is_fullscreen().unwrap_or(false)
-                    && (size.width < MIN_WINDOW_WIDTH || size.height < MIN_WINDOW_HEIGHT)
-                {
-                    let new_w = std::cmp::max(size.width, MIN_WINDOW_WIDTH);
-                    let new_h = std::cmp::max(size.height, MIN_WINDOW_HEIGHT);
-                    let _ = window.set_size(tauri::PhysicalSize::new(new_w, new_h));
+                if window.label() == "main" {
+                    if !window.is_maximized().unwrap_or(false)
+                        && !window.is_fullscreen().unwrap_or(false)
+                        && (size.width < MIN_WINDOW_WIDTH || size.height < MIN_WINDOW_HEIGHT)
+                    {
+                        let new_w = std::cmp::max(size.width, MIN_WINDOW_WIDTH);
+                        let new_h = std::cmp::max(size.height, MIN_WINDOW_HEIGHT);
+                        let _ = window.set_size(tauri::PhysicalSize::new(new_w, new_h));
+                    }
+                    save_window_state(window);
                 }
-                save_window_state(window);
             }
             tauri::WindowEvent::Moved(_) => {
-                save_window_state(window);
+                if window.label() == "main" {
+                    save_window_state(window);
+                }
             }
-            tauri::WindowEvent::CloseRequested { api, .. } => {
+            tauri::WindowEvent::CloseRequested { api, .. } if window.label() == "main" => {
                 if let (Ok(pos), Ok(sz)) = (window.outer_position(), window.outer_size()) {
                     println!("[WindowEvent] CloseRequested: hiding to tray, pos=({},{}), size=({}x{})",
                         pos.x, pos.y, sz.width, sz.height);
@@ -2215,6 +2291,18 @@ fn main() {
                 save_window_state(window);
                 api.prevent_close();
                 let _ = window.hide();
+            }
+            tauri::WindowEvent::Destroyed => {
+                let label = window.label();
+                if let Some(project_id) = label.strip_prefix("project-window-") {
+                    use tauri::Emitter;
+                    let mut set = get_open_project_windows_set().lock().unwrap();
+                    if set.remove(project_id) {
+                        let list: Vec<String> = set.iter().cloned().collect();
+                        let _ = window.app_handle().emit("open-project-windows-changed", &list);
+                        println!("[open_project_window] window destroyed for project {}, remaining: {:?}", project_id, list);
+                    }
+                }
             }
             _ => {}
         })
@@ -2352,7 +2440,9 @@ fn main() {
             get_shell_border_color,
             set_shell_border_color,
             get_shell_border_width,
-            set_shell_border_width
+            set_shell_border_width,
+            open_project_window,
+            get_open_project_windows
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

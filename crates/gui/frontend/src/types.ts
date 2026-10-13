@@ -189,3 +189,14 @@ export interface AgentHistoryEntry {
   last_seen: number; // Unix 秒
 }
 
+export interface ProjectWindowInitData {
+  projectId: string;
+  windowType: 'project';
+}
+
+declare global {
+  interface Window {
+    __LOOM_PROJECT_WINDOW__?: ProjectWindowInitData;
+  }
+}
+

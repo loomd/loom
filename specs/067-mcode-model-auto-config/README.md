@@ -1,3 +1,15 @@
+---
+status: complete
+created: 2026-09-20
+priority: medium
+tags:
+- mcode
+- agent
+- model-config
+created_at: 2026-09-20T10:00:00.000000Z
+updated_at: 2026-09-20T10:00:00.000000Z
+---
+
 # 067-mcode-model-auto-config: mcode 与 opencode 多 Agent 模型自动配置与滚动选择
 
 ## 1. 背景与目标

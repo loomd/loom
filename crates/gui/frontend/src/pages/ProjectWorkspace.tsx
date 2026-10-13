@@ -10,7 +10,7 @@ import { useI18n } from '../I18nContext';
 import { TemplateModal } from './TemplatesPage';
 import { EditorPlaceholder } from '../components/EditorPlaceholder';
 import { clearProjectTerminals, deleteProjectAgentHistory, getProjectAgentHistory, getProjectLayout, getProjectTerminals, getRestoreTerminals, pollAgentState, saveProjectAgentHistory, saveProjectLayout, saveProjectTerminals } from '../api';
-import { syncProjectShells } from '../hooks/useProjectCompositeStates';
+import { syncProjectShells, useProjectCompositeStates } from '../hooks/useProjectCompositeStates';
 import type { CompositeState } from '../hooks/useProjectCompositeStates';
 import type { Project, AgentStateInfo, PersistedTerminal, AgentHistoryEntry } from '../types';
 import type { ConsoleTab, GridLayout } from '../hooks/useTabs';
@@ -21,6 +21,8 @@ interface Props {
   project: Project;
   isVisible: boolean;
   onUnregisterProject: (proj: Project) => void;
+  isSubWindow?: boolean;
+  compositeState?: CompositeState;
   theme?: 'dark' | 'day' | 'gray';
   fontSize?: string;
   isSidebarCollapsed?: boolean;
@@ -32,9 +34,18 @@ interface Props {
   shellBorderWidth?: string;
 }
 
-export default function ProjectWorkspace({ project, isVisible, onUnregisterProject, theme, fontSize, isSidebarCollapsed, onToggleSidebar, bottomPanelEmbedded, bottomPanelHeight, shellBorderEnabled, shellBorderColor, shellBorderWidth }: Props) {
+export default function ProjectWorkspace({ project, isVisible, onUnregisterProject, isSubWindow, compositeState, theme, fontSize, isSidebarCollapsed, onToggleSidebar, bottomPanelEmbedded, bottomPanelHeight, shellBorderEnabled, shellBorderColor, shellBorderWidth }: Props) {
   const { t } = useI18n();
   const toast = useToast();
+
+  const isSubWindowMode = isSubWindow ?? (
+    typeof window !== 'undefined' &&
+    (window.__LOOM_PROJECT_WINDOW__?.windowType === 'project' ||
+      new URLSearchParams(window.location.search).get('windowType') === 'project')
+  );
+
+  const fallbackCompositeStates = useProjectCompositeStates([project]);
+  const currentCompositeState = compositeState ?? fallbackCompositeStates[project.id];
 
 	const tabsState = useTabs(project.root_path);
 	const {
@@ -506,6 +517,40 @@ const closeActiveByShortcut = useCallback(() => {
               style={{ marginLeft: '0px', marginRight: '0px' }}>
               {isSidebarCollapsed ? "▶" : "◀"}
             </button>
+          )}
+          {isSubWindowMode && (
+            <div
+              data-tauri-drag-region
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                padding: '3px 8px',
+                marginLeft: '4px',
+                marginRight: '2px',
+                borderRadius: 'var(--radius-sm, 6px)',
+                backgroundColor: 'var(--bg-elevated, rgba(255, 255, 255, 0.05))',
+                border: '1px solid var(--border-subtle, rgba(255, 255, 255, 0.08))',
+                fontSize: '0.82rem',
+                maxWidth: '200px',
+                userSelect: 'none',
+                lineHeight: 1.2,
+                cursor: 'default',
+              }}
+              title={project.name}
+            >
+              <span
+                className={`project-status-text${currentCompositeState ? ` ${currentCompositeState}` : ''}`}
+                style={{
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                  fontWeight: 500,
+                  color: currentCompositeState ? undefined : 'var(--text-primary)',
+                }}
+              >
+                {project.name}
+              </span>
+            </div>
           )}
           {tabs.filter(tab => tab.id === 'overview').map(tab => (
             <div key={tab.id}

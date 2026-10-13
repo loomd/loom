@@ -653,6 +653,24 @@ describe("api - File Explorer", () => {
     await setRestoreTerminals(false);
     expect(mockInvoke).toHaveBeenCalledWith("set_restore_terminals", { enabled: false });
   });
+
+  it("openProjectWindow calls invoke with projectId and title", async () => {
+    mockInvoke.mockResolvedValueOnce(undefined);
+    const { openProjectWindow } = await import("../api");
+    await openProjectWindow("proj-123", "My Project");
+    expect(mockInvoke).toHaveBeenCalledWith("open_project_window", {
+      projectId: "proj-123",
+      title: "My Project",
+    });
+  });
+
+  it("getOpenProjectWindows calls invoke and returns string array", async () => {
+    mockInvoke.mockResolvedValueOnce(["proj-1", "proj-2"]);
+    const { getOpenProjectWindows } = await import("../api");
+    const result = await getOpenProjectWindows();
+    expect(mockInvoke).toHaveBeenCalledWith("get_open_project_windows");
+    expect(result).toEqual(["proj-1", "proj-2"]);
+  });
 });
 
 describe("api - Error Propagation", () => {
