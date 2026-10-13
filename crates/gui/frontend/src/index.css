@@ -71,10 +71,7 @@
 /* Monospace fonts with CJK Chinese glyphs for terminal & editor (SIL OFL 1.1) */
 @font-face {
   font-family: 'Sarasa Term SC';
-  src: local('Sarasa Term SC'),
-       local('Sarasa Term SC Regular'),
-       local('更纱黑体 SC'),
-       url('./assets/fonts/custom/SarasaTermSC-Regular.ttf') format('truetype');
+  src: url('./assets/fonts/custom/SarasaTermSC-Regular.ttf') format('truetype');
   font-weight: 100 900;
   font-style: normal;
   font-display: swap;
@@ -82,10 +79,7 @@
 
 @font-face {
   font-family: 'LXGW WenKai Mono';
-  src: local('LXGW WenKai Mono'),
-       local('LXGW WenKai Mono Regular'),
-       local('霞鹜文楷等宽'),
-       url('./assets/fonts/custom/LXGWWenKaiMono-Regular.ttf') format('truetype');
+  src: url('./assets/fonts/custom/LXGWWenKaiMono-Regular.ttf') format('truetype');
   font-weight: 100 900;
   font-style: normal;
   font-display: swap;
@@ -93,22 +87,7 @@
 
 @font-face {
   font-family: 'Source Han Mono SC';
-  src: local('Source Han Mono SC'),
-       local('Source Han Mono'),
-       local('思源等宽'),
-       local('思源等宽 SC'),
-       url('./assets/fonts/custom/SourceHanMonoSC-Regular.otf') format('opentype');
-  font-weight: 100 900;
-  font-style: normal;
-  font-display: swap;
-}
-
-@font-face {
-  font-family: 'Maple Mono CN';
-  src: local('Maple Mono CN'),
-       local('Maple Mono CN Regular'),
-       local('Maple Mono'),
-       url('./assets/fonts/custom/MapleMono-CN-Regular.ttf') format('truetype');
+  src: url('./assets/fonts/custom/SourceHanMonoSC-Regular.otf') format('opentype');
   font-weight: 100 900;
   font-style: normal;
   font-display: swap;

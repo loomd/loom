@@ -223,8 +223,13 @@ export function TerminalTab({ sessionId, cwd, command, args, env, initialCommand
 
       initialized.current = true;
 
-      // Create Terminal
+      // 预先触发当前字体的加载，确保 xterm.js 初始化测量时能够捕获到真实的 WebFont
       const resolvedFontFamily = fontFamilyRef.current || 'Consolas, "Courier New", monospace';
+      if (typeof document !== 'undefined' && document.fonts) {
+        document.fonts.load(`13px ${resolvedFontFamily}`).catch(() => {});
+      }
+
+      // Create Terminal
       const term = new Terminal({
         cursorBlink: true,
         fontFamily: resolvedFontFamily,
@@ -241,6 +246,19 @@ export function TerminalTab({ sessionId, cwd, command, args, env, initialCommand
       });
       term.loadAddon(webLinksAddon);
       term.open(containerRef.current);
+
+      // 当字体完全就绪后，强制触发一次终端视口全量重绘与网格重新贴合，刷新字模缓存
+      if (typeof document !== 'undefined' && document.fonts) {
+        document.fonts.ready.then(() => {
+          if (!active || !termRef.current) return;
+          try {
+            if (typeof termRef.current.refresh === 'function') {
+              termRef.current.refresh(0, Math.max(0, termRef.current.rows - 1));
+            }
+            fitAddon.fit();
+          } catch (_) {}
+        }).catch(() => {});
+      }
 
       const textarea = term.textarea;
       const termEl = term.element;
@@ -625,10 +643,14 @@ export function TerminalTab({ sessionId, cwd, command, args, env, initialCommand
     const targetFamily = fontFamily || 'Consolas, "Courier New", monospace';
     if (termRef.current.options && termRef.current.options.fontFamily !== targetFamily) {
       termRef.current.options.fontFamily = targetFamily;
-      if (fitAddonRef.current && spawnSuccessRef.current) {
-        const timer = setTimeout(() => {
-          if (!termRef.current || !fitAddonRef.current || !spawnSuccessRef.current) return;
-          try {
+
+      const refreshAndFit = () => {
+        if (!termRef.current) return;
+        try {
+          if (typeof termRef.current.refresh === 'function') {
+            termRef.current.refresh(0, Math.max(0, termRef.current.rows - 1));
+          }
+          if (fitAddonRef.current && spawnSuccessRef.current) {
             fitAddonRef.current.fit();
             const currentCols = termRef.current.cols;
             const currentRows = termRef.current.rows;
@@ -641,10 +663,16 @@ export function TerminalTab({ sessionId, cwd, command, args, env, initialCommand
                 rows: currentRows
               }).catch((err) => console.warn('Failed to resize PTY on font family change:', err));
             }
-          } catch (e) {
-            console.warn('Resize error on font family change:', e);
           }
-        }, 50);
+        } catch (e) {
+          console.warn('Resize/refresh error on font family change:', e);
+        }
+      };
+
+      if (typeof document !== 'undefined' && document.fonts) {
+        document.fonts.load(`13px ${targetFamily}`).then(refreshAndFit).catch(refreshAndFit);
+      } else {
+        const timer = setTimeout(refreshAndFit, 50);
         return () => clearTimeout(timer);
       }
     }

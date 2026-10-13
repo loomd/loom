@@ -67,11 +67,10 @@ const TERMINAL_LATIN_PRESETS = [
 ];
 
 const TERMINAL_CJK_PRESETS = [
-	{ label: "更纱黑体 (Sarasa Term SC)", value: "Sarasa Term SC" },
-	{ label: "思源等宽 (Source Han Mono)", value: "Source Han Mono SC" },
-	{ label: "霞鹜文楷 (LXGW WenKai Mono)", value: "LXGW WenKai Mono" },
-	{ label: "枫叶等宽 (Maple Mono CN)", value: "Maple Mono CN" },
-	{ label: "系统默认 (System CJK)", value: "None" },
+	{ label: "系统默认", value: "None" },
+	{ label: "霞鹜文楷", value: "LXGW WenKai Mono" },
+	{ label: "更纱黑体", value: "Sarasa Term SC" },
+	{ label: "思源等宽", value: "Source Han Mono SC" },
 ];
 
 const SHELL_BORDER_WIDTH_OPTIONS = [

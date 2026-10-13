@@ -364,14 +364,6 @@ export function computeCollapsedBorders(
   };
 }
 
-// 针对各款中文字体提供多名称映射，兼顾 @font-face 声明、操作系统安装名及常见别名
-const CJK_FONT_ALIASES: Record<string, string[]> = {
-  'Sarasa Term SC': ['"Sarasa Term SC"', '"Sarasa-Term-SC-Regular"', '"更纱黑体 SC"', '"更纱黑体"'],
-  'Source Han Mono SC': ['"Source Han Mono SC"', '"Source Han Mono"', '"思源等宽"', '"思源等宽 SC"'],
-  'LXGW WenKai Mono': ['"LXGW WenKai Mono"', '"LXGW WenKai Mono Regular"', '"霞鹜文楷等宽"', '"霞鹜文楷"'],
-  'Maple Mono CN': ['"Maple Mono CN"', '"Maple Mono CN Regular"', '"Maple Mono"'],
-};
-
 export function composeTerminalFontFamily(latinFont?: string, cjkFont?: string): string {
   const specificFonts: string[] = [];
   
@@ -394,18 +386,7 @@ export function composeTerminalFontFamily(latinFont?: string, cjkFont?: string):
   if (rawCjk && rawCjk !== 'None' && rawCjk !== 'None (System Default)' && rawCjk.toLowerCase() !== 'monospace') {
     const cleanCjk = rawCjk.replace(/^['"]|['"]$/g, '').trim();
     if (cleanCjk) {
-      if (CJK_FONT_ALIASES[cleanCjk]) {
-        for (const alias of CJK_FONT_ALIASES[cleanCjk]) {
-          if (!specificFonts.includes(alias)) {
-            specificFonts.push(alias);
-          }
-        }
-      } else {
-        const formatted = cleanCjk.includes(' ') ? `"${cleanCjk}"` : cleanCjk;
-        if (!specificFonts.includes(formatted)) {
-          specificFonts.push(formatted);
-        }
-      }
+      specificFonts.push(cleanCjk.includes(' ') ? `"${cleanCjk}"` : cleanCjk);
     }
   }
 
