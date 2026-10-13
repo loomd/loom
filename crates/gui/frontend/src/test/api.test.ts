@@ -291,6 +291,21 @@ describe("api - Theme & Font", () => {
     await setTerminalFontSize("14px");
     expect(mockInvoke).toHaveBeenCalledWith("set_terminal_font_size", { size: "14px" });
   });
+
+  it("getTerminalFontFamily calls invoke", async () => {
+    mockInvoke.mockResolvedValueOnce("JetBrains Mono");
+    const { getTerminalFontFamily } = await import("../api");
+    const result = await getTerminalFontFamily();
+    expect(mockInvoke).toHaveBeenCalledWith("get_terminal_font_family");
+    expect(result).toBe("JetBrains Mono");
+  });
+
+  it("setTerminalFontFamily calls invoke", async () => {
+    mockInvoke.mockResolvedValueOnce(undefined);
+    const { setTerminalFontFamily } = await import("../api");
+    await setTerminalFontFamily("Fira Code");
+    expect(mockInvoke).toHaveBeenCalledWith("set_terminal_font_family", { family: "Fira Code" });
+  });
 });
 
 describe("api - Projects", () => {

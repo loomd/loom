@@ -7,9 +7,11 @@ import {
 	getFontFamily,
 	getFontSize,
 	getTerminalFontSize,
+	getTerminalFontFamily,
 	setFontFamily as apiFontFamily,
 	setFontSize as apiFontSize,
 	setTerminalFontSize as apiTerminalFontSize,
+	setTerminalFontFamily as apiTerminalFontFamily,
 } from "../api";
 
 function applyFontToDocument(family: string, size: string) {
@@ -31,6 +33,7 @@ export function useTheme(toast: { error: (msg: string) => void }) {
 	const [fontFamily, setFontFamilyState] = useState("HarmonyOS Sans SC");
 	const [fontSize, setFontSizeState] = useState("15px");
 	const [terminalFontSize, setTerminalFontSizeState] = useState("13px");
+	const [terminalFontFamily, setTerminalFontFamilyState] = useState('Consolas, "Courier New", monospace');
 	const [projectColumnAlign, setProjectColumnAlignState] = useState("top");
 
 	const fontSizeDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -60,11 +63,13 @@ export function useTheme(toast: { error: (msg: string) => void }) {
 			getFontFamily(),
 			getFontSize(),
 			getTerminalFontSize().catch(() => "13px"),
+			getTerminalFontFamily().catch(() => 'Consolas, "Courier New", monospace'),
 		])
-			.then(([family, size, termSize]) => {
+			.then(([family, size, termSize, termFamily]) => {
 				setFontFamilyState(family);
 				setFontSizeState(size);
 				setTerminalFontSizeState(termSize || "13px");
+				setTerminalFontFamilyState(termFamily || 'Consolas, "Courier New", monospace');
 				applyFontToDocument(family, size);
 			})
 			.catch((err) => {
@@ -131,6 +136,15 @@ export function useTheme(toast: { error: (msg: string) => void }) {
 		}, 300);
 	}, []);
 
+	const handleTerminalFontFamilyChange = useCallback(async (family: string) => {
+		setTerminalFontFamilyState(family);
+		try {
+			await apiTerminalFontFamily(family);
+		} catch (err) {
+			console.error("Failed to persist terminal font family", err);
+		}
+	}, []);
+
 	const handleProjectColumnAlignChange = useCallback(async (align: string) => {
 		setProjectColumnAlignState(align);
 		try {
@@ -145,11 +159,13 @@ export function useTheme(toast: { error: (msg: string) => void }) {
 		fontFamily,
 		fontSize,
 		terminalFontSize,
+		terminalFontFamily,
 		projectColumnAlign,
 		handleThemeChange,
 		handleFontFamilyChange,
 		handleFontSizeChange,
 		handleTerminalFontSizeChange,
+		handleTerminalFontFamilyChange,
 		handleProjectColumnAlignChange,
 	};
 }

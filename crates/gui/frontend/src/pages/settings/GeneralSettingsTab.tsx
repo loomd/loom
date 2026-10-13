@@ -3,7 +3,7 @@ import { useI18n } from "../../I18nContext";
 import { useToast } from "../../ToastContext";
 import WhatsNewDialog from "../../components/WhatsNewDialog";
 import { getAutostart, setAutostart, getUpdateCheckInterval, setUpdateCheckInterval, getRestoreTerminals, setRestoreTerminals, getWhatsNewAll } from "../../api";
-import { parseArgbColor, createArgbColor, normalizeBorderColorToCss } from "../../utils";
+import { parseArgbColor, createArgbColor, normalizeBorderColorToCss, buildTerminalFontFamilyStack } from "../../utils";
 import type { DownloadProgress } from "../../hooks/useUpdateChecker";
 
 interface Props {
@@ -14,9 +14,11 @@ interface Props {
 	fontFamily: string;
 	fontSize: string;
 	terminalFontSize?: string;
+	terminalFontFamily?: string;
 	onFontFamilyChange: (family: string) => void | Promise<void>;
 	onFontSizeChange: (size: string) => void | Promise<void>;
 	onTerminalFontSizeChange?: (size: string) => void | Promise<void>;
+	onTerminalFontFamilyChange?: (family: string) => void | Promise<void>;
 	updateInfo?: {
 		hasUpdate: boolean;
 		latestVersion: string;
@@ -54,6 +56,14 @@ const PRESETS = [
 	"Fira Code",
 ];
 
+const TERMINAL_PRESETS = [
+	{ label: "Default Monospace", value: 'Consolas, "Courier New", monospace' },
+	{ label: "JetBrains Mono", value: "JetBrains Mono" },
+	{ label: "Fira Code", value: "Fira Code" },
+	{ label: "Consolas", value: "Consolas" },
+	{ label: "Cascadia Code", value: "Cascadia Code" },
+];
+
 const SHELL_BORDER_WIDTH_OPTIONS = [
 	{ label: "1", value: "1px" },
 	{ label: "1.5", value: "1.5px" },
@@ -85,9 +95,11 @@ export default function GeneralSettingsTab({
 	fontFamily,
 	fontSize,
 	terminalFontSize = "13px",
+	terminalFontFamily = 'Consolas, "Courier New", monospace',
 	onFontFamilyChange,
 	onFontSizeChange,
 	onTerminalFontSizeChange,
+	onTerminalFontFamilyChange,
 	updateInfo,
 	downloadProgress,
 	onCheckUpdate,
@@ -238,6 +250,15 @@ export default function GeneralSettingsTab({
 	const handleFontFamilySelect = async (family: string) => {
 		try {
 			await onFontFamilyChange(family);
+			toast.success(t("settings.toast.fontSaved"));
+		} catch {
+			toast.error(t("settings.toast.fontSaveFailed"));
+		}
+	};
+
+	const handleTerminalFontFamilySelect = async (family: string) => {
+		try {
+			await onTerminalFontFamilyChange?.(family);
 			toast.success(t("settings.toast.fontSaved"));
 		} catch {
 			toast.error(t("settings.toast.fontSaveFailed"));
@@ -493,268 +514,411 @@ export default function GeneralSettingsTab({
 						{t("settings.font.desc")}
 					</div>
 
-					<div
-						style={{
-							fontSize: "13px",
-							fontWeight: 600,
-							color: "var(--text-primary)",
-							marginBottom: "12px",
-						}}
-					>
-						{t("settings.font.family")}
-					</div>
+					{/* Two-column layout: UI Font & Terminal Font */}
 					<div
 						style={{
 							display: "grid",
-							gridTemplateColumns:
-								"repeat(auto-fill, minmax(160px, 1fr))",
-							gap: "12px",
-							marginBottom: "16px",
+							gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
+							gap: "24px",
+							alignItems: "start",
 						}}
 					>
-						{PRESETS.map((preset) => {
-							const isActive = fontFamily === preset;
-							return (
-								<button
-									key={preset}
-									onClick={() => handleFontFamilySelect(preset)}
+						{/* ─── Column 1: UI Font & Size ───────────────── */}
+						<div
+							style={{
+								background: "var(--bg-elevated)",
+								border: "1px solid var(--border-subtle)",
+								borderRadius: "var(--radius-md)",
+								padding: "18px 20px",
+								display: "flex",
+								flexDirection: "column",
+							}}
+						>
+							<div
+								style={{
+									fontSize: "14px",
+									fontWeight: 600,
+									color: "var(--text-primary)",
+									marginBottom: "4px",
+								}}
+							>
+								{t("settings.font.uiSection")}
+							</div>
+							<div
+								style={{
+									fontSize: "12px",
+									color: "var(--text-secondary)",
+									marginBottom: "16px",
+								}}
+							>
+								{t("settings.font.uiSectionDesc")}
+							</div>
+
+							<div
+								style={{
+									fontSize: "13px",
+									fontWeight: 600,
+									color: "var(--text-primary)",
+									marginBottom: "8px",
+								}}
+							>
+								{t("settings.font.family")}
+							</div>
+							<div
+								style={{
+									display: "grid",
+									gridTemplateColumns: "repeat(auto-fill, minmax(130px, 1fr))",
+									gap: "8px",
+									marginBottom: "14px",
+								}}
+							>
+								{PRESETS.map((preset) => {
+									const isActive = fontFamily === preset;
+									return (
+										<button
+											key={preset}
+											onClick={() => handleFontFamilySelect(preset)}
+											style={{
+												background: isActive
+													? "var(--accent-purple-dim)"
+													: "var(--bg-card, rgba(255,255,255,0.03))",
+												border: isActive
+													? "1px solid var(--accent-purple)"
+													: "1px solid var(--border-mid)",
+												borderRadius: "var(--radius-sm, 6px)",
+												padding: "8px 10px",
+												cursor: "pointer",
+												textAlign: "center",
+												fontFamily:
+													preset === "System Default" ? "inherit" : preset,
+												color: "var(--text-primary)",
+												fontSize: "12px",
+												fontWeight: isActive ? 600 : 400,
+												transition: "all 150ms ease",
+											}}
+										>
+											{preset}
+										</button>
+									);
+								})}
+							</div>
+
+							<div className="form-group" style={{ marginBottom: "20px" }}>
+								<label className="form-label" style={{ fontSize: "12px" }}>
+									{t("settings.font.custom")}
+								</label>
+								<input
+									className="input"
+									placeholder={t("settings.font.customPlaceholder")}
+									value={PRESETS.includes(fontFamily) ? "" : fontFamily}
+									onChange={(e) => {
+										const val = e.target.value;
+										onFontFamilyChange(val || "System Default");
+									}}
+									style={{ width: "100%" }}
+								/>
+							</div>
+
+							{/* UI Font Size */}
+							<div
+								style={{
+									display: "flex",
+									alignItems: "center",
+									justifyContent: "space-between",
+									marginBottom: "8px",
+								}}
+							>
+								<div
 									style={{
-										background: isActive
-											? "var(--accent-purple-dim)"
-											: "var(--bg-elevated)",
-										border: isActive
-											? "1px solid var(--accent-purple)"
-											: "1px solid var(--border-mid)",
-										borderRadius: "var(--radius-md)",
-										padding: "12px 16px",
-										cursor: "pointer",
-										textAlign: "center",
-										fontFamily:
-											preset === "System Default" ? "inherit" : preset,
+										fontSize: "13px",
+										fontWeight: 600,
 										color: "var(--text-primary)",
-										fontWeight: isActive ? 600 : 400,
-										transition: "all 200ms var(--ease-spring)",
 									}}
 								>
-									{preset}
-								</button>
-							);
-						})}
-					</div>
+									{t("settings.font.uiSize")}
+								</div>
+								<div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+									<input
+										type="number"
+										min={10}
+										max={36}
+										className="input"
+										style={{
+											width: "60px",
+											padding: "4px 8px",
+											textAlign: "center",
+											fontSize: "13px",
+											fontWeight: 600,
+										}}
+										value={parseInt(fontSize, 10) || 15}
+										onChange={(e) => {
+											const val = parseInt(e.target.value, 10);
+											if (!isNaN(val) && val >= 8 && val <= 72) {
+												onFontSizeChange(`${val}px`);
+											}
+										}}
+									/>
+									<span style={{ fontSize: "12px", color: "var(--text-secondary)" }}>px</span>
+								</div>
+							</div>
 
-					<div className="form-group" style={{ marginBottom: "28px" }}>
-						<label className="form-label">
-							{t("settings.font.custom")}
-						</label>
-						<input
-							className="input"
-							placeholder={t("settings.font.customPlaceholder")}
-							value={PRESETS.includes(fontFamily) ? "" : fontFamily}
-							onChange={(e) => {
-								const val = e.target.value;
-								onFontFamilyChange(val || "System Default");
-							}}
-							style={{ maxWidth: "320px" }}
-						/>
-					</div>
+							{/* UI Slider */}
+							<div
+								style={{
+									display: "flex",
+									alignItems: "center",
+									gap: "10px",
+									marginBottom: "20px",
+								}}
+							>
+								<span style={{ fontSize: "11px", color: "var(--text-tertiary)" }}>10px</span>
+								<input
+									type="range"
+									min={10}
+									max={36}
+									step={1}
+									value={parseInt(fontSize, 10) || 15}
+									onChange={(e) => onFontSizeChange(`${e.target.value}px`)}
+									style={{
+										flex: 1,
+										accentColor: "var(--accent-purple)",
+										cursor: "pointer",
+									}}
+								/>
+								<span style={{ fontSize: "11px", color: "var(--text-tertiary)" }}>36px</span>
+							</div>
 
-					{/* ─── UI Font Size ─────────────────────────── */}
-					<div
-						style={{
-							display: "flex",
-							alignItems: "center",
-							justifyContent: "space-between",
-							marginBottom: "8px",
-						}}
-					>
+							{/* UI Font Preview */}
+							<div
+								style={{
+									fontSize: "12px",
+									fontWeight: 600,
+									color: "var(--text-secondary)",
+									marginBottom: "6px",
+								}}
+							>
+								{t("settings.font.preview")}
+							</div>
+							<div
+								style={{
+									background: "var(--bg-card, rgba(0,0,0,0.2))",
+									border: "1px solid var(--border-subtle)",
+									borderRadius: "var(--radius-sm, 6px)",
+									padding: "14px 16px",
+									fontFamily:
+										fontFamily === "System Default" ? "inherit" : fontFamily,
+									fontSize: fontSize,
+									color: "var(--text-primary)",
+									lineHeight: 1.5,
+									minHeight: "56px",
+									display: "flex",
+									alignItems: "center",
+								}}
+							>
+								The quick brown fox jumps over the lazy dog. 1234567890
+							</div>
+						</div>
+
+						{/* ─── Column 2: Terminal Font & Size ─────────── */}
 						<div
 							style={{
-								fontSize: "13px",
-								fontWeight: 600,
-								color: "var(--text-primary)",
+								background: "var(--bg-elevated)",
+								border: "1px solid var(--border-subtle)",
+								borderRadius: "var(--radius-md)",
+								padding: "18px 20px",
+								display: "flex",
+								flexDirection: "column",
 							}}
 						>
-							{t("settings.font.uiSize")}
-						</div>
-						<div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-							<input
-								type="number"
-								min={10}
-								max={36}
-								className="input"
+							<div
 								style={{
-									width: "60px",
-									padding: "4px 8px",
-									textAlign: "center",
+									fontSize: "14px",
+									fontWeight: 600,
+									color: "var(--text-primary)",
+									marginBottom: "4px",
+								}}
+							>
+								{t("settings.font.termSection")}
+							</div>
+							<div
+								style={{
+									fontSize: "12px",
+									color: "var(--text-secondary)",
+									marginBottom: "16px",
+								}}
+							>
+								{t("settings.font.termSectionDesc")}
+							</div>
+
+							<div
+								style={{
 									fontSize: "13px",
 									fontWeight: 600,
+									color: "var(--text-primary)",
+									marginBottom: "8px",
 								}}
-								value={parseInt(fontSize, 10) || 15}
-								onChange={(e) => {
-									const val = parseInt(e.target.value, 10);
-									if (!isNaN(val) && val >= 8 && val <= 72) {
-										onFontSizeChange(`${val}px`);
-									}
-								}}
-							/>
-							<span style={{ fontSize: "12px", color: "var(--text-secondary)" }}>px</span>
-						</div>
-					</div>
-
-					{/* UI Slider */}
-					<div
-						style={{
-							display: "flex",
-							alignItems: "center",
-							gap: "12px",
-							marginBottom: "24px",
-						}}
-					>
-						<span style={{ fontSize: "11px", color: "var(--text-tertiary)" }}>10px</span>
-						<input
-							type="range"
-							min={10}
-							max={36}
-							step={1}
-							value={parseInt(fontSize, 10) || 15}
-							onChange={(e) => onFontSizeChange(`${e.target.value}px`)}
-							style={{
-								flex: 1,
-								accentColor: "var(--accent-purple)",
-								cursor: "pointer",
-							}}
-						/>
-						<span style={{ fontSize: "11px", color: "var(--text-tertiary)" }}>36px</span>
-					</div>
-
-					{/* ─── Terminal Font Size ───────────────────── */}
-					<div
-						style={{
-							display: "flex",
-							alignItems: "center",
-							justifyContent: "space-between",
-							marginBottom: "8px",
-						}}
-					>
-						<div
-							style={{
-								fontSize: "13px",
-								fontWeight: 600,
-								color: "var(--text-primary)",
-							}}
-						>
-							{t("settings.font.termSize")}
-						</div>
-						<div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-							<input
-								type="number"
-								min={10}
-								max={36}
-								className="input"
+							>
+								{t("settings.font.termFamily")}
+							</div>
+							<div
 								style={{
-									width: "60px",
-									padding: "4px 8px",
-									textAlign: "center",
-									fontSize: "13px",
-									fontWeight: 600,
+									display: "grid",
+									gridTemplateColumns: "repeat(auto-fill, minmax(130px, 1fr))",
+									gap: "8px",
+									marginBottom: "14px",
 								}}
-								value={parseInt(terminalFontSize, 10) || 13}
-								onChange={(e) => {
-									const val = parseInt(e.target.value, 10);
-									if (!isNaN(val) && val >= 8 && val <= 72) {
-										onTerminalFontSizeChange?.(`${val}px`);
+							>
+								{TERMINAL_PRESETS.map((preset) => {
+									const isActive = terminalFontFamily === preset.value;
+									return (
+										<button
+											key={preset.value}
+											onClick={() => handleTerminalFontFamilySelect(preset.value)}
+											style={{
+												background: isActive
+													? "var(--accent-purple-dim)"
+													: "var(--bg-card, rgba(255,255,255,0.03))",
+												border: isActive
+													? "1px solid var(--accent-purple)"
+													: "1px solid var(--border-mid)",
+												borderRadius: "var(--radius-sm, 6px)",
+												padding: "8px 10px",
+												cursor: "pointer",
+												textAlign: "center",
+												fontFamily: preset.value,
+												color: "var(--text-primary)",
+												fontSize: "12px",
+												fontWeight: isActive ? 600 : 400,
+												transition: "all 150ms ease",
+											}}
+										>
+											{preset.label}
+										</button>
+									);
+								})}
+							</div>
+
+							<div className="form-group" style={{ marginBottom: "20px" }}>
+								<label className="form-label" style={{ fontSize: "12px" }}>
+									{t("settings.font.custom")}
+								</label>
+								<input
+									className="input"
+									placeholder={t("settings.font.customTermPlaceholder")}
+									value={
+										TERMINAL_PRESETS.some((p) => p.value === terminalFontFamily)
+											? ""
+											: terminalFontFamily
 									}
+									onChange={(e) => {
+										const val = e.target.value;
+										onTerminalFontFamilyChange?.(
+											val || 'Consolas, "Courier New", monospace'
+										);
+									}}
+									style={{ width: "100%" }}
+								/>
+							</div>
+
+							{/* Terminal Font Size */}
+							<div
+								style={{
+									display: "flex",
+									alignItems: "center",
+									justifyContent: "space-between",
+									marginBottom: "8px",
 								}}
-							/>
-							<span style={{ fontSize: "12px", color: "var(--text-secondary)" }}>px</span>
+							>
+								<div
+									style={{
+										fontSize: "13px",
+										fontWeight: 600,
+										color: "var(--text-primary)",
+									}}
+								>
+									{t("settings.font.termSize")}
+								</div>
+								<div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+									<input
+										type="number"
+										min={10}
+										max={36}
+										className="input"
+										style={{
+											width: "60px",
+											padding: "4px 8px",
+											textAlign: "center",
+											fontSize: "13px",
+											fontWeight: 600,
+										}}
+										value={parseInt(terminalFontSize, 10) || 13}
+										onChange={(e) => {
+											const val = parseInt(e.target.value, 10);
+											if (!isNaN(val) && val >= 8 && val <= 72) {
+												onTerminalFontSizeChange?.(`${val}px`);
+											}
+										}}
+									/>
+									<span style={{ fontSize: "12px", color: "var(--text-secondary)" }}>px</span>
+								</div>
+							</div>
+
+							{/* Terminal Slider */}
+							<div
+								style={{
+									display: "flex",
+									alignItems: "center",
+									gap: "10px",
+									marginBottom: "20px",
+								}}
+							>
+								<span style={{ fontSize: "11px", color: "var(--text-tertiary)" }}>10px</span>
+								<input
+									type="range"
+									min={10}
+									max={36}
+									step={1}
+									value={parseInt(terminalFontSize, 10) || 13}
+									onChange={(e) => onTerminalFontSizeChange?.(`${e.target.value}px`)}
+									style={{
+										flex: 1,
+										accentColor: "var(--accent-purple)",
+										cursor: "pointer",
+									}}
+								/>
+								<span style={{ fontSize: "11px", color: "var(--text-tertiary)" }}>36px</span>
+							</div>
+
+							{/* Terminal Preview */}
+							<div
+								style={{
+									fontSize: "12px",
+									fontWeight: 600,
+									color: "var(--text-secondary)",
+									marginBottom: "6px",
+								}}
+							>
+								{t("settings.font.termPreview")}
+							</div>
+							<div
+								style={{
+									background: "#121214",
+									border: "1px solid var(--border-subtle, #27272a)",
+									borderRadius: "var(--radius-sm, 6px)",
+									padding: "12px 14px",
+									fontFamily: buildTerminalFontFamilyStack(terminalFontFamily),
+									fontSize: terminalFontSize || "13px",
+									lineHeight: 1.5,
+									minHeight: "56px",
+									boxSizing: "border-box",
+									color: "#e4e4e7",
+								}}
+							>
+								<div><span style={{ color: "#4ade80" }}>user@loom</span>:<span style={{ color: "#60a5fa" }}>~/project</span>$ <span style={{ color: "#facc15" }}>loom run test</span></div>
+								<div style={{ color: "#a1a1aa" }}>[pty] 正在启动终端进程 (PID 1042) · 字符集与中文渲染测试</div>
+								<div style={{ color: "#4ade80" }}>[ok] 169 项测试全部通过 · 耗时 0.18s · 永和九年岁在癸丑</div>
+							</div>
 						</div>
-					</div>
-
-					{/* Terminal Slider */}
-					<div
-						style={{
-							display: "flex",
-							alignItems: "center",
-							gap: "12px",
-							marginBottom: "28px",
-						}}
-					>
-						<span style={{ fontSize: "11px", color: "var(--text-tertiary)" }}>10px</span>
-						<input
-							type="range"
-							min={10}
-							max={36}
-							step={1}
-							value={parseInt(terminalFontSize, 10) || 13}
-							onChange={(e) => onTerminalFontSizeChange?.(`${e.target.value}px`)}
-							style={{
-								flex: 1,
-								accentColor: "var(--accent-purple)",
-								cursor: "pointer",
-							}}
-						/>
-						<span style={{ fontSize: "11px", color: "var(--text-tertiary)" }}>36px</span>
-					</div>
-
-					{/* ─── Previews ─────────────────────────────── */}
-					<div
-						style={{
-							fontSize: "13px",
-							fontWeight: 600,
-							color: "var(--text-primary)",
-							marginBottom: "8px",
-						}}
-					>
-						{t("settings.font.preview")}
-					</div>
-					<div
-						style={{
-							background: "var(--bg-elevated)",
-							border: "1px solid var(--border-subtle)",
-							borderRadius: "var(--radius-md)",
-							padding: "16px",
-							fontFamily:
-								fontFamily === "System Default" ? "inherit" : fontFamily,
-							fontSize: fontSize,
-							color: "var(--text-primary)",
-							lineHeight: 1.6,
-							minHeight: "54px",
-							display: "flex",
-							alignItems: "center",
-							marginBottom: "16px",
-						}}
-					>
-						The quick brown fox jumps over the lazy dog. 1234567890
-						(智能分类与字体管理测试)
-					</div>
-
-					<div
-						style={{
-							fontSize: "13px",
-							fontWeight: 600,
-							color: "var(--text-primary)",
-							marginBottom: "8px",
-						}}
-					>
-						{t("settings.font.termPreview")}
-					</div>
-					<div
-						style={{
-							background: "#121214",
-							border: "1px solid var(--border-subtle, #27272a)",
-							borderRadius: "var(--radius-md)",
-							padding: "14px 16px",
-							fontFamily: 'Consolas, "Courier New", monospace',
-							fontSize: terminalFontSize || "13px",
-							lineHeight: 1.5,
-							minHeight: "64px",
-							boxSizing: "border-box",
-							color: "#e4e4e7",
-						}}
-					>
-						<div><span style={{ color: "#4ade80" }}>user@loom</span>:<span style={{ color: "#60a5fa" }}>~/project</span>$ <span style={{ color: "#facc15" }}>loom run test</span></div>
-						<div style={{ color: "#a1a1aa" }}>[pty] Process spawned with PID 1042</div>
-						<div style={{ color: "#4ade80" }}>[ok] 169 tests passed in 0.18s</div>
 					</div>
 				</div>
 			</div>

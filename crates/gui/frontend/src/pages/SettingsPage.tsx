@@ -14,9 +14,11 @@ interface Props {
 	fontFamily: string;
 	fontSize: string;
 	terminalFontSize?: string;
+	terminalFontFamily?: string;
 	onFontFamilyChange: (family: string) => void | Promise<void>;
 	onFontSizeChange: (size: string) => void | Promise<void>;
 	onTerminalFontSizeChange?: (size: string) => void | Promise<void>;
+	onTerminalFontFamilyChange?: (family: string) => void | Promise<void>;
 	updateInfo?: {
 		hasUpdate: boolean;
 		latestVersion: string;
@@ -54,9 +56,11 @@ export default function SettingsPage({
 	fontFamily,
 	fontSize,
 	terminalFontSize,
+	terminalFontFamily,
 	onFontFamilyChange,
 	onFontSizeChange,
 	onTerminalFontSizeChange,
+	onTerminalFontFamilyChange,
 	updateInfo,
 	downloadProgress,
 	onCheckUpdate,
@@ -167,9 +171,11 @@ export default function SettingsPage({
 						fontFamily={fontFamily}
 						fontSize={fontSize}
 						terminalFontSize={terminalFontSize}
+						terminalFontFamily={terminalFontFamily}
 						onFontFamilyChange={onFontFamilyChange}
 						onFontSizeChange={onFontSizeChange}
 						onTerminalFontSizeChange={onTerminalFontSizeChange}
+						onTerminalFontFamilyChange={onTerminalFontFamilyChange}
 						updateInfo={updateInfo}
 						downloadProgress={downloadProgress}
 						onCheckUpdate={onCheckUpdate}

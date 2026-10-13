@@ -23,6 +23,7 @@ interface Props {
   onUnregisterProject: (proj: Project) => void;
   theme?: 'dark' | 'day' | 'gray';
   fontSize?: string;
+  fontFamily?: string;
   isSidebarCollapsed?: boolean;
   onToggleSidebar?: () => void;
   bottomPanelEmbedded?: boolean;
@@ -32,7 +33,7 @@ interface Props {
   shellBorderWidth?: string;
 }
 
-export default function ProjectWorkspace({ project, isVisible, onUnregisterProject, theme, fontSize, isSidebarCollapsed, onToggleSidebar, bottomPanelEmbedded, bottomPanelHeight, shellBorderEnabled, shellBorderColor, shellBorderWidth }: Props) {
+export default function ProjectWorkspace({ project, isVisible, onUnregisterProject, theme, fontSize, fontFamily, isSidebarCollapsed, onToggleSidebar, bottomPanelEmbedded, bottomPanelHeight, shellBorderEnabled, shellBorderColor, shellBorderWidth }: Props) {
   const { t } = useI18n();
   const toast = useToast();
 
@@ -1034,6 +1035,7 @@ const closeActiveByShortcut = useCallback(() => {
           isVisible={isVisible}
           theme={theme}
           fontSize={fontSize}
+          fontFamily={fontFamily}
           onAddTerminal={openSpawnPanel}
           onPaneFocus={setActiveTabId}
           projectId={project.id}

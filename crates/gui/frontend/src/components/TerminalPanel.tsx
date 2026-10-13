@@ -16,6 +16,7 @@ interface TerminalPanelProps {
   isVisible: boolean;
   theme?: 'dark' | 'day' | 'gray';
   fontSize?: string | number;
+  fontFamily?: string;
   onAddTerminal?: (targetSlotIndex?: number) => void;
   onPaneFocus?: (tabId: string) => void;
   projectId?: string;
@@ -24,7 +25,7 @@ interface TerminalPanelProps {
   shellBorderWidth?: string;
 }
 
-export function TerminalPanel({ terminals, terminalSlots, activeTabId, layoutMode, showGrid, isVisible, theme, fontSize, onAddTerminal, onPaneFocus, projectId, shellBorderEnabled, shellBorderColor, shellBorderWidth }: TerminalPanelProps) {
+export function TerminalPanel({ terminals, terminalSlots, activeTabId, layoutMode, showGrid, isVisible, theme, fontSize, fontFamily, onAddTerminal, onPaneFocus, projectId, shellBorderEnabled, shellBorderColor, shellBorderWidth }: TerminalPanelProps) {
   const dims = showGrid && layoutMode ? gridDims(layoutMode) : null;
   const areas = showGrid && layoutMode ? (gridCellAreas(layoutMode) ?? layoutPreview(layoutMode).areas) : null;
   const cellCount = dims ? gridCellCount(layoutMode!) : 0;
@@ -71,6 +72,7 @@ export function TerminalPanel({ terminals, terminalSlots, activeTabId, layoutMod
         onFocus={() => onPaneFocus?.(tab.id)}
         theme={theme}
         fontSize={fontSize}
+        fontFamily={fontFamily}
         borderWidth={shellBorderWidth}
         borderStyle={borderStyle}
       />

@@ -5,7 +5,7 @@ import { WebLinksAddon } from '@xterm/addon-web-links';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { openUrl } from '../api';
-import { normalizeBorderColorToCss } from '../utils';
+import { normalizeBorderColorToCss, buildTerminalFontFamilyStack } from '../utils';
 import '@xterm/xterm/css/xterm.css';
 
 interface TerminalTabProps {
@@ -21,6 +21,7 @@ interface TerminalTabProps {
   onFocus?: () => void;
   theme?: 'dark' | 'day' | 'gray';
   fontSize?: string | number;
+  fontFamily?: string;
   borderColor?: string;
   borderWidth?: string;
   borderStyle?: React.CSSProperties;
@@ -106,7 +107,7 @@ const getTerminalTheme = (theme?: 'dark' | 'day' | 'gray') => {
   }
 };
 
-export function TerminalTab({ sessionId, cwd, command, args, env, initialCommand, spawnDelay, isVisible, isFocused, onFocus, theme, fontSize, borderColor, borderWidth, borderStyle }: TerminalTabProps) {
+export function TerminalTab({ sessionId, cwd, command, args, env, initialCommand, spawnDelay, isVisible, isFocused, onFocus, theme, fontSize, fontFamily, borderColor, borderWidth, borderStyle }: TerminalTabProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const outerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
@@ -119,6 +120,11 @@ export function TerminalTab({ sessionId, cwd, command, args, env, initialCommand
   useEffect(() => {
     fontSizeRef.current = fontSize;
   }, [fontSize]);
+
+  const fontFamilyRef = useRef(fontFamily);
+  useEffect(() => {
+    fontFamilyRef.current = fontFamily;
+  }, [fontFamily]);
 
   const isVisibleRef = useRef(isVisible);
   useEffect(() => {
@@ -218,9 +224,10 @@ export function TerminalTab({ sessionId, cwd, command, args, env, initialCommand
       initialized.current = true;
 
       // Create Terminal
+      const resolvedFontFamily = buildTerminalFontFamilyStack(fontFamilyRef.current);
       const term = new Terminal({
         cursorBlink: true,
-        fontFamily: 'Consolas, "Courier New", monospace',
+        fontFamily: resolvedFontFamily,
         fontSize: parseFontSize(fontSizeRef.current),
         scrollback: 10000,
         theme: getTerminalTheme(theme)
@@ -611,6 +618,37 @@ export function TerminalTab({ sessionId, cwd, command, args, env, initialCommand
       }
     }
   }, [fontSize, sessionId]);
+
+  // Dynamically update terminal font family when fontFamily prop changes
+  useEffect(() => {
+    if (!termRef.current) return;
+    const targetFamily = buildTerminalFontFamilyStack(fontFamily);
+    if (termRef.current.options && termRef.current.options.fontFamily !== targetFamily) {
+      termRef.current.options.fontFamily = targetFamily;
+      if (fitAddonRef.current && spawnSuccessRef.current) {
+        const timer = setTimeout(() => {
+          if (!termRef.current || !fitAddonRef.current || !spawnSuccessRef.current) return;
+          try {
+            fitAddonRef.current.fit();
+            const currentCols = termRef.current.cols;
+            const currentRows = termRef.current.rows;
+            if (currentCols > 0 && currentRows > 0 && (currentCols !== lastColsRef.current || currentRows !== lastRowsRef.current)) {
+              lastColsRef.current = currentCols;
+              lastRowsRef.current = currentRows;
+              invoke('pty_resize', {
+                sessionId,
+                cols: currentCols,
+                rows: currentRows
+              }).catch((err) => console.warn('Failed to resize PTY on font family change:', err));
+            }
+          } catch (e) {
+            console.warn('Resize error on font family change:', e);
+          }
+        }, 50);
+        return () => clearTimeout(timer);
+      }
+    }
+  }, [fontFamily, sessionId]);
 
   const getOuterBg = (theme?: 'dark' | 'day' | 'gray') => {
     switch (theme) {

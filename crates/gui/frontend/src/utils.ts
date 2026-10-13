@@ -363,3 +363,9 @@ export function computeCollapsedBorders(
     borderBottomRightRadius: isBottomRight ? '4px' : '0px',
   };
 }
+
+export function buildTerminalFontFamilyStack(fontFamily?: string): string {
+  const base = (fontFamily || 'Consolas, "Courier New"').trim();
+  // 确保终端等宽英文字体后面优雅追加项目内置的 HarmonyOS Sans SC 与系统中文等宽字体，避免中文回退到生硬的老宋体
+  return `${base}, "HarmonyOS Sans SC", "Microsoft YaHei Mono", "PingFang SC", monospace`;
+}

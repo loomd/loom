@@ -76,6 +76,7 @@ let original = AppConfig {
 		font_family: "Plus Jakarta Sans".to_string(),
 		font_size: "15px".to_string(),
 		terminal_font_size: "13px".to_string(),
+		terminal_font_family: "Consolas, \"Courier New\", monospace".to_string(),
 		project_column_align: "top".to_string(),
 		projects: Vec::new(),
 		agent_instances: Vec::new(),
@@ -287,6 +288,20 @@ fn test_get_set_last_version() {
         set_last_version(None).expect("Failed to clear last version");
         let cleared = get_last_version().expect("Failed to get cleared last version");
         assert_eq!(cleared, None);
+    });
+}
+
+#[test]
+fn test_get_set_terminal_font_family() {
+    run_test_with_temp_config(|_config_path| {
+        use super::manager::{get_terminal_font_family, set_terminal_font_family};
+
+        let default_family = get_terminal_font_family().expect("Failed to get default terminal font family");
+        assert_eq!(default_family, "Consolas, \"Courier New\", monospace");
+
+        set_terminal_font_family("JetBrains Mono".to_string()).expect("Failed to set terminal font family");
+        let updated = get_terminal_font_family().expect("Failed to get updated terminal font family");
+        assert_eq!(updated, "JetBrains Mono");
     });
 }
 

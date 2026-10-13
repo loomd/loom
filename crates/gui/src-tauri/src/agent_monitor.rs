@@ -651,21 +651,15 @@ impl AgentMonitor {
                     let status: String = row.get(0).unwrap_or_default();
                     let err_msg: Option<String> = row.get(1).ok();
 
-                    if let Some(err) = err_msg {
-                        if !err.is_empty() && status != "started" {
-                            eprintln!("[AgentPoll:mcode] Error: {}, session: {}", err, session_id);
-                            return Some(AgentStateInfo {
-                                state: AgentState::Error,
-                                session_id: session_id.to_string(),
-                                session_title,
-                            });
+                    let state = match status.as_str() {
+                        "started" => AgentState::Running,
+                        "error" => {
+                            if let Some(err) = err_msg.as_deref().filter(|s| !s.is_empty()) {
+                                eprintln!("[AgentPoll:mcode] Error: {}, session: {}", err, session_id);
+                            }
+                            AgentState::Error
                         }
-                    }
-
-                    let state = if status == "started" {
-                        AgentState::Running
-                    } else {
-                        AgentState::Waiting
+                        _ => AgentState::Waiting,
                     };
                     eprintln!("[AgentPoll:mcode] {:?}, session: {}", state, session_id);
                     return Some(AgentStateInfo {
@@ -981,17 +975,25 @@ mod tests {
         let state3 = monitor.poll_state_for_pty_with_conns(None, Some(&mcode_conn), ws_dir, pty_id, Some("mcode")).unwrap();
         assert_eq!(state3.state, AgentState::AgentCall);
 
-        // 6. 任务完成，会话变为 idle -> 状态为 Waiting
+        // 6. 任务完成，会话变为 idle，即使历史上存在 error_message 报错信息，正常结束后仍应为 Waiting（不亮红灯）
         mcode_conn.execute(
             "UPDATE local_runtime_background_tasks SET status = 'completed' WHERE task_id = 'task_01'",
             [],
         ).unwrap();
         mcode_conn.execute(
-            "UPDATE local_runtime_sessions SET status = 'idle' WHERE session_id = 'mvs_test_001'",
+            "UPDATE local_runtime_sessions SET status = 'idle', error_message = 'Request timed out' WHERE session_id = 'mvs_test_001'",
             [],
         ).unwrap();
         let state4 = monitor.poll_state_for_pty_with_conns(None, Some(&mcode_conn), ws_dir, pty_id, Some("mcode")).unwrap();
         assert_eq!(state4.state, AgentState::Waiting);
+
+        // 7. 若会话最终真正发生致命异常终止，status 变为 error 时才显示 Error（红灯）
+        mcode_conn.execute(
+            "UPDATE local_runtime_sessions SET status = 'error', error_message = 'Fatal crash' WHERE session_id = 'mvs_test_001'",
+            [],
+        ).unwrap();
+        let state5 = monitor.poll_state_for_pty_with_conns(None, Some(&mcode_conn), ws_dir, pty_id, Some("mcode")).unwrap();
+        assert_eq!(state5.state, AgentState::Error);
 
         cleanup_pty(pty_id);
     }
