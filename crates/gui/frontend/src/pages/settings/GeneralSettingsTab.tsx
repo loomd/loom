@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import { useI18n } from "../../I18nContext";
 import { useToast } from "../../ToastContext";
 import WhatsNewDialog from "../../components/WhatsNewDialog";
-import { getAutostart, setAutostart, getUpdateCheckInterval, setUpdateCheckInterval, getRestoreTerminals, setRestoreTerminals, getWhatsNewAll } from "../../api";
+import { getAutostart, setAutostart, getUpdateCheckInterval, setUpdateCheckInterval, getRestoreTerminals, setRestoreTerminals, getAgentNotificationEnabled, setAgentNotificationEnabled as apiSetAgentNotificationEnabled, getWhatsNewAll } from "../../api";
 import { parseArgbColor, createArgbColor, normalizeBorderColorToCss, composeTerminalFontFamily } from "../../utils";
 import type { DownloadProgress } from "../../hooks/useUpdateChecker";
 
@@ -135,6 +135,7 @@ export default function GeneralSettingsTab({
 	const [appVersion, setAppVersion] = useState<string>("0.1.5");
 	const [autostartEnabled, setAutostartEnabled] = useState<boolean>(false);
 	const [restoreTerminalsEnabled, setRestoreTerminalsEnabled] = useState<boolean>(true);
+	const [agentNotificationEnabled, setAgentNotificationEnabled] = useState<boolean>(true);
 	const [showColorModal, setShowColorModal] = useState<boolean>(false);
 	const [tempColor, setTempColor] = useState<string>(shellBorderColor);
 	const [isChecking, setIsChecking] = useState<boolean>(false);
@@ -175,6 +176,10 @@ export default function GeneralSettingsTab({
 		getRestoreTerminals()
 			.then((enabled) => setRestoreTerminalsEnabled(enabled))
 			.catch((err) => console.error("Failed to fetch restore terminals status:", err));
+
+		getAgentNotificationEnabled()
+			.then((enabled) => setAgentNotificationEnabled(enabled))
+			.catch((err) => console.error("Failed to fetch agent notification status:", err));
 
 		getUpdateCheckInterval()
 			.then((interval) => setCheckInterval(interval || ""))
@@ -224,6 +229,17 @@ export default function GeneralSettingsTab({
 		} catch (err) {
 			console.error("Failed to set restore terminals status:", err);
 			toast.error(t("settings.toast.restoreTerminalsSaveFailed"));
+		}
+	};
+
+	const handleAgentNotificationToggle = async (enabled: boolean) => {
+		try {
+			await apiSetAgentNotificationEnabled(enabled);
+			setAgentNotificationEnabled(enabled);
+			toast.success(t("settings.toast.agentNotificationSaved"));
+		} catch (err) {
+			console.error("Failed to set agent notification status:", err);
+			toast.error(t("settings.toast.agentNotificationSaveFailed"));
 		}
 	};
 
@@ -1628,6 +1644,71 @@ export default function GeneralSettingsTab({
 									position: "absolute",
 									top: "2px",
 									left: restoreTerminalsEnabled ? "26px" : "3px",
+									transition: "all 200ms ease",
+								}}
+							/>
+						</button>
+					</div>
+
+					{/* Agent Notification Toggle */}
+					<div
+						style={{
+							display: "flex",
+							alignItems: "center",
+							justifyContent: "space-between",
+							paddingTop: "16px",
+							borderTop: "1px solid var(--border-subtle)",
+						}}
+					>
+						<div>
+							<div
+								style={{
+									fontSize: "14px",
+									fontWeight: 500,
+									color: "var(--text-primary)",
+								}}
+							>
+								{t("settings.system.agentNotification")}
+							</div>
+							<div
+								style={{
+									fontSize: "12px",
+									color: "var(--text-secondary)",
+									marginTop: "4px",
+								}}
+							>
+								{t("settings.system.agentNotificationDesc")}
+							</div>
+						</div>
+						<button
+							onClick={() => handleAgentNotificationToggle(!agentNotificationEnabled)}
+							style={{
+								background: agentNotificationEnabled
+									? "var(--accent-purple)"
+									: "var(--bg-elevated)",
+								border: agentNotificationEnabled
+									? "1px solid var(--accent-purple)"
+									: "1px solid var(--border-mid)",
+								borderRadius: "20px",
+								width: "48px",
+								height: "24px",
+								position: "relative",
+								cursor: "pointer",
+								transition: "all 200ms ease",
+								padding: 0,
+							}}
+						>
+							<div
+								style={{
+									width: "18px",
+									height: "18px",
+									borderRadius: "50%",
+									background: agentNotificationEnabled
+										? "#ffffff"
+										: "var(--text-secondary)",
+									position: "absolute",
+									top: "2px",
+									left: agentNotificationEnabled ? "26px" : "3px",
 									transition: "all 200ms ease",
 								}}
 							/>

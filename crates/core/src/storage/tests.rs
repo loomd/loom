@@ -95,6 +95,7 @@ let original = AppConfig {
 		shell_border_enabled: false,
 		shell_border_color: "#8b5cf6".to_string(),
 		shell_border_width: "1px".to_string(),
+		agent_notification_enabled: true,
 		agent_skill_map: HashMap::new(),
 		floating_sidebar_enabled: true,
 		floating_sidebar_position: "right".to_string(),
@@ -597,6 +598,24 @@ fn test_restore_terminals_setting() {
         // Update back to true
         set_restore_terminals(true).unwrap();
         assert!(get_restore_terminals().unwrap());
+    });
+}
+
+#[test]
+fn test_agent_notification_setting() {
+    run_test_with_temp_config(|_config_path| {
+        use super::manager::{get_agent_notification_enabled, set_agent_notification_enabled};
+
+        // Default should be true
+        assert!(get_agent_notification_enabled().unwrap());
+
+        // Update to false
+        set_agent_notification_enabled(false).unwrap();
+        assert!(!get_agent_notification_enabled().unwrap());
+
+        // Update back to true
+        set_agent_notification_enabled(true).unwrap();
+        assert!(get_agent_notification_enabled().unwrap());
     });
 }
 

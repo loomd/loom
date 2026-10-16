@@ -218,6 +218,10 @@ const zhDict: Dictionary = {
 	"settings.system.restoreTerminalsDesc": "启动应用或重新打开项目时，自动恢复上次未关闭的终端会话与 Agent 状态",
 	"settings.toast.restoreTerminalsSaved": "恢复终端设置已保存",
 	"settings.toast.restoreTerminalsSaveFailed": "保存恢复终端设置失败",
+	"settings.system.agentNotification": "Agent 任务完成系统通知",
+	"settings.system.agentNotificationDesc": "当 Agent 在后台执行完毕或需要确认时，在 Windows 右下角弹出系统通知并在任务栏闪烁提醒",
+	"settings.toast.agentNotificationSaved": "Agent 系统通知设置已保存",
+	"settings.toast.agentNotificationSaveFailed": "保存 Agent 系统通知设置失败",
 	"settings.system.shellBorder": "shell边框",
 	"settings.system.shellBorderDesc": "多开分屏模式下为所有已派生的 Shell 终端显示线条边框 (支持 ARGB / Alpha 通道透明度)",
 	"settings.system.shellBorderColor": "shell边框颜色选择",
@@ -747,6 +751,11 @@ const enDict: Dictionary = {
 		"Automatically restore unclosed terminal sessions and agent state on app restart or reopening projects",
 	"settings.toast.restoreTerminalsSaved": "Restore terminals setting saved",
 	"settings.toast.restoreTerminalsSaveFailed": "Failed to save restore terminals setting",
+	"settings.system.agentNotification": "Agent Task System Notification",
+	"settings.system.agentNotificationDesc":
+		"Display Windows toast notification and flash taskbar icon when an Agent finishes tasks or needs input while running in the background",
+	"settings.toast.agentNotificationSaved": "Agent notification setting saved",
+	"settings.toast.agentNotificationSaveFailed": "Failed to save agent notification setting",
 	"settings.system.shellBorder": "Shell Border",
 	"settings.system.shellBorderDesc":
 		"Display colored border lines on all spawned shells in split grid mode (supports ARGB / Alpha channel opacity)",

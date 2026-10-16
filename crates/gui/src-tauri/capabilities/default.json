@@ -14,6 +14,7 @@
     "core:window:allow-toggle-maximize",
     "core:window:allow-start-dragging",
     "updater:default",
+    "notification:default",
     "process:allow-restart"
   ]
 }

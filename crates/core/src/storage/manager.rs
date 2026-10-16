@@ -2355,6 +2355,18 @@ pub fn set_shell_border_width(width: String) -> Result<()> {
     Ok(())
 }
 
+pub fn get_agent_notification_enabled() -> Result<bool> {
+    let config = load_config()?;
+    Ok(config.agent_notification_enabled)
+}
+
+pub fn set_agent_notification_enabled(enabled: bool) -> Result<()> {
+    let mut config = load_config()?;
+    config.agent_notification_enabled = enabled;
+    save_config(&config)?;
+    Ok(())
+}
+
 pub fn get_global_env_vars() -> Result<Vec<GlobalEnvVar>> {
     let config = load_config()?;
     Ok(config.env_vars.clone())

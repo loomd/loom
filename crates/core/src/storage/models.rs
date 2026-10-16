@@ -130,6 +130,10 @@ pub fn default_shell_border_width() -> String {
     "1px".to_string()
 }
 
+pub fn default_agent_notification_enabled() -> bool {
+    true
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Project {
     pub id: String,
@@ -238,6 +242,8 @@ pub struct LoomStorage {
     pub shell_border_color: String,
     #[serde(default = "default_shell_border_width")]
     pub shell_border_width: String,
+    #[serde(default = "default_agent_notification_enabled")]
+    pub agent_notification_enabled: bool,
     #[serde(default)]
     pub agent_skill_map: HashMap<String, String>,
 }
@@ -275,6 +281,7 @@ impl Default for LoomStorage {
             shell_border_enabled: default_shell_border_enabled(),
             shell_border_color: default_shell_border_color(),
             shell_border_width: default_shell_border_width(),
+            agent_notification_enabled: default_agent_notification_enabled(),
             agent_skill_map: HashMap::new(),
         }
     }

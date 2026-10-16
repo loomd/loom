@@ -835,16 +835,21 @@ fn get_onboarded_status() -> Result<bool, String> {
 
 #[tauri::command]
 async fn poll_agent_state(
+    app: tauri::AppHandle,
     workspace_dir: String,
     pty_session_id: Option<String>,
     agent_type: Option<String>,
 ) -> Result<Option<agent_monitor::AgentStateInfo>, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let monitor = agent_monitor::AgentMonitor::new();
-        match pty_session_id {
-            Some(pid) => Ok(monitor.poll_state_for_pty(&workspace_dir, &pid, agent_type.as_deref())),
-            None => Ok(monitor.poll_state(&workspace_dir, agent_type.as_deref())),
+        let res = match pty_session_id.as_deref() {
+            Some(pid) => monitor.poll_state_for_pty(&workspace_dir, pid, agent_type.as_deref()),
+            None => monitor.poll_state(&workspace_dir, agent_type.as_deref()),
+        };
+        if let (Some(ref state_info), Some(ref pid)) = (&res, &pty_session_id) {
+            agent_monitor::check_and_notify_agent_completion(&app, pid, state_info);
         }
+        Ok(res)
     })
     .await
     .map_err(|e| e.to_string())?
@@ -972,6 +977,16 @@ fn get_shell_border_width() -> Result<String, String> {
 #[tauri::command]
 fn set_shell_border_width(width: String) -> Result<(), String> {
     cstore::set_shell_border_width(width).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn get_agent_notification_enabled() -> Result<bool, String> {
+    cstore::get_agent_notification_enabled().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn set_agent_notification_enabled(enabled: bool) -> Result<(), String> {
+    cstore::set_agent_notification_enabled(enabled).map_err(|e| e.to_string())
 }
 
 fn execute_test_command(cmd: &str, args_json: &str) -> Result<String, String> {
@@ -1697,6 +1712,17 @@ fn execute_test_command(cmd: &str, args_json: &str) -> Result<String, String> {
             set_shell_border_width(width.to_string())?;
             Ok("null".to_string())
         }
+        "get_agent_notification_enabled" => {
+            let res = get_agent_notification_enabled()?;
+            serde_json::to_string(&res).map_err(|e| e.to_string())
+        }
+        "set_agent_notification_enabled" => {
+            let enabled = args["enabled"]
+                .as_bool()
+                .ok_or_else(|| "Missing argument 'enabled'".to_string())?;
+            set_agent_notification_enabled(enabled)?;
+            Ok("null".to_string())
+        }
         _ => Err(format!("Unknown command '{}'", cmd)),
     }
 }
@@ -2071,6 +2097,7 @@ fn main() {
         ))
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_notification::init())
         .setup(|app| {
             println!("[Startup] setup begin (window state restore, tray, plugins) t=+{}ms", startup_elapsed_ms());
             if let Some(window) = app.get_webview_window("main") {
@@ -2398,7 +2425,9 @@ fn main() {
             get_shell_border_color,
             set_shell_border_color,
             get_shell_border_width,
-            set_shell_border_width
+            set_shell_border_width,
+            get_agent_notification_enabled,
+            set_agent_notification_enabled
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

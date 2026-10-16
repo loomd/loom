@@ -561,3 +561,9 @@ export const getShellBorderWidth = (): Promise<string> =>
 export const setShellBorderWidth = (width: string): Promise<void> =>
 	invoke("set_shell_border_width", { width });
 
+export const getAgentNotificationEnabled = (): Promise<boolean> =>
+	invoke("get_agent_notification_enabled");
+
+export const setAgentNotificationEnabled = (enabled: boolean): Promise<void> =>
+	invoke("set_agent_notification_enabled", { enabled });
+

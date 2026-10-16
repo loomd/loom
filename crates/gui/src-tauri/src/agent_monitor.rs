@@ -5,6 +5,120 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, OnceLock};
 use std::time::{SystemTime, UNIX_EPOCH};
+use tauri::{AppHandle, Manager, UserAttentionType};
+use tauri_plugin_notification::NotificationExt;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NotificationTrigger {
+    Completed,
+    Question,
+    Error,
+}
+
+pub fn is_working_state(state: &AgentState) -> bool {
+    matches!(state, AgentState::Running | AgentState::Thinking | AgentState::AgentCall)
+}
+
+pub fn should_notify_transition(prev: &AgentState, current: &AgentState) -> Option<NotificationTrigger> {
+    if !is_working_state(prev) {
+        return None;
+    }
+    match current {
+        AgentState::Waiting => Some(NotificationTrigger::Completed),
+        AgentState::Question => Some(NotificationTrigger::Question),
+        AgentState::Error => Some(NotificationTrigger::Error),
+        _ => None,
+    }
+}
+
+/// 上一次轮询时记录的 Agent 状态，用于检测运行结束迁移 (pty_session_id -> last_state)
+static PREV_AGENT_STATES: OnceLock<Mutex<HashMap<String, AgentState>>> = OnceLock::new();
+
+/// 清理已关闭 PTY 的状态追踪记录
+pub fn clear_pty_agent_state(pty_session_id: &str) {
+    if let Some(mutex) = PREV_AGENT_STATES.get() {
+        if let Ok(mut map) = mutex.lock() {
+            map.remove(pty_session_id);
+        }
+    }
+}
+
+/// 检查 Agent 状态是否由“运行中”跃迁为“完成/待命/异常”，若符合条件且窗口未聚焦，则触发系统原生 Toast 与任务栏闪烁
+pub fn check_and_notify_agent_completion(
+    app: &AppHandle,
+    pty_session_id: &str,
+    info: &AgentStateInfo,
+) {
+    let states_lock = PREV_AGENT_STATES.get_or_init(|| Mutex::new(HashMap::new()));
+    let prev_state = {
+        let mut map = match states_lock.lock() {
+            Ok(g) => g,
+            Err(_) => return,
+        };
+        map.insert(pty_session_id.to_string(), info.state.clone())
+    };
+
+    let Some(prev) = prev_state else {
+        // 首次记录该 PTY 状态，不触发跨越事件通知（避免刚挂载或打开应用时伪触发）
+        return;
+    };
+
+    if prev == info.state {
+        return;
+    }
+
+    let Some(trigger) = should_notify_transition(&prev, &info.state) else {
+        return;
+    };
+
+    // 检查用户是否开启了 Agent 系统通知设置
+    if !loom_core::storage::get_agent_notification_enabled().unwrap_or(true) {
+        return;
+    }
+
+    let (title, default_body) = match trigger {
+        NotificationTrigger::Completed => ("Loom - Agent 任务已完成", "Agent 任务已执行完毕"),
+        NotificationTrigger::Question => ("Loom - Agent 需要确认", "Agent 需要用户输入确认"),
+        NotificationTrigger::Error => ("Loom - Agent 执行异常", "Agent 执行发生错误"),
+    };
+
+    // 检查窗口焦点状态：仅在窗口失焦、最小化或隐藏在托盘时触发通知与任务栏提示
+    if let Some(window) = app.get_webview_window("main") {
+        let is_focused = window.is_focused().unwrap_or(false);
+        let is_minimized = window.is_minimized().unwrap_or(false);
+        let is_visible = window.is_visible().unwrap_or(false);
+
+        // 如果主窗口处于前台且获得焦点，用户已在关注界面，不产生系统级打扰
+        if is_focused && !is_minimized && is_visible {
+            return;
+        }
+
+        let body = if let Some(ref st) = info.session_title {
+            let trimmed = st.trim();
+            if !trimmed.is_empty() {
+                format!("会话「{}」{}", trimmed, default_body.trim_start_matches("Agent "))
+            } else {
+                default_body.to_string()
+            }
+        } else {
+            default_body.to_string()
+        };
+
+        // 1. 发送系统原生 Toast 通知（在 Windows 右下角弹通知 bar，数秒后自动淡出并收归通知中心）
+        if let Err(e) = app.notification().builder()
+            .title(title)
+            .body(&body)
+            .show()
+        {
+            eprintln!("[Notification] 发送系统通知失败: {}", e);
+        }
+
+        // 2. Windows 任务栏高亮/闪烁提醒
+        if let Err(e) = window.request_user_attention(Some(UserAttentionType::Informational)) {
+            eprintln!("[Notification] 请求任务栏关注提示失败: {}", e);
+        }
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -134,6 +248,7 @@ pub fn mark_pty_active(pty_session_id: &str) {
 
 /// Call when a PTY session is closed to clean up its ownership.
 pub fn cleanup_pty(pty_session_id: &str) {
+    clear_pty_agent_state(pty_session_id);
     if let Some(spawns) = PTY_SPAWNS.get() {
         spawns.lock().unwrap().remove(pty_session_id);
     }
@@ -820,6 +935,69 @@ mod tests {
     use super::*;
 
     static TEST_MUTEX: Mutex<()> = Mutex::new(());
+
+    #[test]
+    fn test_is_working_state() {
+        assert!(is_working_state(&AgentState::Running));
+        assert!(is_working_state(&AgentState::Thinking));
+        assert!(is_working_state(&AgentState::AgentCall));
+        assert!(!is_working_state(&AgentState::Waiting));
+        assert!(!is_working_state(&AgentState::Question));
+        assert!(!is_working_state(&AgentState::Error));
+    }
+
+    #[test]
+    fn test_should_notify_transition() {
+        // Working states -> Waiting (completed)
+        assert_eq!(
+            should_notify_transition(&AgentState::Running, &AgentState::Waiting),
+            Some(NotificationTrigger::Completed)
+        );
+        assert_eq!(
+            should_notify_transition(&AgentState::Thinking, &AgentState::Waiting),
+            Some(NotificationTrigger::Completed)
+        );
+        assert_eq!(
+            should_notify_transition(&AgentState::AgentCall, &AgentState::Waiting),
+            Some(NotificationTrigger::Completed)
+        );
+
+        // Working states -> Question
+        assert_eq!(
+            should_notify_transition(&AgentState::Running, &AgentState::Question),
+            Some(NotificationTrigger::Question)
+        );
+
+        // Working states -> Error
+        assert_eq!(
+            should_notify_transition(&AgentState::Running, &AgentState::Error),
+            Some(NotificationTrigger::Error)
+        );
+
+        // Non-working states should NOT trigger notifications
+        assert_eq!(
+            should_notify_transition(&AgentState::Waiting, &AgentState::Running),
+            None
+        );
+        assert_eq!(
+            should_notify_transition(&AgentState::Waiting, &AgentState::Waiting),
+            None
+        );
+        assert_eq!(
+            should_notify_transition(&AgentState::Question, &AgentState::Waiting),
+            None
+        );
+
+        // Working to working transitions should NOT trigger notifications
+        assert_eq!(
+            should_notify_transition(&AgentState::Running, &AgentState::Thinking),
+            None
+        );
+        assert_eq!(
+            should_notify_transition(&AgentState::Thinking, &AgentState::Running),
+            None
+        );
+    }
 
     fn setup_test_db() -> Connection {
         let conn = Connection::open_in_memory().unwrap();

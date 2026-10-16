@@ -683,6 +683,21 @@ describe("api - File Explorer", () => {
     await setRestoreTerminals(false);
     expect(mockInvoke).toHaveBeenCalledWith("set_restore_terminals", { enabled: false });
   });
+
+  it("getAgentNotificationEnabled calls invoke", async () => {
+    mockInvoke.mockResolvedValueOnce(true);
+    const { getAgentNotificationEnabled } = await import("../api");
+    const res = await getAgentNotificationEnabled();
+    expect(mockInvoke).toHaveBeenCalledWith("get_agent_notification_enabled");
+    expect(res).toBe(true);
+  });
+
+  it("setAgentNotificationEnabled calls invoke with enabled", async () => {
+    mockInvoke.mockResolvedValueOnce(undefined);
+    const { setAgentNotificationEnabled } = await import("../api");
+    await setAgentNotificationEnabled(false);
+    expect(mockInvoke).toHaveBeenCalledWith("set_agent_notification_enabled", { enabled: false });
+  });
 });
 
 describe("api - Error Propagation", () => {
