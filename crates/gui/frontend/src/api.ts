@@ -461,7 +461,9 @@ export const pollAgentState = (
 	workspaceDir: string,
 	ptySessionId?: string,
 	agentType?: string,
-): Promise<AgentStateInfo | null> => invoke("poll_agent_state", { workspaceDir, ptySessionId: ptySessionId ?? null, agentType: agentType ?? null });
+	projectName?: string,
+	terminalTitle?: string,
+): Promise<AgentStateInfo | null> => invoke("poll_agent_state", { workspaceDir, ptySessionId: ptySessionId ?? null, agentType: agentType ?? null, projectName: projectName ?? null, terminalTitle: terminalTitle ?? null });
 
 // ─── Agent Discovery & Skill Injection ─────────────────────
 export const triggerInjectLoomSkills = (): Promise<number> =>

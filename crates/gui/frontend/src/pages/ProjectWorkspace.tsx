@@ -155,7 +155,9 @@ const performRestore = useCallback((list: PersistedTerminal[], layout: GridLayou
 
     newTabs.push({
       id: newId,
-      title: p.title,
+      // 持久化数据里可能存着空标题（历史上某次保存时标题为空，之后会被反复写回）。
+      // 这里兜底生成一个非空标题，避免标签页空白并导致系统通知缺少会话标识。
+      title: p.title && p.title.trim() ? p.title : `Terminal ${newTabs.length + 1}`,
       type: 'terminal',
       cwd: p.cwd,
       command,
@@ -372,7 +374,7 @@ const closeActiveByShortcut = useCallback(() => {
       for (const term of currentTerms) {
         try {
           const agentType = getTerminalAgentType(term);
-          const info = await pollAgentState(project.root_path, term.id, agentType);
+          const info = await pollAgentState(project.root_path, term.id, agentType, project.name, term.title);
           if (info) {
             setAgentStateMap(prev => {
               const existing = prev[term.id];
@@ -409,7 +411,7 @@ const closeActiveByShortcut = useCallback(() => {
     }, 2000);
 
     return () => clearInterval(interval);
-  }, [project.root_path, opencodeTermIds, getTerminalAgentType]);
+  }, [project.id, project.name, project.root_path, opencodeTermIds, getTerminalAgentType]);
 
   // 2. 基于当前存活终端全量快照投影，同步项目综合状态
   useEffect(() => {

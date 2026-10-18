@@ -275,6 +275,11 @@ export function normalizeBorderColorToCss(color?: string): string {
   return parsed.cssRgba;
 }
 
+/** 项目路径比较用的归一化键：忽略大小写、统一分隔符并去掉末尾斜杠，避免 Windows 下匹配失败。 */
+export function projectPathKey(path: string): string {
+  return path.trim().replace(/[\\/]+$/, "").replace(/\//g, "\\").toLowerCase();
+}
+
 export function computeCollapsedBorders(
   slotLetter: string,
   areasStr: string,

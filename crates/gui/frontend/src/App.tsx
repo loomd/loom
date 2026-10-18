@@ -24,7 +24,8 @@ import { markStartup } from "./startupTiming";
 import { getFloatingSidebarEnabled, setFloatingSidebarEnabled as apiSetFloatingSidebarEnabled, getFloatingSidebarPosition, setFloatingSidebarPosition as apiSetFloatingSidebarPosition, getSidebarWidth, setSidebarWidth as setSidebarWidthBackend, getBottomPanelMode, setBottomPanelMode as apiSetBottomPanelMode, getBottomPanelHeight, setBottomPanelHeight as apiSetBottomPanelHeight, getShellBorderEnabled, setShellBorderEnabled as apiSetShellBorderEnabled, getShellBorderColor, setShellBorderColor as apiSetShellBorderColor, getShellBorderWidth, setShellBorderWidth as apiSetShellBorderWidth } from "./api";
 import { AgentManagementPage } from "./pages/AgentManagementPage";
 import { listen } from "@tauri-apps/api/event";
-import type { Template } from "./types";
+import type { Template, AgentNotificationPayload } from "./types";
+import { projectPathKey } from "./utils";
 
 type Page = "workspace" | "settings" | "agents";
 
@@ -88,6 +89,39 @@ function App() {
 			unlisten?.();
 		};
 	}, []);
+
+	// 系统通知被点击时后端已唤醒主窗口，并派发 `agent-notification-activate` 事件。
+	// 这里只负责切回工作区并选中对应项目，不强制跳到具体会话，避免打断用户当前视线。
+	// projects 与选中 setter 每帧都可能变化，用 ref 承接以保持事件监听器稳定不反复重订阅。
+	const projectsRef = React.useRef(p.projects);
+	const selectProjectRef = React.useRef(p.setSelectedProjectId);
+	useEffect(() => {
+		projectsRef.current = p.projects;
+		selectProjectRef.current = p.setSelectedProjectId;
+	}, [p.projects, p.setSelectedProjectId]);
+
+	useEffect(() => {
+		let unlisten: (() => void) | undefined;
+		listen<AgentNotificationPayload>("agent-notification-activate", (e) => {
+			const payload = e.payload;
+			if (!payload?.project_root) return;
+
+			const wanted = projectPathKey(payload.project_root);
+			const target = projectsRef.current.find((proj) => projectPathKey(proj.root_path) === wanted);
+			if (!target) {
+				toast.error(t("notification.toast.projectMissing", { name: payload.project_root }));
+				return;
+			}
+
+			setPage("workspace");
+			selectProjectRef.current(target.id);
+		}).then((fn) => {
+			unlisten = fn;
+		});
+		return () => {
+			unlisten?.();
+		};
+	}, [t, toast]);
 
 	const [sidebarWidth, setSidebarWidth] = useState<number>(() => {
 		const saved = safeGetItem("loom_sidebar_width");

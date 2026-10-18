@@ -2563,8 +2563,10 @@ dependencies = [
  "tauri-plugin-process",
  "tauri-plugin-single-instance",
  "tauri-plugin-updater",
+ "tauri-winrt-notification",
  "which",
  "winapi",
+ "windows-registry",
 ]
 
 [[package]]

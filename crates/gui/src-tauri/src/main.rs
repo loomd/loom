@@ -839,6 +839,8 @@ async fn poll_agent_state(
     workspace_dir: String,
     pty_session_id: Option<String>,
     agent_type: Option<String>,
+    project_name: Option<String>,
+    terminal_title: Option<String>,
 ) -> Result<Option<agent_monitor::AgentStateInfo>, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let monitor = agent_monitor::AgentMonitor::new();
@@ -847,7 +849,14 @@ async fn poll_agent_state(
             None => monitor.poll_state(&workspace_dir, agent_type.as_deref()),
         };
         if let (Some(ref state_info), Some(ref pid)) = (&res, &pty_session_id) {
-            agent_monitor::check_and_notify_agent_completion(&app, pid, state_info);
+            agent_monitor::check_and_notify_agent_completion(
+                &app,
+                pid,
+                &workspace_dir,
+                project_name.as_deref().unwrap_or(""),
+                terminal_title.as_deref().unwrap_or(""),
+                state_info,
+            );
         }
         Ok(res)
     })
@@ -1739,6 +1748,7 @@ fn log_frontend(level: String, message: String) {
 
 mod pty;
 mod agent_monitor;
+mod notification;
 mod crash_shield;
 mod whats_new;
 
@@ -2027,6 +2037,10 @@ fn main() {
     }
 
     crash_shield::install();
+
+    // 必须在任何窗口与通知创建之前注册 AUMID，否则系统通知会挂到 PowerShell 名下，
+    // 点击通知无法唤醒 Loom（开发环境下 tauri-plugin-notification 会刻意跳过 app_id）。
+    notification::ensure_aumid_registered();
     PROCESS_START.get_or_init(std::time::Instant::now);
     eprintln!("[Startup] process created t=+0ms ({})", if cfg!(debug_assertions) { "debug build" } else { "release build" });
 

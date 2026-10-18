@@ -135,6 +135,18 @@ export interface AgentStateInfo {
   session_title?: string;
 }
 
+/** 后端在系统通知被点击时回传的定位信息 */
+export interface AgentNotificationPayload {
+	/** 触发通知的项目工作区根目录 */
+	project_root: string;
+	/** 触发通知的 PTY 会话 ID */
+	pty_session_id: string;
+	/** completed / question / error */
+	trigger: 'completed' | 'question' | 'error';
+	/** 通知标题，用于无法定位时的提示 */
+	title: string;
+}
+
 export interface SingleAgentDiscovery {
   name: string;
   installed: boolean;

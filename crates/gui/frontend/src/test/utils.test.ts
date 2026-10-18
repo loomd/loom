@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { mergeCliArgs } from "../utils";
+import { mergeCliArgs, projectPathKey } from "../utils";
 
 describe("mergeCliArgs", () => {
   it("merges empty arrays", () => {
@@ -59,5 +59,28 @@ describe("mergeCliArgs", () => {
 
   it("handles empty strings in args", () => {
     expect(mergeCliArgs(["", "--flag"], ["--name", ""])).toEqual(["--flag", "--name", ""]);
+  });
+});
+
+describe("projectPathKey", () => {
+  it("returns identical keys for the same path", () => {
+    expect(projectPathKey("D:\\Develop\\loom")).toBe(projectPathKey("D:\\Develop\\loom"));
+  });
+
+  it("ignores letter case (Windows)", () => {
+    expect(projectPathKey("D:\\Develop\\Loom")).toBe(projectPathKey("d:\\develop\\loom"));
+  });
+
+  it("normalizes forward slashes to backslashes", () => {
+    expect(projectPathKey("D:/Develop/loom")).toBe(projectPathKey("D:\\Develop\\loom"));
+  });
+
+  it("ignores trailing separators", () => {
+    expect(projectPathKey("D:\\Develop\\loom\\")).toBe(projectPathKey("D:\\Develop\\loom"));
+    expect(projectPathKey("  D:\\Develop\\loom  ")).toBe(projectPathKey("D:\\Develop\\loom"));
+  });
+
+  it("keeps distinct paths distinct", () => {
+    expect(projectPathKey("D:\\Develop\\loom")).not.toBe(projectPathKey("D:\\Develop\\other"));
   });
 });

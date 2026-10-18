@@ -222,6 +222,7 @@ const zhDict: Dictionary = {
 	"settings.system.agentNotificationDesc": "当 Agent 在后台执行完毕或需要确认时，在 Windows 右下角弹出系统通知并在任务栏闪烁提醒",
 	"settings.toast.agentNotificationSaved": "Agent 系统通知设置已保存",
 	"settings.toast.agentNotificationSaveFailed": "保存 Agent 系统通知设置失败",
+	"notification.toast.projectMissing": "未找到通知对应的项目：{name}",
 	"settings.system.shellBorder": "shell边框",
 	"settings.system.shellBorderDesc": "多开分屏模式下为所有已派生的 Shell 终端显示线条边框 (支持 ARGB / Alpha 通道透明度)",
 	"settings.system.shellBorderColor": "shell边框颜色选择",
@@ -756,6 +757,7 @@ const enDict: Dictionary = {
 		"Display Windows toast notification and flash taskbar icon when an Agent finishes tasks or needs input while running in the background",
 	"settings.toast.agentNotificationSaved": "Agent notification setting saved",
 	"settings.toast.agentNotificationSaveFailed": "Failed to save agent notification setting",
+	"notification.toast.projectMissing": "Could not find the project for this notification: {name}",
 	"settings.system.shellBorder": "Shell Border",
 	"settings.system.shellBorderDesc":
 		"Display colored border lines on all spawned shells in split grid mode (supports ARGB / Alpha channel opacity)",

@@ -6,13 +6,23 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, OnceLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Manager, UserAttentionType};
-use tauri_plugin_notification::NotificationExt;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NotificationTrigger {
     Completed,
     Question,
     Error,
+}
+
+impl NotificationTrigger {
+    /// 通知载荷中的稳定标识，前端据此决定提示文案。
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            NotificationTrigger::Completed => "completed",
+            NotificationTrigger::Question => "question",
+            NotificationTrigger::Error => "error",
+        }
+    }
 }
 
 pub fn is_working_state(state: &AgentState) -> bool {
@@ -43,10 +53,57 @@ pub fn clear_pty_agent_state(pty_session_id: &str) {
     }
 }
 
-/// 检查 Agent 状态是否由“运行中”跃迁为“完成/待命/异常”，若符合条件且窗口未聚焦，则触发系统原生 Toast 与任务栏闪烁
+/// opencode 早期会话在库里存的 title 是 `New session - <时间戳>` 这类自动占位串，
+/// 不是真正的会话名。与前端历史面板的过滤规则保持一致（`ProjectWorkspace.tsx` 中同款判断），
+/// 否则通知会原样显示 `New session - 2026-10-07T08:55:43.651Z 任务已执行完毕`。
+const PLACEHOLDER_TITLE_PREFIX: &str = "New session - ";
+
+/// 组装通知标题，形如 `项目名 - 任务已完成`；项目名为空时只保留事件描述。
+pub fn build_notification_title(project_name: &str, event: &str) -> String {
+    let project = project_name.trim();
+    if project.is_empty() {
+        event.to_string()
+    } else {
+        format!("{} - {}", project, event)
+    }
+}
+
+/// 组装通知正文，形如 `会话标题 任务已执行完毕`。
+///
+/// 标题优先取 Agent 会话库的 `session_title`；库中无标题时退回 Loom 终端标签标题。
+/// 这一层回退是必需的：本地库里相当比例的会话 title 为 NULL，opencode 早期会话
+/// 的 title 还是 `New session - <时间戳>` 这类占位串，只看库会导致通知缺少会话标识。
+pub fn build_notification_body(
+    terminal_title: &str,
+    session_title: Option<&str>,
+    tail: &str,
+) -> String {
+    let label = session_title
+        .map(str::trim)
+        .filter(|s| !s.is_empty() && !s.starts_with(PLACEHOLDER_TITLE_PREFIX))
+        .or_else(|| {
+            let t = terminal_title.trim();
+            if t.is_empty() {
+                None
+            } else {
+                Some(t)
+            }
+        });
+
+    match label {
+        Some(label) => format!("{} {}", label, tail),
+        None => tail.to_string(),
+    }
+}
+
+/// 检查 Agent 状态是否由“运行中”跃迁为“完成/待命/异常”，若符合条件且窗口未聚焦，则触发系统原生 Toast 与任务栏闪烁。
+/// 点击该 Toast 时会唤醒主窗口，并派发事件让前端跳转到 `workspace_dir` 对应的项目。
 pub fn check_and_notify_agent_completion(
     app: &AppHandle,
     pty_session_id: &str,
+    workspace_dir: &str,
+    project_name: &str,
+    terminal_title: &str,
     info: &AgentStateInfo,
 ) {
     let states_lock = PREV_AGENT_STATES.get_or_init(|| Mutex::new(HashMap::new()));
@@ -76,11 +133,13 @@ pub fn check_and_notify_agent_completion(
         return;
     }
 
-    let (title, default_body) = match trigger {
-        NotificationTrigger::Completed => ("Loom - Agent 任务已完成", "Agent 任务已执行完毕"),
-        NotificationTrigger::Question => ("Loom - Agent 需要确认", "Agent 需要用户输入确认"),
-        NotificationTrigger::Error => ("Loom - Agent 执行异常", "Agent 执行发生错误"),
+    let (event, tail) = match trigger {
+        NotificationTrigger::Completed => ("任务已完成", "任务已执行完毕"),
+        NotificationTrigger::Question => ("需要确认", "需要用户输入确认"),
+        NotificationTrigger::Error => ("执行异常", "执行发生错误"),
     };
+    let title = build_notification_title(project_name, event);
+    let body = build_notification_body(terminal_title, info.session_title.as_deref(), tail);
 
     // 检查窗口焦点状态：仅在窗口失焦、最小化或隐藏在托盘时触发通知与任务栏提示
     if let Some(window) = app.get_webview_window("main") {
@@ -93,23 +152,19 @@ pub fn check_and_notify_agent_completion(
             return;
         }
 
-        let body = if let Some(ref st) = info.session_title {
-            let trimmed = st.trim();
-            if !trimmed.is_empty() {
-                format!("会话「{}」{}", trimmed, default_body.trim_start_matches("Agent "))
-            } else {
-                default_body.to_string()
-            }
-        } else {
-            default_body.to_string()
-        };
-
         // 1. 发送系统原生 Toast 通知（在 Windows 右下角弹通知 bar，数秒后自动淡出并收归通知中心）
-        if let Err(e) = app.notification().builder()
-            .title(title)
-            .body(&body)
-            .show()
-        {
+        //    点击通知会唤醒主窗口并把 project_root / pty_session_id 回传给前端用于跳转。
+        if let Err(e) = crate::notification::show_agent_toast(
+            app,
+            &title,
+            &body,
+            crate::notification::AgentNotificationPayload {
+                project_root: workspace_dir.to_string(),
+                pty_session_id: pty_session_id.to_string(),
+                trigger: trigger.as_str().to_string(),
+                title: title.to_string(),
+            },
+        ) {
             eprintln!("[Notification] 发送系统通知失败: {}", e);
         }
 
@@ -944,6 +999,70 @@ mod tests {
         assert!(!is_working_state(&AgentState::Waiting));
         assert!(!is_working_state(&AgentState::Question));
         assert!(!is_working_state(&AgentState::Error));
+    }
+
+    #[test]
+    fn test_notification_trigger_as_str() {
+        assert_eq!(NotificationTrigger::Completed.as_str(), "completed");
+        assert_eq!(NotificationTrigger::Question.as_str(), "question");
+        assert_eq!(NotificationTrigger::Error.as_str(), "error");
+    }
+
+    #[test]
+    fn test_build_notification_title() {
+        assert_eq!(build_notification_title("loom", "任务已完成"), "loom - 任务已完成");
+        assert_eq!(build_notification_title("  loom  ", "需要确认"), "loom - 需要确认");
+        // 项目名为空时只保留事件描述，不产生前导连字符
+        assert_eq!(build_notification_title("", "执行异常"), "执行异常");
+        assert_eq!(build_notification_title("   ", "执行异常"), "执行异常");
+    }
+
+    #[test]
+    fn test_build_notification_body() {
+        // 库里有会话标题
+        assert_eq!(
+            build_notification_body("终端A", Some("修复通知"), "任务已执行完毕"),
+            "修复通知 任务已执行完毕"
+        );
+
+        // 库标题为空/空白：退回终端标签标题
+        assert_eq!(
+            build_notification_body("终端A", Some("   "), "任务已执行完毕"),
+            "终端A 任务已执行完毕"
+        );
+        assert_eq!(
+            build_notification_body("终端A", None, "需要用户输入确认"),
+            "终端A 需要用户输入确认"
+        );
+
+        // 两边都没有标题：只留尾句
+        assert_eq!(
+            build_notification_body("  ", None, "执行发生错误"),
+            "执行发生错误"
+        );
+    }
+
+    #[test]
+    fn test_build_notification_body_skips_placeholder_title() {
+        // opencode 早期会话的占位标题不应显示，退回终端标签标题
+        assert_eq!(
+            build_notification_body(
+                "终端A",
+                Some("New session - 2026-10-07T08:55:43.651Z"),
+                "任务已执行完毕"
+            ),
+            "终端A 任务已执行完毕"
+        );
+        // 只有带该前缀的才算占位串，正常标题不受影响
+        assert_eq!(
+            build_notification_body("终端A", Some("New session 续写"), "任务已执行完毕"),
+            "New session 续写 任务已执行完毕"
+        );
+        // 占位标题 + 空终端标题：退化成纯状态描述
+        assert_eq!(
+            build_notification_body("", Some("New session - 2026-10-07T08:55:43.651Z"), "任务已执行完毕"),
+            "任务已执行完毕"
+        );
     }
 
     #[test]
