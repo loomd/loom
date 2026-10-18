@@ -108,10 +108,9 @@ function App() {
 
 			const wanted = projectPathKey(payload.project_root);
 			const target = projectsRef.current.find((proj) => projectPathKey(proj.root_path) === wanted);
-			if (!target) {
-				toast.error(t("notification.toast.projectMissing", { name: payload.project_root }));
-				return;
-			}
+			// 项目已不存在（被删除或重命名）时静默忽略：窗口已被后端唤醒，
+			// 再弹一条应用内错误只会造成二次打扰。
+			if (!target) return;
 
 			setPage("workspace");
 			selectProjectRef.current(target.id);
@@ -121,7 +120,7 @@ function App() {
 		return () => {
 			unlisten?.();
 		};
-	}, [t, toast]);
+	}, []);
 
 	const [sidebarWidth, setSidebarWidth] = useState<number>(() => {
 		const saved = safeGetItem("loom_sidebar_width");
