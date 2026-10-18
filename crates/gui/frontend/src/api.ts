@@ -463,7 +463,22 @@ export const pollAgentState = (
 	agentType?: string,
 	projectName?: string,
 	terminalTitle?: string,
-): Promise<AgentStateInfo | null> => invoke("poll_agent_state", { workspaceDir, ptySessionId: ptySessionId ?? null, agentType: agentType ?? null, projectName: projectName ?? null, terminalTitle: terminalTitle ?? null });
+	isWindowFocused?: boolean,
+): Promise<AgentStateInfo | null> => {
+	const focused =
+		isWindowFocused ??
+		(typeof document !== "undefined"
+			? document.hasFocus() && document.visibilityState === "visible"
+			: undefined);
+	return invoke("poll_agent_state", {
+		workspaceDir,
+		ptySessionId: ptySessionId ?? null,
+		agentType: agentType ?? null,
+		projectName: projectName ?? null,
+		terminalTitle: terminalTitle ?? null,
+		isWindowFocused: focused ?? null,
+	});
+};
 
 // ─── Agent Discovery & Skill Injection ─────────────────────
 export const triggerInjectLoomSkills = (): Promise<number> =>

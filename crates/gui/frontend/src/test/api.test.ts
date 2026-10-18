@@ -698,6 +698,33 @@ describe("api - File Explorer", () => {
     await setAgentNotificationEnabled(false);
     expect(mockInvoke).toHaveBeenCalledWith("set_agent_notification_enabled", { enabled: false });
   });
+
+  it("pollAgentState calls invoke with default foreground status and arguments", async () => {
+    mockInvoke.mockResolvedValueOnce(null);
+    const { pollAgentState } = await import("../api");
+    await pollAgentState("C:/proj", "pty-1", "opencode", "MyProject", "Term-1");
+    expect(mockInvoke).toHaveBeenCalledWith("poll_agent_state", expect.objectContaining({
+      workspaceDir: "C:/proj",
+      ptySessionId: "pty-1",
+      agentType: "opencode",
+      projectName: "MyProject",
+      terminalTitle: "Term-1",
+    }));
+  });
+
+  it("pollAgentState respects explicit isWindowFocused parameter", async () => {
+    mockInvoke.mockResolvedValueOnce(null);
+    const { pollAgentState } = await import("../api");
+    await pollAgentState("C:/proj", "pty-1", "opencode", "MyProject", "Term-1", false);
+    expect(mockInvoke).toHaveBeenCalledWith("poll_agent_state", {
+      workspaceDir: "C:/proj",
+      ptySessionId: "pty-1",
+      agentType: "opencode",
+      projectName: "MyProject",
+      terminalTitle: "Term-1",
+      isWindowFocused: false,
+    });
+  });
 });
 
 describe("api - Error Propagation", () => {

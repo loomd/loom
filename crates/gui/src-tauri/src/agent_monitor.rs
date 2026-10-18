@@ -96,6 +96,94 @@ pub fn build_notification_body(
     }
 }
 
+/// 检查当前 Windows 系统的活动前台窗口是否属于当前进程。
+///
+/// 在 Windows 平台上，嵌入 WebView2 的主窗口在焦点进入网页内容时，
+/// 宿主 Tao 窗口可能收到 WM_KILLFOCUS 导致 `is_focused()` 变为 false。
+/// 通过 Win32 原生 API 查询当前系统的 Foreground Window，
+/// 若该顶层窗口或其根窗口的进程 PID 等于当前进程 PID，则表明用户当前正聚焦或操作 Loom。
+#[cfg(windows)]
+pub fn is_native_foreground_window() -> bool {
+    unsafe {
+        let fg_hwnd = winapi::um::winuser::GetForegroundWindow();
+        if fg_hwnd.is_null() {
+            return false;
+        }
+
+        let mut fg_pid = 0u32;
+        winapi::um::winuser::GetWindowThreadProcessId(fg_hwnd, &mut fg_pid);
+        let current_pid = std::process::id();
+        if fg_pid == current_pid {
+            return true;
+        }
+
+        // 顶层根窗口检查（应对子窗口或由子进程托管的控件等特殊情况）
+        let root_hwnd = winapi::um::winuser::GetAncestor(fg_hwnd, winapi::um::winuser::GA_ROOT);
+        if !root_hwnd.is_null() {
+            let mut root_pid = 0u32;
+            winapi::um::winuser::GetWindowThreadProcessId(root_hwnd, &mut root_pid);
+            if root_pid == current_pid {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+#[cfg(not(windows))]
+pub fn is_native_foreground_window() -> bool {
+    false
+}
+
+/// 纯逻辑判断：窗口与应用是否处于前台。
+///
+/// 判定规则：
+/// 1. 最小化（is_minimized）或不可见（is_visible 为 false，例如隐藏到托盘）时，绝对不处于前台；
+/// 2. 窗口可见且未最小化时，以下任一条件满足即代表处于前台：
+///    - 前端页面汇报 `document.hasFocus() && document.visibilityState === 'visible'`
+///    - Tauri 原生 `is_focused` 为 true
+///    - 操作系统原生检测到当前活动前台窗口属于本应用进程
+pub fn is_window_state_in_foreground(
+    is_focused: bool,
+    is_minimized: bool,
+    is_visible: bool,
+    frontend_focused: Option<bool>,
+    native_in_foreground: bool,
+) -> bool {
+    if is_minimized || !is_visible {
+        return false;
+    }
+
+    if frontend_focused == Some(true) {
+        return true;
+    }
+
+    if is_focused || native_in_foreground {
+        return true;
+    }
+
+    false
+}
+
+/// 判断 Loom 主窗口是否处于前台且激活。
+pub fn is_app_in_foreground(
+    window: &tauri::WebviewWindow,
+    frontend_focused: Option<bool>,
+) -> bool {
+    let is_focused = window.is_focused().unwrap_or(false);
+    let is_minimized = window.is_minimized().unwrap_or(false);
+    let is_visible = window.is_visible().unwrap_or(false);
+    let native_in_foreground = is_native_foreground_window();
+
+    is_window_state_in_foreground(
+        is_focused,
+        is_minimized,
+        is_visible,
+        frontend_focused,
+        native_in_foreground,
+    )
+}
+
 /// 检查 Agent 状态是否由“运行中”跃迁为“完成/待命/异常”，若符合条件且窗口未聚焦，则触发系统原生 Toast 与任务栏闪烁。
 /// 点击该 Toast 时会唤醒主窗口，并派发事件让前端跳转到 `workspace_dir` 对应的项目。
 pub fn check_and_notify_agent_completion(
@@ -105,6 +193,7 @@ pub fn check_and_notify_agent_completion(
     project_name: &str,
     terminal_title: &str,
     info: &AgentStateInfo,
+    frontend_focused: Option<bool>,
 ) {
     let states_lock = PREV_AGENT_STATES.get_or_init(|| Mutex::new(HashMap::new()));
     let prev_state = {
@@ -141,14 +230,10 @@ pub fn check_and_notify_agent_completion(
     let title = build_notification_title(project_name, event);
     let body = build_notification_body(terminal_title, info.session_title.as_deref(), tail);
 
-    // 检查窗口焦点状态：仅在窗口失焦、最小化或隐藏在托盘时触发通知与任务栏提示
+    // 检查窗口前台与焦点状态：仅在窗口失焦、最小化或隐藏在托盘时触发通知与任务栏提示
     if let Some(window) = app.get_webview_window("main") {
-        let is_focused = window.is_focused().unwrap_or(false);
-        let is_minimized = window.is_minimized().unwrap_or(false);
-        let is_visible = window.is_visible().unwrap_or(false);
-
         // 如果主窗口处于前台且获得焦点，用户已在关注界面，不产生系统级打扰
-        if is_focused && !is_minimized && is_visible {
+        if is_app_in_foreground(&window, frontend_focused) {
             return;
         }
 
@@ -990,6 +1075,28 @@ mod tests {
     use super::*;
 
     static TEST_MUTEX: Mutex<()> = Mutex::new(());
+
+    #[test]
+    fn test_is_window_state_in_foreground() {
+        // 1. 窗口最小化时，即使聚焦或前端报告激活，也不处于前台
+        assert!(!is_window_state_in_foreground(true, true, true, Some(true), true));
+        assert!(!is_window_state_in_foreground(false, true, true, Some(true), false));
+
+        // 2. 窗口不可见（如隐藏在托盘）时，不处于前台
+        assert!(!is_window_state_in_foreground(true, false, false, Some(true), true));
+
+        // 3. 窗口可见且未最小化：
+        // 前端汇报聚焦 -> 判定处于前台
+        assert!(is_window_state_in_foreground(false, false, true, Some(true), false));
+        // Tauri 原生聚焦 -> 判定处于前台
+        assert!(is_window_state_in_foreground(true, false, true, None, false));
+        // 系统原生前台窗口匹配 -> 判定处于前台
+        assert!(is_window_state_in_foreground(false, false, true, None, true));
+
+        // 4. 窗口可见但处于失焦后台状态 -> 判定不处于前台（允许通知）
+        assert!(!is_window_state_in_foreground(false, false, true, Some(false), false));
+        assert!(!is_window_state_in_foreground(false, false, true, None, false));
+    }
 
     #[test]
     fn test_is_working_state() {

@@ -841,6 +841,7 @@ async fn poll_agent_state(
     agent_type: Option<String>,
     project_name: Option<String>,
     terminal_title: Option<String>,
+    is_window_focused: Option<bool>,
 ) -> Result<Option<agent_monitor::AgentStateInfo>, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let monitor = agent_monitor::AgentMonitor::new();
@@ -856,6 +857,7 @@ async fn poll_agent_state(
                 project_name.as_deref().unwrap_or(""),
                 terminal_title.as_deref().unwrap_or(""),
                 state_info,
+                is_window_focused,
             );
         }
         Ok(res)
