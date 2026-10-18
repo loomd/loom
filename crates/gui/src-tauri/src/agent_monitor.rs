@@ -135,6 +135,170 @@ pub fn is_native_foreground_window() -> bool {
     false
 }
 
+/// 遮挡阈值：如果被遮挡的面积大于该阈值（0.5 即 50%），则触发通知；
+/// 若 <= 50%（如分屏左右各占一半时遮挡为 0%，或者大面积露在外面），视为肉眼可见，保持静默不通知。
+pub const OCCLUSION_NOTIFICATION_THRESHOLD: f64 = 0.5;
+
+/// 获取主窗口的 Win32 原生 HWND 句柄。
+#[cfg(windows)]
+pub fn get_window_hwnd(window: &tauri::WebviewWindow) -> Option<winapi::shared::windef::HWND> {
+    use raw_window_handle::{HasWindowHandle, RawWindowHandle};
+    if let Ok(handle) = window.window_handle() {
+        if let RawWindowHandle::Win32(win32) = handle.as_raw() {
+            return Some(win32.hwnd.get() as winapi::shared::windef::HWND);
+        }
+    }
+    None
+}
+
+/// 计算当前窗口被其上方其他顶层窗口遮挡的面积比例（0.0 代表完全无遮挡，1.0 代表完全遮挡）。
+///
+/// 算法原理：
+/// 1. 获取主窗口的屏幕矩形，使用 GDI 创建其初始区域（Region）。
+/// 2. 利用 EnumWindows 按 Z-Order 从顶到底遍历所有层级高于主窗口的顶层窗口。
+/// 3. 对每一个有交集的上方可见窗口，调用 CombineRgn(RGN_DIFF) 从主窗口区域中依次扣除。
+/// 4. 遍历完成后，调用 GetRegionData 解析裁剪后剩余的所有不相交矩形，累加出真实未遮挡的像素面积。
+#[cfg(windows)]
+pub fn calculate_window_occlusion_ratio(hwnd: winapi::shared::windef::HWND) -> Option<f64> {
+    use winapi::shared::minwindef::HRGN;
+    use winapi::shared::windef::RECT;
+    use winapi::um::wingdi::{
+        CombineRgn, CreateRectRgn, DeleteObject, GetRegionData, NULLREGION, RGN_DIFF, RGNDATA,
+        RGNDATAHEADER,
+    };
+    use winapi::um::winuser::{
+        EnumWindows, GetWindowLongW, GetWindowRect, IntersectRect, IsIconic, IsWindowVisible,
+        GWL_EXSTYLE, WS_EX_TRANSPARENT,
+    };
+
+    unsafe {
+        if hwnd.is_null() || IsWindowVisible(hwnd) == 0 || IsIconic(hwnd) != 0 {
+            return Some(1.0);
+        }
+
+        let mut main_rect: RECT = std::mem::zeroed();
+        if GetWindowRect(hwnd, &mut main_rect) == 0 {
+            return None;
+        }
+
+        let width = main_rect.right - main_rect.left;
+        let height = main_rect.bottom - main_rect.top;
+        if width <= 0 || height <= 0 {
+            return Some(1.0);
+        }
+        let total_area = (width as i64) * (height as i64);
+
+        let main_rgn = CreateRectRgn(
+            main_rect.left,
+            main_rect.top,
+            main_rect.right,
+            main_rect.bottom,
+        );
+        if main_rgn.is_null() {
+            return None;
+        }
+
+        struct EnumContext {
+            target_hwnd: winapi::shared::windef::HWND,
+            target_rect: RECT,
+            target_rgn: HRGN,
+            fully_covered: bool,
+        }
+
+        let mut ctx = EnumContext {
+            target_hwnd: hwnd,
+            target_rect: main_rect,
+            target_rgn: main_rgn,
+            fully_covered: false,
+        };
+
+        unsafe extern "system" fn enum_proc(
+            top_hwnd: winapi::shared::windef::HWND,
+            lparam: winapi::shared::minwindef::LPARAM,
+        ) -> winapi::shared::minwindef::BOOL {
+            let ctx = &mut *(lparam as *mut EnumContext);
+
+            // 当遍历到目标窗口自身时，说明所有 Z 序高于目标的窗口均已处理完毕，结束枚举
+            if top_hwnd == ctx.target_hwnd {
+                return 0;
+            }
+
+            if IsWindowVisible(top_hwnd) != 0 && IsIconic(top_hwnd) == 0 {
+                let ex_style = GetWindowLongW(top_hwnd, GWL_EXSTYLE) as u32;
+                // 忽略纯鼠标穿透透明窗口
+                if (ex_style & WS_EX_TRANSPARENT) == 0 {
+                    let mut top_rect: RECT = std::mem::zeroed();
+                    if GetWindowRect(top_hwnd, &mut top_rect) != 0 {
+                        let mut intersect_rect: RECT = std::mem::zeroed();
+                        if IntersectRect(&mut intersect_rect, &ctx.target_rect, &top_rect) != 0 {
+                            let top_rgn = CreateRectRgn(
+                                intersect_rect.left,
+                                intersect_rect.top,
+                                intersect_rect.right,
+                                intersect_rect.bottom,
+                            );
+                            if !top_rgn.is_null() {
+                                let res = CombineRgn(
+                                    ctx.target_rgn,
+                                    ctx.target_rgn,
+                                    top_rgn,
+                                    RGN_DIFF,
+                                );
+                                DeleteObject(top_rgn as _);
+                                if res == NULLREGION {
+                                    ctx.fully_covered = true;
+                                    return 0;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            1
+        }
+
+        EnumWindows(Some(enum_proc), &mut ctx as *mut EnumContext as _);
+
+        if ctx.fully_covered {
+            DeleteObject(main_rgn as _);
+            return Some(1.0);
+        }
+
+        let size = GetRegionData(main_rgn, 0, std::ptr::null_mut());
+        if size == 0 {
+            DeleteObject(main_rgn as _);
+            return Some(1.0);
+        }
+
+        let mut buffer: Vec<u8> = vec![0; size as usize];
+        let rgn_data = buffer.as_mut_ptr() as *mut RGNDATA;
+        let read_size = GetRegionData(main_rgn, size, rgn_data);
+        DeleteObject(main_rgn as _);
+
+        if read_size == 0 {
+            return None;
+        }
+
+        let count = (*rgn_data).rdh.nCount;
+        let rects_ptr = (rgn_data as *const u8).add(std::mem::size_of::<RGNDATAHEADER>()) as *const RECT;
+        let rects_slice = std::slice::from_raw_parts(rects_ptr, count as usize);
+
+        let mut visible_area: i64 = 0;
+        for r in rects_slice {
+            let w = (r.right - r.left) as i64;
+            let h = (r.bottom - r.top) as i64;
+            if w > 0 && h > 0 {
+                visible_area += w * h;
+            }
+        }
+
+        let visible_ratio = (visible_area as f64) / (total_area as f64);
+        let occlusion_ratio = (1.0 - visible_ratio).clamp(0.0, 1.0);
+        Some(occlusion_ratio)
+    }
+}
+
 /// 纯逻辑判断：窗口与应用是否处于前台。
 ///
 /// 判定规则：
@@ -165,7 +329,71 @@ pub fn is_window_state_in_foreground(
     false
 }
 
-/// 判断 Loom 主窗口是否处于前台且激活。
+/// 纯逻辑判断：是否应压制通知（不打扰用户）。
+///
+/// 判定规则：
+/// 1. 最小化或不可见：绝对不压制（必须通知提醒）；
+/// 2. 处于前台（用户正在操作 Loom）：压制通知；
+/// 3. 处于后台（焦点在其他应用，如分屏）：
+///    - 若被遮挡面积比例 <= 50%（用户看得到）：压制通知；
+///    - 若被遮挡面积比例 > 50%（被大部分或全屏遮盖）：不压制（触发通知）。
+pub fn should_suppress_notification_decision(
+    is_focused: bool,
+    is_minimized: bool,
+    is_visible: bool,
+    frontend_focused: Option<bool>,
+    native_in_foreground: bool,
+    occlusion_ratio: Option<f64>,
+) -> bool {
+    if is_minimized || !is_visible {
+        return false;
+    }
+
+    // 处于前台交互中，不通知
+    if frontend_focused == Some(true) || is_focused || native_in_foreground {
+        return true;
+    }
+
+    // 处于后台，但若遮挡比例 <= 50%（如左右分屏时遮挡为 0%，或大面积露在外面），视为肉眼可见，压制通知
+    if let Some(ratio) = occlusion_ratio {
+        if ratio <= OCCLUSION_NOTIFICATION_THRESHOLD {
+            return true;
+        }
+    }
+
+    false
+}
+
+/// 判断 Loom 主窗口是否应压制 Agent 任务完成通知。
+pub fn should_suppress_agent_notification(
+    window: &tauri::WebviewWindow,
+    frontend_focused: Option<bool>,
+) -> bool {
+    let is_focused = window.is_focused().unwrap_or(false);
+    let is_minimized = window.is_minimized().unwrap_or(false);
+    let is_visible = window.is_visible().unwrap_or(false);
+    let native_in_foreground = is_native_foreground_window();
+
+    let mut occlusion_ratio = None;
+    #[cfg(windows)]
+    {
+        if let Some(hwnd) = get_window_hwnd(window) {
+            occlusion_ratio = calculate_window_occlusion_ratio(hwnd);
+        }
+    }
+
+    should_suppress_notification_decision(
+        is_focused,
+        is_minimized,
+        is_visible,
+        frontend_focused,
+        native_in_foreground,
+        occlusion_ratio,
+    )
+}
+
+/// 判断 Loom 主窗口是否处于前台且激活（保留兼容）。
+#[allow(dead_code)]
 pub fn is_app_in_foreground(
     window: &tauri::WebviewWindow,
     frontend_focused: Option<bool>,
@@ -230,10 +458,9 @@ pub fn check_and_notify_agent_completion(
     let title = build_notification_title(project_name, event);
     let body = build_notification_body(terminal_title, info.session_title.as_deref(), tail);
 
-    // 检查窗口前台与焦点状态：仅在窗口失焦、最小化或隐藏在托盘时触发通知与任务栏提示
+    // 检查窗口前台与视觉遮挡状态：若处于前台，或处于后台但在桌面上暴露可见面积 >= 50%（分屏/多显示器），不产生系统级打扰
     if let Some(window) = app.get_webview_window("main") {
-        // 如果主窗口处于前台且获得焦点，用户已在关注界面，不产生系统级打扰
-        if is_app_in_foreground(&window, frontend_focused) {
+        if should_suppress_agent_notification(&window, frontend_focused) {
             return;
         }
 
@@ -1096,6 +1323,37 @@ mod tests {
         // 4. 窗口可见但处于失焦后台状态 -> 判定不处于前台（允许通知）
         assert!(!is_window_state_in_foreground(false, false, true, Some(false), false));
         assert!(!is_window_state_in_foreground(false, false, true, None, false));
+    }
+
+    #[test]
+    fn test_should_suppress_notification_decision() {
+        // 1. 窗口被最小化或不可见时：绝对不压制（必须通知）
+        assert!(!should_suppress_notification_decision(true, true, true, Some(true), true, Some(0.0)));
+        assert!(!should_suppress_notification_decision(false, false, false, None, false, Some(0.0)));
+
+        // 2. 窗口处于前台操作中：直接压制（不通知）
+        assert!(should_suppress_notification_decision(true, false, true, None, false, None));
+        assert!(should_suppress_notification_decision(false, false, true, Some(true), false, None));
+        assert!(should_suppress_notification_decision(false, false, true, None, true, None));
+
+        // 3. 窗口处于后台（用户切到了其他应用，如左右分屏）：
+        // 完全无遮挡（例如左边 Loom，右边浏览器分屏，遮挡率 0.0）-> 压制通知（不打扰）
+        assert!(should_suppress_notification_decision(false, false, true, Some(false), false, Some(0.0)));
+        // 轻度遮挡（例如 30% 遮挡 <= 50%）-> 压制通知（不打扰）
+        assert!(should_suppress_notification_decision(false, false, true, Some(false), false, Some(0.3)));
+        // 临界值（刚好 50% 遮挡 <= 50%）-> 压制通知（不打扰）
+        assert!(should_suppress_notification_decision(false, false, true, Some(false), false, Some(0.5)));
+
+        // 4. 窗口被严重遮挡或全屏覆盖（遮挡率 > 50%）：
+        // 遮挡率 51% > 50% -> 不压制（触发通知）
+        assert!(!should_suppress_notification_decision(false, false, true, Some(false), false, Some(0.51)));
+        // 遮挡率 80% > 50% -> 不压制（触发通知）
+        assert!(!should_suppress_notification_decision(false, false, true, Some(false), false, Some(0.8)));
+        // 完全遮挡（100% 遮挡）-> 不压制（触发通知）
+        assert!(!should_suppress_notification_decision(false, false, true, Some(false), false, Some(1.0)));
+
+        // 5. 无遮挡数据时且在后台 -> 默认不压制（保持原有行为）
+        assert!(!should_suppress_notification_decision(false, false, true, Some(false), false, None));
     }
 
     #[test]
