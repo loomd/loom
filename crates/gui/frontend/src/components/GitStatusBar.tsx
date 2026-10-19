@@ -6,44 +6,54 @@ import { useI18n } from '../I18nContext';
 
 interface Props {
   projectPath: string;
+  active?: boolean;
 }
 
-export const GitStatusBar: React.FC<Props> = ({ projectPath }) => {
+// 模块级状态缓存：保留每个项目路径最近一次的检测结果，切换时第 1 帧秒级展示，杜绝闪烁消失
+const gitStatusCache = new Map<string, GitProjectStatus>();
+
+export const GitStatusBar: React.FC<Props> = ({ projectPath, active = true }) => {
   const { t } = useI18n();
   const toast = useToast();
 
-  const [status, setStatus] = useState<GitProjectStatus | null>(null);
+  // 初始状态优先从缓存中同步读取
+  const [status, setStatus] = useState<GitProjectStatus | null>(() => {
+    return projectPath ? gitStatusCache.get(projectPath) || null : null;
+  });
   const [checking, setChecking] = useState<boolean>(false);
   const [pulling, setPulling] = useState<boolean>(false);
   const isMountedRef = useRef<boolean>(true);
+  const wasActiveRef = useRef<boolean>(active);
 
   // 容器宽度监听：当宽度小于 540px 时自适应切换为紧凑文案
-  const containerRef = useRef<HTMLDivElement>(null);
   const [isCompact, setIsCompact] = useState<boolean>(false);
+  const observerRef = useRef<ResizeObserver | null>(null);
 
   useEffect(() => {
     isMountedRef.current = true;
     return () => {
       isMountedRef.current = false;
+      if (observerRef.current) {
+        observerRef.current.disconnect();
+        observerRef.current = null;
+      }
     };
   }, []);
 
-  useEffect(() => {
-    const el = containerRef.current;
-    if (!el || typeof ResizeObserver === 'undefined') return;
-
-    const observer = new ResizeObserver((entries) => {
-      for (const entry of entries) {
-        const width = entry.contentRect.width;
-        // 当宽度小于 540px 时判定为一行显示不下，切换为紧凑版文案
-        setIsCompact(width < 540);
-      }
-    });
-
-    observer.observe(el);
-    return () => {
-      observer.disconnect();
-    };
+  const containerCallbackRef = useCallback((node: HTMLDivElement | null) => {
+    if (observerRef.current) {
+      observerRef.current.disconnect();
+      observerRef.current = null;
+    }
+    if (node && typeof ResizeObserver !== 'undefined') {
+      const observer = new ResizeObserver((entries) => {
+        for (const entry of entries) {
+          setIsCompact(entry.contentRect.width < 540);
+        }
+      });
+      observer.observe(node);
+      observerRef.current = observer;
+    }
   }, []);
 
   const loadStatus = useCallback(async (fetchRemote: boolean) => {
@@ -52,6 +62,7 @@ export const GitStatusBar: React.FC<Props> = ({ projectPath }) => {
     try {
       const res = await getGitStatus(projectPath, fetchRemote);
       if (isMountedRef.current) {
+        gitStatusCache.set(projectPath, res);
         setStatus(res);
       }
     } catch (e) {
@@ -63,19 +74,20 @@ export const GitStatusBar: React.FC<Props> = ({ projectPath }) => {
     }
   }, [projectPath]);
 
-  // 项目路径变化时先快速读取本地 git 状态（不阻塞），再异步触发 fetch
+  // 项目路径变化时静默更新状态，平滑保留已有显示，绝不强制置空
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setStatus(null);
     let cancelled = false;
 
-    // 先本地读状态（快）
+    // 后台静默读取本地 git 状态
     getGitStatus(projectPath, false)
       .then((res) => {
-        if (!cancelled && res.is_git) {
+        if (!cancelled) {
+          gitStatusCache.set(projectPath, res);
           setStatus(res);
           // 若为 git 项目，静默联网 fetch 一次更新
-          loadStatus(true);
+          if (res.is_git) {
+            loadStatus(true);
+          }
         }
       })
       .catch(() => {});
@@ -84,6 +96,25 @@ export const GitStatusBar: React.FC<Props> = ({ projectPath }) => {
       cancelled = true;
     };
   }, [projectPath, loadStatus]);
+
+  // 当从非激活态（切到终端/其他标签/外部页面）切换回激活态（概览）时，自动静默刷新一次
+  useEffect(() => {
+    if (active && !wasActiveRef.current) {
+      // 先秒级拉取本地状态（立即感知终端刚做完的 commit / checkout / 本地改动）
+      getGitStatus(projectPath, false)
+        .then((res) => {
+          if (isMountedRef.current) {
+            gitStatusCache.set(projectPath, res);
+            setStatus(res);
+            if (res.is_git) {
+              loadStatus(true);
+            }
+          }
+        })
+        .catch(() => {});
+    }
+    wasActiveRef.current = active;
+  }, [active, projectPath, loadStatus]);
 
   const handleManualCheck = () => {
     if (checking || pulling) return;
@@ -99,6 +130,7 @@ export const GitStatusBar: React.FC<Props> = ({ projectPath }) => {
       if (res.success) {
         toast.success(t('proj.git.pullSuccess') || 'Update successful');
         if (res.status) {
+          gitStatusCache.set(projectPath, res.status);
           setStatus(res.status);
         } else {
           loadStatus(false);
@@ -106,6 +138,7 @@ export const GitStatusBar: React.FC<Props> = ({ projectPath }) => {
       } else {
         toast.error(`${t('proj.git.pullFailed') || 'Update failed'}: ${res.message}`);
         if (res.status) {
+          gitStatusCache.set(projectPath, res.status);
           setStatus(res.status);
         }
       }
@@ -129,7 +162,7 @@ export const GitStatusBar: React.FC<Props> = ({ projectPath }) => {
 
   return (
     <div
-      ref={containerRef}
+      ref={containerCallbackRef}
       style={{
         display: 'flex',
         flexWrap: 'wrap',
@@ -219,7 +252,7 @@ export const GitStatusBar: React.FC<Props> = ({ projectPath }) => {
             {status.branch || 'HEAD'}
           </span>
 
-          {/* 远端分支追踪信息：宽屏展示完整箭头，窄屏仅紧凑展示或截断 */}
+          {/* 远端分支追踪信息：统一使用 @ 前缀展示 */}
           {status.upstream && (
             <span
               style={{
@@ -228,15 +261,15 @@ export const GitStatusBar: React.FC<Props> = ({ projectPath }) => {
                 whiteSpace: 'nowrap',
                 overflow: 'hidden',
                 textOverflow: 'ellipsis',
-                maxWidth: isCompact ? '80px' : '140px',
+                maxWidth: isCompact ? '90px' : '150px',
               }}
             >
-              {isCompact ? `@${status.upstream.replace(/^refs\/remotes\//, '')}` : `→ ${status.upstream}`}
+              @{status.upstream.replace(/^refs\/remotes\//, '')}
             </span>
           )}
         </div>
 
-        {/* 状态徽标：有未提交改动 */}
+        {/* 状态徽标：有修改 */}
         {status.is_dirty && (
           <span
             style={{
@@ -250,7 +283,7 @@ export const GitStatusBar: React.FC<Props> = ({ projectPath }) => {
               borderRadius: '4px',
               whiteSpace: 'nowrap',
             }}
-            title={t('proj.git.dirty') || 'Uncommitted changes'}
+            title={t('proj.git.dirty') || '有修改'}
           >
             <span
               style={{
@@ -261,7 +294,7 @@ export const GitStatusBar: React.FC<Props> = ({ projectPath }) => {
                 flexShrink: 0,
               }}
             />
-            {isCompact ? (t('proj.git.dirtyCompact') || '未提交') : (t('proj.git.dirty') || '有未提交改动')}
+            {t('proj.git.dirty') || '有修改'}
           </span>
         )}
 
@@ -326,7 +359,7 @@ export const GitStatusBar: React.FC<Props> = ({ projectPath }) => {
                 }}
               />
               <span title={t('proj.git.upToDate') || '最新'}>
-                {isCompact ? (t('proj.git.upToDateCompact') || '新') : (t('proj.git.upToDate') || '最新')}
+                {t('proj.git.upToDate') || '最新'}
               </span>
             </span>
           )

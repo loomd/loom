@@ -664,8 +664,7 @@ const closeActiveByShortcut = useCallback(() => {
             </div>
           </div>
         )}
-        {activeTabId === 'overview' && !showGrid && (
-          <div style={{ flexGrow: 1, minHeight: 0, display: 'flex', flexDirection: 'row', gap: '24px', padding: '12px 24px', position: 'relative', overflow: 'hidden' }}>
+        <div style={{ flexGrow: 1, minHeight: 0, display: activeTabId === 'overview' && !showGrid ? 'flex' : 'none', flexDirection: 'row', gap: '24px', padding: '12px 24px', position: 'relative', overflow: 'hidden' }}>
 <div data-tour-target="templates-section" style={{ flex: 1, minWidth: '180px', display: 'flex', flexDirection: 'column', gap: '16px', paddingTop: '2px', paddingBottom: '10px', overflowY: 'auto', scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
 				<h3 style={{ margin: 0, fontSize: '1.0rem', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
 					{t('proj.launcher.title') || 'Quick Spawn'}
@@ -760,7 +759,7 @@ const closeActiveByShortcut = useCallback(() => {
                   🗑 {t('proj.modal.btn.delete')}
                 </button>
               </h3>
-              <GitStatusBar projectPath={project.root_path} />
+              <GitStatusBar projectPath={project.root_path} active={isVisible && activeTabId === 'overview' && !showGrid} />
               <FileExplorerPanel
                 files={data.files}
                 loadingFiles={data.loadingFiles}
@@ -940,7 +939,6 @@ const closeActiveByShortcut = useCallback(() => {
               )}
             </div>
           </div>
-        )}
 
         {tabs.find(t => t.id === activeTabId)?.type === 'agents-skills' && !showGrid && (
           <div style={{ flexGrow: 1, minHeight: 0, display: 'flex', flexDirection: 'row', gap: '24px', padding: '12px 24px', overflow: 'hidden' }}>
