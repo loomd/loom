@@ -46,7 +46,7 @@ graph TD
 Execute the following commands from the project root directory:
 
 ### Rust Crates (Core, CLI, Tauri)
-- **Check workspace (全量静态检查，必跑)**: `cargo check --all-targets`
+- **Check workspace (全量静态检查，代码变更后必跑)**: `cargo check --all-targets`
 - **Compile workspace**: `cargo build`
 - **Lint Rust code (全量 Lint)**: `cargo clippy --all-targets`
 - **Run Rust tests (全量测试)**: `cargo test --workspace`
@@ -76,6 +76,7 @@ Execute the following commands from the project root directory:
 - **Version Updates**: Maximum of 21 patches per minor version. Increment the minor version and reset the patch version to 1 once reached (e.g., `0.1.21` -> `0.2.1`).
 - **GitHub Operations**: Perform all repository, issues, and PR interactions via the GitHub CLI (`gh`) tool.
 - **Emoji Usage**: Do not use emojis in responses or code unless explicitly requested by the user. When modifying the UI, do not add emojis to interface elements without explicit permission.
+- **严格遵循用户指令范围**: 严禁擅自扩展用户的操作意图。如果用户只吩咐了单一指令（如“拉取代码”、“查看某个文件”），完成该操作并汇报结果即可，严禁自行衍生触发编译、测试、格式化或不相关的深度巡检。
 
 ### 2. Rust Idioms
 - **Error Handling**: Use the standard `thiserror` crate inside `crates/core` to build typed `StorageError` variants. Never swallow errors silently.
@@ -123,7 +124,13 @@ Execute the following commands from the project root directory:
 ---
 
 ## Testing & QA
-- **Mandatory Workspace Check**: 任何 Rust 代码修改后，必须运行 `cargo check --all-targets`、`cargo clippy --all-targets` 以及 `cargo test --workspace`，严禁仅跑单模块检查而遗漏 bin 目标的借用和生命周期校验。
+- **Mandatory Workspace Check (交付前校验)**:
+  - **触发条件**: 仅当本次任务中由你**主动编写或修改了 Rust/前端代码**，且在向用户交付成果前，必须执行对应技术栈的全量校验（Rust: `cargo check --all-targets`、`cargo clippy --all-targets` 以及 `cargo test --workspace`；前端: `npm run lint`、`npm test`），严禁仅跑单模块检查而遗漏全局借用和生命周期校验。
+  - **严禁触发场景 (禁止擅自加跑测试/检查)**:
+    - 纯 Git 操作（如 `git pull`、`git status`、`git log`、切分支等）；
+    - 纯只读调查、代码定位、架构答疑；
+    - 纯文档说明（如 `.md`）、配置文件无逻辑影响的微调；
+    - 用户未明确要求运行测试，且你未编写代码的任何场景。
 - **Unit Testing**: Rust unittests reside in `crates/core/src/storage/tests.rs`. Use the static sequence `TEST_MUTEX` to run tests sequentially, as environment variables (`LOOM_CONFIG_PATH`) are shared process-wide.
 - **E2E Integration Testing**: Run via Vitest in the `e2e/` folder. Uses `execa` to execute binary instances in isolated environments.
 - **Mockauri Execution**: During test runs, GUI Tauri execution does not spawn web views. Setting `TAURI_TEST_CMD` and `TAURI_TEST_ARGS` lets the binary run headless and print JSON structures to stdout for assertion parsing.
