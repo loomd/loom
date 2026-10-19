@@ -584,3 +584,18 @@ export const getAgentNotificationEnabled = (): Promise<boolean> =>
 export const setAgentNotificationEnabled = (enabled: boolean): Promise<void> =>
 	invoke("set_agent_notification_enabled", { enabled });
 
+// ─── Git Project Sync ──────────────────────────────────────
+import type { GitProjectStatus, GitPullResult } from "./types";
+
+export const getGitStatus = (
+	projectPath: string,
+	fetch: boolean = true,
+): Promise<GitProjectStatus> =>
+	invoke("get_git_status", { projectPath, fetch });
+
+export const pullGitProject = (
+	projectPath: string,
+): Promise<GitPullResult> =>
+	invoke("pull_git_project", { projectPath });
+
+

@@ -5,6 +5,7 @@ const MIN_WINDOW_HEIGHT: u32 = 560;
 
 use loom_core::agent_config::{discover_agents, fetch_models, write_mcode_config, write_opencode_config, DiscoveryOverview, FetchedModel};
 use loom_core::cli_install::{self as cli_install, CliInstallStatus};
+use loom_core::git::{check_git_status, pull_git_project as core_pull_git_project, GitProjectStatus, GitPullResult};
 use loom_core::skills::{get_existing_skill_paths, inject_loom_skills, LOOM_SKILL_VERSION};
 use loom_core::storage::{self as cstore, AgentDoc, AgentHistoryEntry, AgentInstance, Category, CliTool, GlobalDocTemplate, GlobalEnvVar, GlobalSkillTemplate, PersistedTerminal, Project, ProjectSkill, ScanResult, Template};
 use std::collections::HashMap;
@@ -713,6 +714,26 @@ fn delete_file_entry(file_path: String, is_dir: bool) -> Result<(), String> {
     } else {
         std::fs::remove_file(path).map_err(|e| e.to_string())
     }
+}
+
+#[tauri::command]
+async fn get_git_status(project_path: String, fetch: bool) -> Result<GitProjectStatus, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let path = std::path::Path::new(&project_path);
+        check_git_status(path, fetch)
+    })
+    .await
+    .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn pull_git_project(project_path: String) -> Result<GitPullResult, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let path = std::path::Path::new(&project_path);
+        core_pull_git_project(path)
+    })
+    .await
+    .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -2443,7 +2464,9 @@ fn main() {
             get_shell_border_width,
             set_shell_border_width,
             get_agent_notification_enabled,
-            set_agent_notification_enabled
+            set_agent_notification_enabled,
+            get_git_status,
+            pull_git_project
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

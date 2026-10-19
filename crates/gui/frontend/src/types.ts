@@ -201,3 +201,21 @@ export interface AgentHistoryEntry {
   last_seen: number; // Unix 秒
 }
 
+export interface GitProjectStatus {
+  is_git: boolean;
+  branch: string | null;
+  upstream: string | null;
+  ahead: number;
+  behind: number;
+  is_dirty: boolean;
+  last_checked: number;
+  error: string | null;
+}
+
+export interface GitPullResult {
+  success: boolean;
+  message: string;
+  status: GitProjectStatus | null;
+}
+
+

@@ -5,6 +5,7 @@ import { useWorkspaceData } from '../hooks/useWorkspaceData';
 import { TerminalPanel } from '../components/TerminalPanel';
 import { LayoutSelector } from '../components/LayoutSelector';
 import { FileExplorerPanel } from '../components/FileExplorerPanel';
+import { GitStatusBar } from '../components/GitStatusBar';
 import { useToast } from '../ToastContext';
 import { useI18n } from '../I18nContext';
 import { TemplateModal } from './TemplatesPage';
@@ -700,7 +701,7 @@ const closeActiveByShortcut = useCallback(() => {
                       {t('proj.launcher.skills') || '技能管理'}
                     </span>
                   </button>
-                 {data.templates.map((tpl, i) => {
+                 {(data.templates || []).map((tpl, i) => {
                   const isDragging = data.draggedIndex === i;
                   const isDragOver = data.dragOverIndex === i;
                   const showTopLine = isDragOver && data.draggedIndex !== null && data.draggedIndex > i;
@@ -759,6 +760,7 @@ const closeActiveByShortcut = useCallback(() => {
                   🗑 {t('proj.modal.btn.delete')}
                 </button>
               </h3>
+              <GitStatusBar projectPath={project.root_path} />
               <FileExplorerPanel
                 files={data.files}
                 loadingFiles={data.loadingFiles}
@@ -783,13 +785,13 @@ const closeActiveByShortcut = useCallback(() => {
                 <h3 style={{ margin: 0, fontSize: '1.0rem', color: 'var(--text-primary)', flexShrink: 0 }}>
                   历史会话
                 </h3>
-                {agentHistory.length === 0 ? (
+                {(!agentHistory || agentHistory.length === 0) ? (
                   <div style={{ fontSize: '0.82rem', color: 'var(--text-tertiary)', fontStyle: 'italic', padding: '8px 0' }}>
                     暂无历史会话
                   </div>
                 ) : (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', overflowY: 'auto', scrollbarWidth: 'none' }}>
-                    {agentHistory.map((entry) => {
+                    {(agentHistory || []).map((entry) => {
                       const timeAgo = (() => {
                         const diff = Math.floor(Date.now() / 1000) - entry.last_seen;
                         if (diff < 60) return '刚刚';
