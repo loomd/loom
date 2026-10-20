@@ -313,7 +313,7 @@ export const GitStatusBar: React.FC<Props> = ({ projectPath, active = true }) =>
             }}
             title={t('proj.git.ahead', { n: status.ahead })}
           >
-            {isCompact ? `↑ ${status.ahead}` : `↑ ${status.ahead} ${t('proj.git.ahead', { n: status.ahead })}`}
+            {isCompact ? `↑ ${status.ahead}` : `↑ ${t('proj.git.ahead', { n: status.ahead })}`}
           </span>
         )}
 
@@ -332,8 +332,9 @@ export const GitStatusBar: React.FC<Props> = ({ projectPath, active = true }) =>
               borderRadius: '4px',
               whiteSpace: 'nowrap',
             }}
+            title={t('proj.git.behind', { n: status.behind })}
           >
-            {isCompact ? `↓ ${status.behind}` : `↓ ${status.behind} ${t('proj.git.behind', { n: status.behind })}`}
+            {isCompact ? `↓ ${status.behind}` : `↓ ${t('proj.git.behind', { n: status.behind })}`}
           </span>
         ) : (
           !status.is_dirty &&
