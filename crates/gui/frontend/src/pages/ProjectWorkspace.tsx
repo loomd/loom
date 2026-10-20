@@ -500,8 +500,8 @@ const closeActiveByShortcut = useCallback(() => {
 	return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
       <div data-tauri-drag-region style={{
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        padding: '2px 0px 0px 0px', gap: '0px', height: '30px', minHeight: '30px'
+        display: 'flex', alignItems: 'stretch', justifyContent: 'space-between',
+        padding: '0px', gap: '0px', height: '30px', minHeight: '30px'
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0px', alignSelf: 'stretch', marginRight: '2px' }}>
           {onToggleSidebar && (
@@ -616,7 +616,7 @@ const closeActiveByShortcut = useCallback(() => {
         </div>
         <div data-tauri-drag-region onDoubleClick={() => { document.querySelector('.titlebar-tabs-scroll')?.scrollTo({ left: 0, behavior: 'smooth' }); }}
           style={{ width: '24px', flexShrink: 0, alignSelf: 'stretch', cursor: 'grab' }} title="拖拽窗口 / 双击回到起始位置" />
-        <div style={{ display: 'flex', gap: '2px', alignItems: 'stretch', alignSelf: 'stretch' }}>
+        <div style={{ display: 'flex', gap: '0px', alignItems: 'stretch', alignSelf: 'stretch', height: '100%' }}>
           <WindowControlButtons />
         </div>
       </div>

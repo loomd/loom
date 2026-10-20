@@ -32,14 +32,22 @@ interface Props {
 	onCheckUpdate: (isManual: boolean) => Promise<void>;
 	onInstallUpdate?: () => void;
 	onSkipVersion?: (version: string) => void;
-	floatingSidebarEnabled: boolean;
-	onFloatingSidebarEnabledChange: (enabled: boolean) => void;
-	floatingSidebarPosition: "left" | "right" | "bottom";
-	onFloatingSidebarPositionChange: (position: "left" | "right" | "bottom") => void;
-	sidebarCollapseEnabled: boolean;
-	onSidebarCollapseEnabledChange: (enabled: boolean) => void;
-	bottomPanelMode: "embedded" | "floating";
-	onBottomPanelModeChange: (mode: "embedded" | "floating") => void;
+	floatingSidebarEnabled?: boolean;
+	onFloatingSidebarEnabledChange?: (enabled: boolean) => void;
+	floatingSidebarPosition?: "left" | "right" | "bottom";
+	onFloatingSidebarPositionChange?: (position: "left" | "right" | "bottom") => void;
+	sidebarCollapseEnabled?: boolean;
+	onSidebarCollapseEnabledChange?: (enabled: boolean) => void;
+	bottomPanelMode?: "embedded" | "floating";
+	onBottomPanelModeChange?: (mode: "embedded" | "floating") => void;
+	leftPanelEnabled?: boolean;
+	onLeftPanelEnabledChange?: (enabled: boolean) => void;
+	rightPanelEnabled?: boolean;
+	onRightPanelEnabledChange?: (enabled: boolean) => void;
+	topPanelEnabled?: boolean;
+	onTopPanelEnabledChange?: (enabled: boolean) => void;
+	bottomPanelEnabled?: boolean;
+	onBottomPanelEnabledChange?: (enabled: boolean) => void;
 	shellBorderEnabled?: boolean;
 	onShellBorderEnabledChange?: (enabled: boolean) => void;
 	shellBorderColor?: string;
@@ -70,14 +78,22 @@ export default function SettingsPage({
 	onCheckUpdate,
 	onInstallUpdate,
 	onSkipVersion,
-	floatingSidebarEnabled,
+	floatingSidebarEnabled = false,
 	onFloatingSidebarEnabledChange,
-	floatingSidebarPosition,
+	floatingSidebarPosition = "right",
 	onFloatingSidebarPositionChange,
-	sidebarCollapseEnabled,
+	sidebarCollapseEnabled = true,
 	onSidebarCollapseEnabledChange,
-	bottomPanelMode,
+	bottomPanelMode = "embedded",
 	onBottomPanelModeChange,
+	leftPanelEnabled = true,
+	onLeftPanelEnabledChange,
+	rightPanelEnabled = false,
+	onRightPanelEnabledChange,
+	topPanelEnabled = false,
+	onTopPanelEnabledChange,
+	bottomPanelEnabled = false,
+	onBottomPanelEnabledChange,
 	shellBorderEnabled,
 	onShellBorderEnabledChange,
 	shellBorderColor,
@@ -195,6 +211,14 @@ export default function SettingsPage({
 						onSidebarCollapseEnabledChange={onSidebarCollapseEnabledChange}
 						bottomPanelMode={bottomPanelMode}
 						onBottomPanelModeChange={onBottomPanelModeChange}
+						leftPanelEnabled={leftPanelEnabled}
+						onLeftPanelEnabledChange={onLeftPanelEnabledChange}
+						rightPanelEnabled={rightPanelEnabled}
+						onRightPanelEnabledChange={onRightPanelEnabledChange}
+						topPanelEnabled={topPanelEnabled}
+						onTopPanelEnabledChange={onTopPanelEnabledChange}
+						bottomPanelEnabled={bottomPanelEnabled}
+						onBottomPanelEnabledChange={onBottomPanelEnabledChange}
 						shellBorderEnabled={shellBorderEnabled}
 						onShellBorderEnabledChange={onShellBorderEnabledChange}
 						shellBorderColor={shellBorderColor}

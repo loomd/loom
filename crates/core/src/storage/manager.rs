@@ -2283,6 +2283,66 @@ pub fn set_sidebar_width(width: u32) -> Result<()> {
     Ok(())
 }
 
+pub fn get_left_panel_enabled() -> Result<bool> {
+    let config = load_config()?;
+    Ok(config.left_panel_enabled)
+}
+
+pub fn set_left_panel_enabled(enabled: bool) -> Result<()> {
+    let mut config = load_config()?;
+    config.left_panel_enabled = enabled;
+    save_config(&config)?;
+    Ok(())
+}
+
+pub fn get_right_panel_enabled() -> Result<bool> {
+    let config = load_config()?;
+    Ok(config.right_panel_enabled)
+}
+
+pub fn set_right_panel_enabled(enabled: bool) -> Result<()> {
+    let mut config = load_config()?;
+    config.right_panel_enabled = enabled;
+    save_config(&config)?;
+    Ok(())
+}
+
+pub fn get_top_panel_enabled() -> Result<bool> {
+    let config = load_config()?;
+    Ok(config.top_panel_enabled)
+}
+
+pub fn set_top_panel_enabled(enabled: bool) -> Result<()> {
+    let mut config = load_config()?;
+    config.top_panel_enabled = enabled;
+    save_config(&config)?;
+    Ok(())
+}
+
+pub fn get_bottom_panel_enabled() -> Result<bool> {
+    let config = load_config()?;
+    Ok(config.bottom_panel_enabled)
+}
+
+pub fn set_bottom_panel_enabled(enabled: bool) -> Result<()> {
+    let mut config = load_config()?;
+    config.bottom_panel_enabled = enabled;
+    save_config(&config)?;
+    Ok(())
+}
+
+pub fn get_right_sidebar_width() -> Result<u32> {
+    let config = load_config()?;
+    Ok(config.right_sidebar_width)
+}
+
+pub fn set_right_sidebar_width(width: u32) -> Result<()> {
+    let mut config = load_config()?;
+    config.right_sidebar_width = width;
+    save_config(&config)?;
+    Ok(())
+}
+
 pub fn get_bottom_panel_mode() -> Result<String> {
     let config = load_config()?;
     Ok(config.bottom_panel_mode.clone())

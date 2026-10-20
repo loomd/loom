@@ -102,6 +102,26 @@ pub fn default_floating_sidebar_position() -> String {
     "right".to_string()
 }
 
+pub fn default_left_panel_enabled() -> bool {
+    true
+}
+
+pub fn default_right_panel_enabled() -> bool {
+    false
+}
+
+pub fn default_top_panel_enabled() -> bool {
+    false
+}
+
+pub fn default_bottom_panel_enabled() -> bool {
+    false
+}
+
+pub fn default_right_sidebar_width() -> u32 {
+    170
+}
+
 pub fn default_sidebar_width() -> u32 {
     170
 }
@@ -228,8 +248,18 @@ pub struct LoomStorage {
     pub floating_sidebar_enabled: bool,
     #[serde(default = "default_floating_sidebar_position")]
     pub floating_sidebar_position: String,
+    #[serde(default = "default_left_panel_enabled")]
+    pub left_panel_enabled: bool,
+    #[serde(default = "default_right_panel_enabled")]
+    pub right_panel_enabled: bool,
+    #[serde(default = "default_top_panel_enabled")]
+    pub top_panel_enabled: bool,
+    #[serde(default = "default_bottom_panel_enabled")]
+    pub bottom_panel_enabled: bool,
     #[serde(default = "default_sidebar_width")]
     pub sidebar_width: u32,
+    #[serde(default = "default_right_sidebar_width")]
+    pub right_sidebar_width: u32,
     #[serde(default = "default_bottom_panel_mode")]
     pub bottom_panel_mode: String,
     #[serde(default = "default_bottom_panel_height")]
@@ -274,7 +304,12 @@ impl Default for LoomStorage {
             has_onboarded: default_has_onboarded(),
             floating_sidebar_enabled: default_floating_sidebar_enabled(),
             floating_sidebar_position: default_floating_sidebar_position(),
+            left_panel_enabled: default_left_panel_enabled(),
+            right_panel_enabled: default_right_panel_enabled(),
+            top_panel_enabled: default_top_panel_enabled(),
+            bottom_panel_enabled: default_bottom_panel_enabled(),
             sidebar_width: default_sidebar_width(),
+            right_sidebar_width: default_right_sidebar_width(),
             bottom_panel_mode: default_bottom_panel_mode(),
             bottom_panel_height: default_bottom_panel_height(),
             restore_terminals: default_restore_terminals(),

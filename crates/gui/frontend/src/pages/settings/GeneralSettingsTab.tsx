@@ -32,14 +32,22 @@ interface Props {
 	onCheckUpdate: (isManual: boolean) => Promise<void>;
 	onInstallUpdate?: () => void;
 	onSkipVersion?: (version: string) => void;
-	floatingSidebarEnabled: boolean;
-	onFloatingSidebarEnabledChange: (enabled: boolean) => void;
-	floatingSidebarPosition: "left" | "right" | "bottom";
-	onFloatingSidebarPositionChange: (position: "left" | "right" | "bottom") => void;
-	sidebarCollapseEnabled: boolean;
-	onSidebarCollapseEnabledChange: (enabled: boolean) => void;
-	bottomPanelMode: "embedded" | "floating";
-	onBottomPanelModeChange: (mode: "embedded" | "floating") => void;
+	floatingSidebarEnabled?: boolean;
+	onFloatingSidebarEnabledChange?: (enabled: boolean) => void;
+	floatingSidebarPosition?: "left" | "right" | "bottom";
+	onFloatingSidebarPositionChange?: (position: "left" | "right" | "bottom") => void;
+	sidebarCollapseEnabled?: boolean;
+	onSidebarCollapseEnabledChange?: (enabled: boolean) => void;
+	bottomPanelMode?: "embedded" | "floating";
+	onBottomPanelModeChange?: (mode: "embedded" | "floating") => void;
+	leftPanelEnabled?: boolean;
+	onLeftPanelEnabledChange?: (enabled: boolean) => void;
+	rightPanelEnabled?: boolean;
+	onRightPanelEnabledChange?: (enabled: boolean) => void;
+	topPanelEnabled?: boolean;
+	onTopPanelEnabledChange?: (enabled: boolean) => void;
+	bottomPanelEnabled?: boolean;
+	onBottomPanelEnabledChange?: (enabled: boolean) => void;
 	shellBorderEnabled?: boolean;
 	onShellBorderEnabledChange?: (enabled: boolean) => void;
 	shellBorderColor?: string;
@@ -115,14 +123,14 @@ export default function GeneralSettingsTab({
 	onCheckUpdate,
 	onInstallUpdate,
 	onSkipVersion,
-	floatingSidebarEnabled,
-	onFloatingSidebarEnabledChange,
-	floatingSidebarPosition,
-	onFloatingSidebarPositionChange,
-	sidebarCollapseEnabled,
-	onSidebarCollapseEnabledChange,
-	bottomPanelMode,
-	onBottomPanelModeChange,
+	leftPanelEnabled = true,
+	onLeftPanelEnabledChange,
+	rightPanelEnabled = false,
+	onRightPanelEnabledChange,
+	topPanelEnabled = false,
+	onTopPanelEnabledChange,
+	bottomPanelEnabled = false,
+	onBottomPanelEnabledChange,
 	shellBorderEnabled = false,
 	onShellBorderEnabledChange,
 	shellBorderColor = "#8b5cf6",
@@ -1194,7 +1202,8 @@ export default function GeneralSettingsTab({
 						</div>
 					</div>
 
-					{/* Floating Sidebar Toggle */}
+					{/* Fixed Docked Project Panels (Left, Right, Top, Bottom) */}
+					{/* Left Panel Toggle */}
 					<div
 						style={{
 							display: "flex",
@@ -1213,7 +1222,7 @@ export default function GeneralSettingsTab({
 									color: "var(--text-primary)",
 								}}
 							>
-								{t("proj.rightSidebar.enable")}
+								{t("proj.panel.left.enable") || "左侧固定面板"}
 							</div>
 							<div
 								style={{
@@ -1222,16 +1231,16 @@ export default function GeneralSettingsTab({
 									marginTop: "4px",
 								}}
 							>
-								鼠标悬浮在边缘时自动滑出项目切换侧边栏
+								{t("proj.panel.left.desc") || "在窗口左侧固定显示垂直项目导航栏，支持拖拽调整宽度与折叠"}
 							</div>
 						</div>
 						<button
-							onClick={() => onFloatingSidebarEnabledChange(!floatingSidebarEnabled)}
+							onClick={() => onLeftPanelEnabledChange?.(!leftPanelEnabled)}
 							style={{
-								background: floatingSidebarEnabled
+								background: leftPanelEnabled
 									? "var(--accent-purple)"
 									: "var(--bg-elevated)",
-								border: floatingSidebarEnabled
+								border: leftPanelEnabled
 									? "1px solid var(--accent-purple)"
 									: "1px solid var(--border-mid)",
 								borderRadius: "20px",
@@ -1247,7 +1256,7 @@ export default function GeneralSettingsTab({
 								style={{
 									position: "absolute",
 									top: "2px",
-									left: floatingSidebarEnabled ? "26px" : "2px",
+									left: leftPanelEnabled ? "26px" : "2px",
 									width: "18px",
 									height: "18px",
 									borderRadius: "50%",
@@ -1259,7 +1268,7 @@ export default function GeneralSettingsTab({
 						</button>
 					</div>
 
-					{/* Floating Sidebar Position */}
+					{/* Right Panel Toggle */}
 					<div
 						style={{
 							display: "flex",
@@ -1278,7 +1287,7 @@ export default function GeneralSettingsTab({
 									color: "var(--text-primary)",
 								}}
 							>
-								悬浮侧边栏位置
+								{t("proj.panel.right.enable") || "右侧固定面板"}
 							</div>
 							<div
 								style={{
@@ -1287,126 +1296,16 @@ export default function GeneralSettingsTab({
 									marginTop: "4px",
 								}}
 							>
-								选择悬浮侧边栏出现在窗口左侧、右侧或底部
-							</div>
-						</div>
-						<div style={{ display: "flex", gap: "8px" }}>
-							<button
-								onClick={() => onFloatingSidebarPositionChange("left")}
-								style={{
-									background:
-										floatingSidebarPosition === "left"
-											? "var(--accent-purple)"
-											: "var(--bg-elevated)",
-									border:
-										floatingSidebarPosition === "left"
-											? "1px solid var(--accent-purple)"
-											: "1px solid var(--border-mid)",
-									borderRadius: "6px",
-									padding: "6px 14px",
-									cursor: "pointer",
-									color:
-										floatingSidebarPosition === "left"
-											? "#ffffff"
-											: "var(--text-secondary)",
-									fontSize: "13px",
-									fontWeight: 500,
-									transition: "all 200ms ease",
-								}}
-							>
-								{t("proj.floatingSidebar.left")}
-							</button>
-							<button
-								onClick={() => onFloatingSidebarPositionChange("right")}
-								style={{
-									background:
-										floatingSidebarPosition === "right"
-											? "var(--accent-purple)"
-											: "var(--bg-elevated)",
-									border:
-										floatingSidebarPosition === "right"
-											? "1px solid var(--accent-purple)"
-											: "1px solid var(--border-mid)",
-									borderRadius: "6px",
-									padding: "6px 14px",
-									cursor: "pointer",
-									color:
-										floatingSidebarPosition === "right"
-											? "#ffffff"
-											: "var(--text-secondary)",
-									fontSize: "13px",
-									fontWeight: 500,
-									transition: "all 200ms ease",
-								}}
-							>
-							{t("proj.floatingSidebar.right")}
-						</button>
-						<button
-							onClick={() => onFloatingSidebarPositionChange("bottom")}
-							style={{
-								background:
-									floatingSidebarPosition === "bottom"
-										? "var(--accent-purple)"
-										: "var(--bg-elevated)",
-								border:
-									floatingSidebarPosition === "bottom"
-										? "1px solid var(--accent-purple)"
-										: "1px solid var(--border-mid)",
-								borderRadius: "6px",
-								padding: "6px 14px",
-								cursor: "pointer",
-								color:
-									floatingSidebarPosition === "bottom"
-										? "#ffffff"
-										: "var(--text-secondary)",
-								fontSize: "13px",
-								fontWeight: 500,
-								transition: "all 200ms ease",
-							}}
-						>
-							{t("proj.floatingSidebar.bottom")}
-						</button>
-						</div>
-					</div>
-
-					{/* Left Sidebar Collapse Toggle */}
-					<div
-						style={{
-							display: "flex",
-							alignItems: "center",
-							justifyContent: "space-between",
-							marginTop: "16px",
-							paddingTop: "16px",
-							borderTop: "1px solid var(--border-subtle)",
-						}}
-					>
-						<div>
-							<div
-								style={{
-									fontSize: "14px",
-									fontWeight: 500,
-									color: "var(--text-primary)",
-								}}
-							>
-								{t("proj.sidebar.collapse.enable")}
-							</div>
-							<div
-								style={{
-									fontSize: "12px",
-									color: "var(--text-secondary)",
-									marginTop: "4px",
-								}}
-							>
-								开启后左侧项目列表可折叠隐藏，ProjectWorkspace 显示展开按钮
+								{t("proj.panel.right.desc") || "在窗口右侧固定显示垂直项目导航栏，支持拖拽调整宽度"}
 							</div>
 						</div>
 						<button
-							onClick={() => onSidebarCollapseEnabledChange(!sidebarCollapseEnabled)}
+							onClick={() => onRightPanelEnabledChange?.(!rightPanelEnabled)}
 							style={{
-								background: sidebarCollapseEnabled
+								background: rightPanelEnabled
 									? "var(--accent-purple)"
 									: "var(--bg-elevated)",
-								border: sidebarCollapseEnabled
+								border: rightPanelEnabled
 									? "1px solid var(--accent-purple)"
 									: "1px solid var(--border-mid)",
 								borderRadius: "20px",
@@ -1422,7 +1321,7 @@ export default function GeneralSettingsTab({
 								style={{
 									position: "absolute",
 									top: "2px",
-									left: sidebarCollapseEnabled ? "26px" : "2px",
+									left: rightPanelEnabled ? "26px" : "2px",
 									width: "18px",
 									height: "18px",
 									borderRadius: "50%",
@@ -1434,91 +1333,135 @@ export default function GeneralSettingsTab({
 						</button>
 					</div>
 
-					{floatingSidebarPosition === "bottom" && (
-						<div
-							style={{
-								display: "flex",
-								alignItems: "center",
-								justifyContent: "space-between",
-								marginTop: "16px",
-								paddingTop: "16px",
-								borderTop: "1px solid var(--border-subtle)",
-							}}
-						>
-							<div>
-								<div
-									style={{
-										fontSize: "14px",
-										fontWeight: 500,
-										color: "var(--text-primary)",
-									}}
-								>
-									{t("proj.bottomPanel.mode")}
-								</div>
-								<div
-									style={{
-										fontSize: "12px",
-										color: "var(--text-secondary)",
-										marginTop: "4px",
-									}}
-								>
-									嵌入模式固定显示；悬浮模式鼠标靠近底部时滑出
-								</div>
+					{/* Top Panel Toggle */}
+					<div
+						style={{
+							display: "flex",
+							alignItems: "center",
+							justifyContent: "space-between",
+							marginTop: "16px",
+							paddingTop: "16px",
+							borderTop: "1px solid var(--border-subtle)",
+						}}
+					>
+						<div>
+							<div
+								style={{
+									fontSize: "14px",
+									fontWeight: 500,
+									color: "var(--text-primary)",
+								}}
+							>
+								{t("proj.panel.top.enable") || "顶部固定面板"}
 							</div>
-							<div style={{ display: "flex", gap: "8px" }}>
-								<button
-									onClick={() => onBottomPanelModeChange("embedded")}
-									style={{
-										background:
-											bottomPanelMode === "embedded"
-												? "var(--accent-purple)"
-												: "var(--bg-elevated)",
-										border:
-											bottomPanelMode === "embedded"
-												? "1px solid var(--accent-purple)"
-												: "1px solid var(--border-mid)",
-										borderRadius: "6px",
-										padding: "6px 14px",
-										cursor: "pointer",
-										color:
-											bottomPanelMode === "embedded"
-												? "#ffffff"
-												: "var(--text-secondary)",
-										fontSize: "13px",
-										fontWeight: 500,
-										transition: "all 200ms ease",
-									}}
-								>
-									{t("proj.bottomPanel.embedded")}
-								</button>
-								<button
-									onClick={() => onBottomPanelModeChange("floating")}
-									style={{
-										background:
-											bottomPanelMode === "floating"
-												? "var(--accent-purple)"
-												: "var(--bg-elevated)",
-										border:
-											bottomPanelMode === "floating"
-												? "1px solid var(--accent-purple)"
-												: "1px solid var(--border-mid)",
-										borderRadius: "6px",
-										padding: "6px 14px",
-										cursor: "pointer",
-										color:
-											bottomPanelMode === "floating"
-												? "#ffffff"
-												: "var(--text-secondary)",
-										fontSize: "13px",
-										fontWeight: 500,
-										transition: "all 200ms ease",
-									}}
-								>
-									{t("proj.bottomPanel.floating")}
-								</button>
+							<div
+								style={{
+									fontSize: "12px",
+									color: "var(--text-secondary)",
+									marginTop: "4px",
+								}}
+							>
+								{t("proj.panel.top.desc") || "在窗口顶部固定显示横向项目导航栏、拖拽区与窗口控制"}
 							</div>
 						</div>
-					)}
+						<button
+							onClick={() => onTopPanelEnabledChange?.(!topPanelEnabled)}
+							style={{
+								background: topPanelEnabled
+									? "var(--accent-purple)"
+									: "var(--bg-elevated)",
+								border: topPanelEnabled
+									? "1px solid var(--accent-purple)"
+									: "1px solid var(--border-mid)",
+								borderRadius: "20px",
+								width: "48px",
+								height: "24px",
+								position: "relative",
+								cursor: "pointer",
+								transition: "all 200ms ease",
+								padding: 0,
+							}}
+						>
+							<span
+								style={{
+									position: "absolute",
+									top: "2px",
+									left: topPanelEnabled ? "26px" : "2px",
+									width: "18px",
+									height: "18px",
+									borderRadius: "50%",
+									background: "#fff",
+									transition: "all 200ms ease",
+									boxShadow: "0 1px 3px rgba(0,0,0,0.2)",
+								}}
+							/>
+						</button>
+					</div>
+
+					{/* Bottom Panel Toggle */}
+					<div
+						style={{
+							display: "flex",
+							alignItems: "center",
+							justifyContent: "space-between",
+							marginTop: "16px",
+							paddingTop: "16px",
+							borderTop: "1px solid var(--border-subtle)",
+						}}
+					>
+						<div>
+							<div
+								style={{
+									fontSize: "14px",
+									fontWeight: 500,
+									color: "var(--text-primary)",
+								}}
+							>
+								{t("proj.panel.bottom.enable") || "底部固定面板"}
+							</div>
+							<div
+								style={{
+									fontSize: "12px",
+									color: "var(--text-secondary)",
+									marginTop: "4px",
+								}}
+							>
+								{t("proj.panel.bottom.desc") || "在窗口底部固定显示横向项目导航栏，支持拖拽调整高度"}
+							</div>
+						</div>
+						<button
+							onClick={() => onBottomPanelEnabledChange?.(!bottomPanelEnabled)}
+							style={{
+								background: bottomPanelEnabled
+									? "var(--accent-purple)"
+									: "var(--bg-elevated)",
+								border: bottomPanelEnabled
+									? "1px solid var(--accent-purple)"
+									: "1px solid var(--border-mid)",
+								borderRadius: "20px",
+								width: "48px",
+								height: "24px",
+								position: "relative",
+								cursor: "pointer",
+								transition: "all 200ms ease",
+								padding: 0,
+							}}
+						>
+							<span
+								style={{
+									position: "absolute",
+									top: "2px",
+									left: bottomPanelEnabled ? "26px" : "2px",
+									width: "18px",
+									height: "18px",
+									borderRadius: "50%",
+									background: "#fff",
+									transition: "all 200ms ease",
+									boxShadow: "0 1px 3px rgba(0,0,0,0.2)",
+								}}
+							/>
+						</button>
+					</div>
 
 					{/* Autostart */}
 					<div

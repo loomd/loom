@@ -243,6 +243,37 @@ export const getBottomPanelHeight = (): Promise<number> =>
 export const setBottomPanelHeight = (height: number): Promise<void> =>
   invoke("set_bottom_panel_height", { height });
 
+// ─── Fixed Panel Configurations ─────────────────────────────
+export const getLeftPanelEnabled = (): Promise<boolean> =>
+  invoke("get_left_panel_enabled");
+
+export const setLeftPanelEnabled = (enabled: boolean): Promise<void> =>
+  invoke("set_left_panel_enabled", { enabled });
+
+export const getRightPanelEnabled = (): Promise<boolean> =>
+  invoke("get_right_panel_enabled");
+
+export const setRightPanelEnabled = (enabled: boolean): Promise<void> =>
+  invoke("set_right_panel_enabled", { enabled });
+
+export const getTopPanelEnabled = (): Promise<boolean> =>
+  invoke("get_top_panel_enabled");
+
+export const setTopPanelEnabled = (enabled: boolean): Promise<void> =>
+  invoke("set_top_panel_enabled", { enabled });
+
+export const getBottomPanelEnabled = (): Promise<boolean> =>
+  invoke("get_bottom_panel_enabled");
+
+export const setBottomPanelEnabled = (enabled: boolean): Promise<void> =>
+  invoke("set_bottom_panel_enabled", { enabled });
+
+export const getRightSidebarWidth = (): Promise<number> =>
+  invoke("get_right_sidebar_width");
+
+export const setRightSidebarWidth = (width: number): Promise<void> =>
+  invoke("set_right_sidebar_width", { width });
+
 // ─── Projects ─────────────────────────────────────────────
 export const getProjects = (): Promise<Project[]> => invoke("get_projects");
 

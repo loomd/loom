@@ -22,6 +22,7 @@ interface SidebarProps {
 	onDragLeave: () => void;
 	onDrop: (e: React.DragEvent, index: number) => void;
 	onDragEnd: () => void;
+	width?: number;
 }
 
 export default function Sidebar({
@@ -41,13 +42,24 @@ export default function Sidebar({
 	onDragLeave,
 	onDrop,
 	onDragEnd,
+	width = 170,
 }: SidebarProps) {
 	const { t } = useI18n();
 
 	return (
 		<aside
 			className="sidebar"
-			style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}
+			style={{
+				width: `${width}px`,
+				minWidth: `${width}px`,
+				maxWidth: `${width}px`,
+				flexShrink: 0,
+				display: "flex",
+				flexDirection: "column",
+				height: "100%",
+				overflow: "hidden",
+				boxSizing: "border-box",
+			}}
 		>
 			<div
 				style={{

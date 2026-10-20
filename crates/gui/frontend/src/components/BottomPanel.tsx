@@ -5,13 +5,11 @@ import type { CompositeState } from "../hooks/useProjectCompositeStates";
 
 interface BottomPanelProps {
   enabled: boolean;
-  mode: "embedded" | "floating";
-  sidebarWidth: number;
   projects: Project[];
   selectedProjectId: string;
   onProjectSelect: (projectId: string) => void;
   compositeStates: Record<string, CompositeState>;
-  onNavigate?: (page: "settings") => void;
+  onNavigate?: (page: "workspace" | "settings" | "agents") => void;
   onRegisterProject?: () => void;
   onHeightChange?: (height: number) => void;
   page?: string;
@@ -21,8 +19,6 @@ interface BottomPanelProps {
 
 export default function BottomPanel({
   enabled,
-  mode,
-  sidebarWidth,
   projects,
   selectedProjectId,
   onProjectSelect,
@@ -35,13 +31,9 @@ export default function BottomPanel({
   onUserHeightChange,
 }: BottomPanelProps) {
   const { t } = useI18n();
-  const [isVisible, setIsVisible] = useState(false);
   const [rowCount, setRowCount] = useState(1);
   const panelRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
-  const hideTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const sidebarWidthRef = useRef(sidebarWidth);
-  useEffect(() => { sidebarWidthRef.current = sidebarWidth; }, [sidebarWidth]);
 
   const calcRows = useCallback(() => {
     const el = listRef.current;
@@ -69,7 +61,6 @@ export default function BottomPanel({
 
   const autoHeight = rowCount <= 1 ? 42 : 78;
   const panelHeight = userHeight != null ? userHeight : autoHeight;
-  // 用户主动把面板拖到比自动高度更小：让多行内容也能滚到顶端仅显 1 行
   const isManuallyShrunk = userHeight != null && userHeight < autoHeight;
 
   useEffect(() => {
@@ -77,49 +68,7 @@ export default function BottomPanel({
     onHeightChange(panelHeight);
   }, [panelHeight, onHeightChange, enabled]);
 
-  const isEmbedded = mode === "embedded";
-  const showPanel = isEmbedded || isVisible;
-
-  // ─── Floating mode: hover trigger ──────────────────────────
-  useEffect(() => {
-    if (isEmbedded) return;
-
-    const triggerZone = 16;
-
-    const handleMouseMove = (e: MouseEvent) => {
-      const windowHeight = window.innerHeight;
-      if (e.clientX >= sidebarWidthRef.current && e.clientY >= windowHeight - triggerZone) {
-        setIsVisible(true);
-        if (hideTimeoutRef.current) {
-          clearTimeout(hideTimeoutRef.current);
-          hideTimeoutRef.current = null;
-        }
-      }
-    };
-
-    window.addEventListener("mousemove", handleMouseMove);
-    return () => {
-      window.removeEventListener("mousemove", handleMouseMove);
-      if (hideTimeoutRef.current) clearTimeout(hideTimeoutRef.current);
-    };
-  }, [isEmbedded]);
-
-  const handleMouseEnter = useCallback(() => {
-    if (hideTimeoutRef.current) {
-      clearTimeout(hideTimeoutRef.current);
-      hideTimeoutRef.current = null;
-    }
-    setIsVisible(true);
-  }, []);
-
-  const handleMouseLeave = useCallback(() => {
-    if (isEmbedded) return;
-    hideTimeoutRef.current = setTimeout(() => {
-      setIsVisible(false);
-    }, 100);
-  }, [isEmbedded]);
-
-  // ─── Embedded mode: drag top edge to resize height ────────
+  // 拖动顶部边缘调整高度
   const handleResizerMouseDown = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
@@ -128,7 +77,7 @@ export default function BottomPanel({
     const handleMouseMove = (moveEvent: MouseEvent) => {
       const deltaY = startY - moveEvent.clientY;
       let newHeight = startHeight + deltaY;
-      if (newHeight < 42) newHeight = 42;
+      if (newHeight < 40) newHeight = 40;
       if (newHeight > 240) newHeight = 240;
       onUserHeightChange?.(newHeight);
     };
@@ -138,7 +87,7 @@ export default function BottomPanel({
     };
     document.addEventListener("mousemove", handleMouseMove);
     document.addEventListener("mouseup", handleMouseUp);
-  }, [panelHeight, autoHeight, onUserHeightChange]);
+  }, [panelHeight, onUserHeightChange]);
 
   const handleResizerDoubleClick = useCallback(() => {
     onUserHeightChange?.(null);
@@ -147,40 +96,44 @@ export default function BottomPanel({
   if (!enabled) return null;
 
   return (
-    <div
+    <footer
       ref={panelRef}
-      onMouseEnter={handleMouseEnter}
-      onMouseLeave={handleMouseLeave}
-        style={{
-          position: "fixed",
-          bottom: 0,
-          left: `${sidebarWidth}px`,
-          right: 0,
-          height: `${panelHeight}px`,
-          minHeight: `${panelHeight}px`,
-          maxHeight: `${panelHeight}px`,
-          background: "var(--bg-card)",
-          backdropFilter: "blur(20px)",
-          zIndex: 10000,
-          display: showPanel ? "flex" : "none",
-          flexDirection: "row",
-          alignItems: "stretch",
-          transform: isEmbedded ? "translateY(0)" : (isVisible ? "translateY(0)" : "translateY(100%)"),
-          opacity: isEmbedded ? 1 : (isVisible ? 1 : 0),
-          transition: "transform 150ms ease, opacity 150ms ease, height 150ms ease",
-          overflow: "hidden",
-          boxSizing: "border-box",
-        }}
+      className="bottom-panel fixed-mode"
+      style={{
+        width: "100%",
+        height: `${panelHeight}px`,
+        minHeight: `${panelHeight}px`,
+        maxHeight: `${panelHeight}px`,
+        background: "var(--bg-card)",
+        borderTop: "1px solid var(--border-subtle)",
+        display: "flex",
+        flexDirection: "row",
+        alignItems: "stretch",
+        flexShrink: 0,
+        position: "relative",
+        boxSizing: "border-box",
+        overflow: "hidden",
+        userSelect: "none",
+        zIndex: 40,
+      }}
     >
-      {isEmbedded && (
-        <div
-          className="bottom-panel-resizer"
-          onMouseDown={handleResizerMouseDown}
-          onDoubleClick={handleResizerDoubleClick}
-          title="拖动调整高度 / 双击恢复自动"
-        />
-      )}
-      {/* Projects list */}
+      <div
+        className="bottom-panel-resizer"
+        style={{
+          position: "absolute",
+          top: 0,
+          left: 0,
+          right: 0,
+          height: "4px",
+          cursor: "row-resize",
+          zIndex: 10,
+        }}
+        onMouseDown={handleResizerMouseDown}
+        onDoubleClick={handleResizerDoubleClick}
+        title="拖动调整高度 / 双击恢复自动"
+      />
+
+      {/* 项目列表 */}
       <div
         ref={listRef}
         style={{
@@ -189,9 +142,9 @@ export default function BottomPanel({
           flexWrap: "wrap",
           alignItems: "center",
           alignContent: rowCount >= 3 || isManuallyShrunk ? "flex-start" : "center",
-          gap: "0px 0px",
-             padding: "7px 8px 10px 8px",
-           overflowY: rowCount >= 3 || isManuallyShrunk ? "auto" : "hidden",
+          gap: "4px",
+          padding: "6px 8px",
+          overflowY: rowCount >= 3 || isManuallyShrunk ? "auto" : "hidden",
           scrollbarWidth: "none",
           msOverflowStyle: "none",
           boxSizing: "border-box",
@@ -205,15 +158,19 @@ export default function BottomPanel({
               fontStyle: "italic",
             }}
           >
-            {t("proj.sidebar.title")}
+            {t("proj.sidebar.title") || "暂无项目"}
           </span>
         )}
         {projects.map((project) => {
-          const isActive = selectedProjectId === project.id;
+          const isActive = selectedProjectId === project.id && page === "workspace";
+          const stateClass = compositeStates[project.id];
           return (
             <div
               key={project.id}
-              onClick={() => onProjectSelect(project.id)}
+              onClick={() => {
+                onProjectSelect(project.id);
+                if (page !== "workspace") onNavigate?.("workspace");
+              }}
               style={{
                 flexShrink: 0,
                 display: "inline-flex",
@@ -227,29 +184,25 @@ export default function BottomPanel({
                 borderRadius: "6px",
                 background: isActive ? "var(--bg-elevated)" : "transparent",
                 color: "var(--text-primary)",
-                transition: "background-color 0.2s ease",
+                transition: "background-color 0.15s ease",
                 whiteSpace: "nowrap",
                 border: "1px solid",
                 borderColor: isActive ? "var(--border-subtle)" : "transparent",
               }}
               onMouseEnter={(e) => {
-                if (!isActive) {
-                  e.currentTarget.style.background = "var(--bg-elevated)";
-                }
+                if (!isActive) e.currentTarget.style.background = "var(--bg-elevated)";
               }}
               onMouseLeave={(e) => {
-                if (!isActive) {
-                  e.currentTarget.style.background = "transparent";
-                }
+                if (!isActive) e.currentTarget.style.background = "transparent";
               }}
             >
-               <span
-                 className={`project-status-text${compositeStates[project.id] ? ` ${compositeStates[project.id]}` : ""}`}
-                 style={{
-                   overflow: "hidden",
-                   textOverflow: "ellipsis",
-                   whiteSpace: "nowrap",
-                 }}
+              <span
+                className={`project-status-text${stateClass ? ` ${stateClass}` : ""}`}
+                style={{
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                }}
                 title={project.name}
               >
                 {project.name}
@@ -257,7 +210,8 @@ export default function BottomPanel({
             </div>
           );
         })}
-        <div style={{ display: "inline-flex", gap: 0, marginLeft: "-4px" }}>
+
+        <div style={{ display: "inline-flex", gap: "2px", alignItems: "center" }}>
           {onRegisterProject && (
             <div
               onClick={onRegisterProject}
@@ -272,10 +226,10 @@ export default function BottomPanel({
                 borderRadius: "6px",
                 background: "transparent",
                 color: "var(--text-secondary)",
-                transition: "background-color 0.2s ease",
+                transition: "background-color 0.15s ease",
                 border: "1px solid transparent",
               }}
-              title={t("proj.register")}
+              title={t("proj.register") || "新建项目"}
               onMouseEnter={(e) => { e.currentTarget.style.background = "var(--bg-elevated)"; }}
               onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
             >
@@ -299,10 +253,10 @@ export default function BottomPanel({
                 borderRadius: "6px",
                 background: page === "settings" ? "var(--accent-purple)" : "transparent",
                 color: page === "settings" ? "white" : "var(--text-secondary)",
-                transition: "background-color 0.2s ease",
+                transition: "background-color 0.15s ease",
                 border: "1px solid transparent",
               }}
-              title={t("settings")}
+              title={t("settings") || "设置"}
               onMouseEnter={(e) => {
                 if (page !== "settings") e.currentTarget.style.background = "var(--bg-elevated)";
               }}
@@ -318,6 +272,6 @@ export default function BottomPanel({
           )}
         </div>
       </div>
-    </div>
+    </footer>
   );
 }

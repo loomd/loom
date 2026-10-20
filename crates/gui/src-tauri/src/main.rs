@@ -362,6 +362,56 @@ fn set_bottom_panel_height(height: u32) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn get_left_panel_enabled() -> Result<bool, String> {
+    cstore::get_left_panel_enabled().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn set_left_panel_enabled(enabled: bool) -> Result<(), String> {
+    cstore::set_left_panel_enabled(enabled).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn get_right_panel_enabled() -> Result<bool, String> {
+    cstore::get_right_panel_enabled().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn set_right_panel_enabled(enabled: bool) -> Result<(), String> {
+    cstore::set_right_panel_enabled(enabled).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn get_top_panel_enabled() -> Result<bool, String> {
+    cstore::get_top_panel_enabled().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn set_top_panel_enabled(enabled: bool) -> Result<(), String> {
+    cstore::set_top_panel_enabled(enabled).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn get_bottom_panel_enabled() -> Result<bool, String> {
+    cstore::get_bottom_panel_enabled().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn set_bottom_panel_enabled(enabled: bool) -> Result<(), String> {
+    cstore::set_bottom_panel_enabled(enabled).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn get_right_sidebar_width() -> Result<u32, String> {
+    cstore::get_right_sidebar_width().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn set_right_sidebar_width(width: u32) -> Result<(), String> {
+    cstore::set_right_sidebar_width(width).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 fn get_projects() -> Result<Vec<Project>, String> {
     cstore::get_projects().map_err(|e| e.to_string())
 }
@@ -1403,6 +1453,61 @@ fn execute_test_command(cmd: &str, args_json: &str) -> Result<String, String> {
             set_bottom_panel_height(height as u32)?;
             Ok("null".to_string())
         }
+        "get_left_panel_enabled" => {
+            let res = get_left_panel_enabled()?;
+            serde_json::to_string(&res).map_err(|e| e.to_string())
+        }
+        "set_left_panel_enabled" => {
+            let enabled = args["enabled"]
+                .as_bool()
+                .ok_or_else(|| "Missing argument 'enabled'".to_string())?;
+            set_left_panel_enabled(enabled)?;
+            Ok("null".to_string())
+        }
+        "get_right_panel_enabled" => {
+            let res = get_right_panel_enabled()?;
+            serde_json::to_string(&res).map_err(|e| e.to_string())
+        }
+        "set_right_panel_enabled" => {
+            let enabled = args["enabled"]
+                .as_bool()
+                .ok_or_else(|| "Missing argument 'enabled'".to_string())?;
+            set_right_panel_enabled(enabled)?;
+            Ok("null".to_string())
+        }
+        "get_top_panel_enabled" => {
+            let res = get_top_panel_enabled()?;
+            serde_json::to_string(&res).map_err(|e| e.to_string())
+        }
+        "set_top_panel_enabled" => {
+            let enabled = args["enabled"]
+                .as_bool()
+                .ok_or_else(|| "Missing argument 'enabled'".to_string())?;
+            set_top_panel_enabled(enabled)?;
+            Ok("null".to_string())
+        }
+        "get_bottom_panel_enabled" => {
+            let res = get_bottom_panel_enabled()?;
+            serde_json::to_string(&res).map_err(|e| e.to_string())
+        }
+        "set_bottom_panel_enabled" => {
+            let enabled = args["enabled"]
+                .as_bool()
+                .ok_or_else(|| "Missing argument 'enabled'".to_string())?;
+            set_bottom_panel_enabled(enabled)?;
+            Ok("null".to_string())
+        }
+        "get_right_sidebar_width" => {
+            let res = get_right_sidebar_width()?;
+            serde_json::to_string(&res).map_err(|e| e.to_string())
+        }
+        "set_right_sidebar_width" => {
+            let width = args["width"]
+                .as_u64()
+                .ok_or_else(|| "Missing argument 'width'".to_string())?;
+            set_right_sidebar_width(width as u32)?;
+            Ok("null".to_string())
+        }
         "get_global_env_vars" => {
             let res = get_global_env_vars()?;
             serde_json::to_string(&res).map_err(|e| e.to_string())
@@ -2378,6 +2483,16 @@ fn main() {
             set_bottom_panel_mode,
             get_bottom_panel_height,
             set_bottom_panel_height,
+            get_left_panel_enabled,
+            set_left_panel_enabled,
+            get_right_panel_enabled,
+            set_right_panel_enabled,
+            get_top_panel_enabled,
+            set_top_panel_enabled,
+            get_bottom_panel_enabled,
+            set_bottom_panel_enabled,
+            get_right_sidebar_width,
+            set_right_sidebar_width,
             log_frontend,
             get_projects,
             create_project,

@@ -99,6 +99,11 @@ let original = AppConfig {
 		agent_skill_map: HashMap::new(),
 		floating_sidebar_enabled: true,
 		floating_sidebar_position: "right".to_string(),
+		left_panel_enabled: true,
+		right_panel_enabled: false,
+		top_panel_enabled: false,
+		bottom_panel_enabled: false,
+		right_sidebar_width: 170,
 	};
 
     // Serialize

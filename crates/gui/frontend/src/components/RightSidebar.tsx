@@ -1,206 +1,195 @@
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import React from "react";
 import { useI18n } from "../I18nContext";
 import type { Project } from "../types";
 import type { CompositeState } from "../hooks/useProjectCompositeStates";
 
+type Page = "workspace" | "settings" | "agents";
+
 interface RightSidebarProps {
   projects: Project[];
   selectedProjectId: string;
-  onProjectSelect: (projectId: string) => void;
-  enabled: boolean;
-  position: "left" | "right";
-  page: "workspace" | "settings" | "agents";
-  onNavigate: (page: "workspace" | "settings" | "agents") => void;
-  onRegisterProject?: () => void;
+  page: Page;
   compositeStates: Record<string, CompositeState>;
+  onProjectSelect: (id: string, page?: Page) => void;
+  enabled?: boolean;
+  width?: number;
+  position?: "left" | "right";
+  projectColumnAlign?: string;
+  draggedIndex?: number | null;
+  dragOverIndex?: number | null;
+  onNavigate?: (page: Page) => void;
+  onSettingsClick?: () => void;
+  onAgentsClick?: () => void;
+  onRegisterProject?: () => void;
+  onAddClick?: () => void;
+  onDragStart?: (e: React.DragEvent, index: number) => void;
+  onDragOver?: (e: React.DragEvent, index: number) => void;
+  onDragLeave?: () => void;
+  onDrop?: (e: React.DragEvent, index: number) => void;
+  onDragEnd?: () => void;
 }
 
 export default function RightSidebar({
   projects,
   selectedProjectId,
-  onProjectSelect,
-  enabled,
-  position,
   page,
-  onNavigate,
-  onRegisterProject,
   compositeStates,
+  onProjectSelect,
+  enabled = true,
+  width = 170,
+  projectColumnAlign = "left",
+  draggedIndex = null,
+  dragOverIndex = null,
+  onNavigate,
+  onSettingsClick,
+  onAgentsClick,
+  onRegisterProject,
+  onAddClick,
+  onDragStart,
+  onDragOver,
+  onDragLeave,
+  onDrop,
+  onDragEnd,
 }: RightSidebarProps) {
   const { t } = useI18n();
-  const [isVisible, setIsVisible] = useState(false);
-  const sidebarRef = useRef<HTMLDivElement>(null);
-  const hideTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const showSidebar = useCallback(() => {
-    if (!enabled) return;
-    if (hideTimeoutRef.current) {
-      clearTimeout(hideTimeoutRef.current);
-      hideTimeoutRef.current = null;
-    }
-    setIsVisible(true);
-  }, [enabled]);
+  if (enabled === false) return null;
 
-  const scheduleHide = useCallback(() => {
-    hideTimeoutRef.current = setTimeout(() => {
-      setIsVisible(false);
-    }, 100);
-  }, []);
-
-  useEffect(() => {
-    const handleMouseMove = (e: MouseEvent) => {
-      if (!enabled) return;
-
-      const windowWidth = window.innerWidth;
-      const triggerZone = 16;
-
-      if (position === "right") {
-        if (e.clientX >= windowWidth - triggerZone && e.clientY > 40) {
-          showSidebar();
-        }
-      } else {
-        if (e.clientX <= triggerZone && e.clientY > 40) {
-          showSidebar();
-        }
-      }
-    };
-
-    window.addEventListener("mousemove", handleMouseMove);
-    return () => window.removeEventListener("mousemove", handleMouseMove);
-  }, [enabled, showSidebar, position]);
-
-  useEffect(() => {
-    return () => {
-      if (hideTimeoutRef.current) {
-        clearTimeout(hideTimeoutRef.current);
-      }
-    };
-  }, []);
-
-  const handleMouseEnterSidebar = useCallback(() => {
-    if (hideTimeoutRef.current) {
-      clearTimeout(hideTimeoutRef.current);
-      hideTimeoutRef.current = null;
-    }
-    setIsVisible(true);
-  }, []);
-
-  const handleMouseLeaveSidebar = useCallback(() => {
-    scheduleHide();
-  }, [scheduleHide]);
-
-  if (!enabled) return null;
-
-  const translateHidden = position === "right" ? "translateX(100%)" : "translateX(-100%)";
+  const handleSettings = onSettingsClick || (() => onNavigate?.("settings"));
+  const handleAgents = onAgentsClick || (() => onNavigate?.("agents"));
+  const handleAdd = onAddClick || onRegisterProject;
 
   return (
-    <div
-      ref={sidebarRef}
-      className={`right-sidebar ${isVisible ? "visible" : "hidden"}`}
-      onMouseEnter={handleMouseEnterSidebar}
-      onMouseLeave={handleMouseLeaveSidebar}
+    <aside
+      className="sidebar right-sidebar"
       style={{
-        position: "fixed",
-        [position]: 0,
-        top: 0,
-        bottom: 0,
-        width: "120px",
-        background: "var(--bg-card)",
-        borderLeft: position === "right" ? "1px solid var(--border-subtle)" : "none",
-        borderRight: position === "left" ? "1px solid var(--border-subtle)" : "none",
-        transform: isVisible ? "translateX(0)" : translateHidden,
-        opacity: isVisible ? 1 : 0,
-        transition: "transform 150ms ease, opacity 150ms ease",
-        overflowY: "auto",
+        position: "relative",
+        width: `${width}px`,
+        minWidth: `${width}px`,
+        maxWidth: `${width}px`,
+        flexShrink: 0,
+        height: "100%",
         display: "flex",
         flexDirection: "column",
-        zIndex: 9999,
+        overflow: "hidden",
+        borderLeft: "1px solid var(--border-subtle)",
+        borderRight: "none",
+        background: "var(--bg-sidebar)",
         backdropFilter: "blur(20px)",
+        padding: "8px",
+        boxSizing: "border-box",
+        userSelect: "none",
+        zIndex: 10,
       }}
     >
       <div
         style={{
-          flex: 1,
           display: "flex",
           flexDirection: "column",
-          justifyContent: "center",
           gap: "4px",
-          padding: "8px",
+          overflowY: "auto",
+          flexGrow: 1,
+          marginTop: "8px",
+          paddingBottom: "4px",
+          justifyContent: projectColumnAlign === "center" ? "center" : "flex-start",
+          scrollbarWidth: "none",
+          msOverflowStyle: "none",
         }}
       >
-        {projects.map((project) => {
-          const isActive = selectedProjectId === project.id;
+        {projects.length === 0 && (
+          <div
+            style={{
+              padding: "12px 8px",
+              fontSize: "0.8rem",
+              color: "var(--text-tertiary)",
+              fontStyle: "italic",
+            }}
+          >
+            No projects linked
+          </div>
+        )}
+        {projects.map((p, index) => {
+          const isActive = page === "workspace" && selectedProjectId === p.id;
+          const isDragging = draggedIndex !== null && index === draggedIndex;
+          const isDragOver = dragOverIndex !== null && index === dragOverIndex;
+          const showTopLine = isDragOver && draggedIndex !== null && draggedIndex > index;
+          const showBottomLine = isDragOver && draggedIndex !== null && draggedIndex < index;
+
           return (
-            <div
-              key={project.id}
-              className={`right-sidebar-project-item ${isActive ? "active" : ""}`}
-              onClick={() => onProjectSelect(project.id)}
+            <button
+              key={p.id}
+              className={`nav-item right-sidebar-project-item${isActive ? " active" : ""}`}
+              onClick={() => {
+                onProjectSelect(p.id);
+                if (page !== "workspace") onNavigate?.("workspace");
+              }}
+              draggable={!!onDragStart}
+              onDragStart={(e) => onDragStart?.(e, index)}
+              onDragOver={(e) => onDragOver?.(e, index)}
+              onDragLeave={onDragLeave}
+              onDrop={(e) => onDrop?.(e, index)}
+              onDragEnd={onDragEnd}
               style={{
-                padding: "8px 12px",
-                cursor: "pointer",
-                overflow: "hidden",
-                fontSize: "13px",
-                borderRadius: "4px",
-                margin: "2px 4px",
-                background: isActive ? "var(--bg-elevated)" : "transparent",
-                color: "var(--text-primary)",
-                transition: "background-color 0.2s ease",
-                whiteSpace: "nowrap",
-              }}
-              onMouseEnter={(e) => {
-                if (!isActive) {
-                  e.currentTarget.style.background = "var(--bg-elevated)";
-                }
-              }}
-              onMouseLeave={(e) => {
-                if (!isActive) {
-                  e.currentTarget.style.background = "transparent";
-                }
+                width: "100%",
+                textAlign: "left",
+                background: isDragging ? "var(--bg-elevated)" : undefined,
+                border: isDragging
+                  ? "1px dashed var(--accent-purple)"
+                  : "1px solid transparent",
+                boxShadow: showTopLine
+                  ? "0 -2px 0 0 var(--accent-purple)"
+                  : showBottomLine
+                    ? "0 2px 0 0 var(--accent-purple)"
+                    : "none",
+                cursor: onDragStart ? "grab" : "pointer",
+                display: "flex",
+                alignItems: "center",
+                gap: "8px",
+                padding: "8px 8px",
+                borderRadius: "var(--radius-sm)",
+                opacity: isDragging ? 0.4 : 1,
+                transform: isDragging ? "scale(0.96)" : "none",
+                transition:
+                  "opacity 0.2s ease, transform 0.2s ease, border-color 0.2s ease, background-color 0.2s ease, box-shadow 0.1s ease",
               }}
             >
-              <div
-                className={`right-sidebar-project-name${compositeStates[project.id] ? ` project-status-text ${compositeStates[project.id]}` : ""}`}
+              <span
+                className={compositeStates[p.id] ? `project-status-text ${compositeStates[p.id]}` : ""}
                 style={{
                   overflow: "hidden",
                   textOverflow: "ellipsis",
                   whiteSpace: "nowrap",
+                  flexGrow: 1,
+                  fontWeight: 400,
+                  pointerEvents: draggedIndex !== null ? "none" : "auto",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  lineHeight: "1.2",
+                  gap: "6px",
                 }}
-                title={project.name}
               >
-                {project.name}
-              </div>
-            </div>
+                {p.name}
+              </span>
+            </button>
           );
         })}
-      </div>
-      <div
-        style={{
-          borderTop: "1px solid var(--border-subtle)",
-          padding: "4px 0",
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "center",
-        }}
-      >
-        {onRegisterProject && (
-          <div
-            onClick={onRegisterProject}
+
+        {handleAdd && (
+          <button
+            className="nav-item"
+            onClick={handleAdd}
             style={{
-              padding: "8px 12px",
+              width: "100%",
+              textAlign: "left",
+              border: "1px solid transparent",
               cursor: "pointer",
-              fontSize: "13px",
-              borderRadius: "4px",
-              margin: "2px 4px",
-              color: "var(--text-primary)",
-              transition: "background-color 0.2s ease",
               display: "flex",
               alignItems: "center",
-              gap: "6px",
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.background = "var(--bg-elevated)";
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.background = "transparent";
+              gap: "8px",
+              padding: "8px 8px",
+              borderRadius: "var(--radius-sm)",
+              transition:
+                "opacity 0.2s ease, transform 0.2s ease, border-color 0.2s ease, background-color 0.2s ease",
             }}
           >
             <span
@@ -208,49 +197,91 @@ export default function RightSidebar({
                 overflow: "hidden",
                 textOverflow: "ellipsis",
                 whiteSpace: "nowrap",
+                flexGrow: 1,
+                fontWeight: 400,
+                display: "inline-flex",
+                alignItems: "center",
+                lineHeight: "1.2",
+                gap: "6px",
               }}
             >
               {t("proj.sidebar.add")}
             </span>
-          </div>
+          </button>
         )}
-        <div
-          onClick={() => onNavigate("settings")}
-          style={{
-            padding: "8px 12px",
-            cursor: "pointer",
-            fontSize: "13px",
-            borderRadius: "4px",
-            margin: "2px 4px",
-            background: page === "settings" ? "var(--accent-purple)" : "transparent",
-            color: page === "settings" ? "white" : "var(--text-primary)",
-            transition: "background-color 0.2s ease",
-            display: "flex",
-            alignItems: "center",
-            gap: "6px",
-          }}
-          onMouseEnter={(e) => {
-            if (page !== "settings") {
-              e.currentTarget.style.background = "var(--bg-elevated)";
-            }
-          }}
-          onMouseLeave={(e) => {
-            if (page !== "settings") {
-              e.currentTarget.style.background = "transparent";
-            }
-          }}
-        >
-          <span
+
+        {handleAgents && (
+          <button
+            className={`nav-item${page === "agents" ? " active" : ""}`}
+            onClick={handleAgents}
             style={{
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-              whiteSpace: "nowrap",
+              width: "100%",
+              textAlign: "left",
+              border: "1px solid transparent",
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              gap: "8px",
+              padding: "8px 8px",
+              borderRadius: "var(--radius-sm)",
+              transition:
+                "opacity 0.2s ease, transform 0.2s ease, border-color 0.2s ease, background-color 0.2s ease",
             }}
           >
-            {t("nav.settings")}
-          </span>
-        </div>
+            <span
+              style={{
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+                flexGrow: 1,
+                fontWeight: 400,
+                display: "inline-flex",
+                alignItems: "center",
+                lineHeight: "1.2",
+                gap: "6px",
+              }}
+            >
+              配置引导
+            </span>
+          </button>
+        )}
+
+        {handleSettings && (
+          <button
+            className={`nav-item${page === "settings" ? " active" : ""}`}
+            onClick={handleSettings}
+            style={{
+              width: "100%",
+              textAlign: "left",
+              border: "1px solid transparent",
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              gap: "8px",
+              padding: "8px 8px",
+              borderRadius: "var(--radius-sm)",
+              transition:
+                "opacity 0.2s ease, transform 0.2s ease, border-color 0.2s ease, background-color 0.2s ease",
+            }}
+          >
+            <span
+              style={{
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+                flexGrow: 1,
+                fontWeight: 400,
+                display: "inline-flex",
+                alignItems: "center",
+                lineHeight: "1.2",
+                gap: "6px",
+              }}
+            >
+              {t("nav.settings")}
+            </span>
+          </button>
+        )}
       </div>
-    </div>
+    </aside>
   );
 }
