@@ -154,8 +154,7 @@ export function FileExplorerPanel({
       width: '100%',
       display: 'flex',
       flexDirection: 'column',
-      gap: '16px',
-      paddingTop: '2px',
+      gap: '8px',
       overflow: 'hidden',
       flex: 1,
       minHeight: 0

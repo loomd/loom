@@ -753,7 +753,7 @@ const closeActiveByShortcut = useCallback(() => {
             <div style={{ flex: 4, display: 'flex', flexDirection: 'column', gap: '12px', paddingTop: '2px', overflow: 'hidden', minHeight: 0 }}>
               {/* 文件区域（自适应高度：最少 50%，中间按内容撑开，最高 65%） */}
               <div style={{ flex: '0 0 auto', minHeight: '50%', maxHeight: '65%', display: 'flex', flexDirection: 'column', gap: '8px', overflow: 'hidden' }}>
-              <h3 style={{ margin: 0, fontSize: '1.0rem', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
+              <h3 style={{ margin: 0, marginBottom: '8px', fontSize: '1.0rem', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
                 <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>{t('proj.explorer.title') || 'File Explorer'}</span>
                 <button onClick={() => onUnregisterProject(project)} className="btn-delete-project" style={{ fontSize: '0.75rem', padding: '3px 8px' }}>
                   🗑 {t('proj.modal.btn.delete')}

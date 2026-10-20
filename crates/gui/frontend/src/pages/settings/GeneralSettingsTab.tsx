@@ -319,6 +319,7 @@ export default function GeneralSettingsTab({
 				display: "flex",
 				flexDirection: "column",
 				gap: "24px",
+				paddingBottom: "100px",
 			}}
 		>
 			{/* Theme Settings */}
