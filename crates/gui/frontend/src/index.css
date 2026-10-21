@@ -280,6 +280,8 @@ body.theme-day {
 /* ─── Sidebar Resizer Drag Handle ─── */
 .sidebar-resizer {
   width: 4px;
+  margin-left: -2px;
+  margin-right: -2px;
   cursor: col-resize;
   background: transparent;
   transition: background-color 200ms;

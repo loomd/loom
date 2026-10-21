@@ -51,6 +51,8 @@ export default function AppLayout({
 							className="sidebar-resizer left"
 							style={{
 								width: "4px",
+								marginLeft: "-2px",
+								marginRight: "-2px",
 								cursor: "col-resize",
 								zIndex: 100,
 								flexShrink: 0,
@@ -111,6 +113,8 @@ export default function AppLayout({
 							className="sidebar-resizer right"
 							style={{
 								width: "4px",
+								marginLeft: "-2px",
+								marginRight: "-2px",
 								cursor: "col-resize",
 								zIndex: 100,
 								flexShrink: 0,
