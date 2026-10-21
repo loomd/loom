@@ -530,6 +530,9 @@ export const getLoomCliStatus = (): Promise<CliInstallStatus> =>
 export const getAgentDiscoveryStatus = (): Promise<AgentDiscoveryStatus> =>
 	invoke("get_agent_discovery_status");
 
+export const checkAgentLatestVersion = (agentName: string): Promise<string> =>
+	invoke("check_agent_latest_version", { agentName });
+
 export const fetchProviderModels = (
 	baseUrl: string,
 	apiKey: string,

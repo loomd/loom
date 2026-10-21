@@ -75,6 +75,131 @@ fn check_executable(name: &str) -> Option<String> {
     None
 }
 
+/// 静态探测 mcode 当前安装版本（读取 current 文件或 package.json，严禁执行外部二进制）
+fn detect_mcode_version(executable_path: Option<&str>) -> Option<String> {
+    // 1. 尝试从可执行文件所在目录及其父级查找 current
+    if let Some(path_str) = executable_path {
+        let exe_path = PathBuf::from(path_str);
+        if let Some(parent) = exe_path.parent() {
+            let current_path = parent.join("current");
+            if let Ok(content) = fs::read_to_string(&current_path) {
+                let trimmed = content.trim();
+                if !trimmed.is_empty() {
+                    return Some(trimmed.to_string());
+                }
+            }
+        }
+    }
+
+    // 2. 尝试从用户主目录 ~/.minimax-code/current 读取
+    if let Some(home) = dirs::home_dir() {
+        let current_path = home.join(".minimax-code").join("current");
+        if let Ok(content) = fs::read_to_string(&current_path) {
+            let trimmed = content.trim();
+            if !trimmed.is_empty() {
+                return Some(trimmed.to_string());
+            }
+        }
+    }
+
+    None
+}
+
+/// 静态探测 opencode 当前安装版本（读取 node_modules/opencode-ai/package.json，严禁执行外部二进制）
+fn detect_opencode_version(executable_path: Option<&str>) -> Option<String> {
+    let mut candidate_package_jsons: Vec<PathBuf> = Vec::new();
+
+    if let Some(path_str) = executable_path {
+        let exe_path = PathBuf::from(path_str);
+        if let Some(parent) = exe_path.parent() {
+            // Windows 下全局 npm 模块通常位于 bin 所在目录的同级 node_modules
+            candidate_package_jsons.push(parent.join("node_modules").join("opencode-ai").join("package.json"));
+            // Linux/macOS 下 bin 同级的 ../lib/node_modules
+            if let Some(grandparent) = parent.parent() {
+                candidate_package_jsons.push(grandparent.join("lib").join("node_modules").join("opencode-ai").join("package.json"));
+            }
+        }
+        // 如果是符号链接，尝试解析真实路径定位 package.json
+        if let Ok(real_path) = fs::canonicalize(&exe_path) {
+            if let Some(parent) = real_path.parent() {
+                candidate_package_jsons.push(parent.join("package.json"));
+                if let Some(grandparent) = parent.parent() {
+                    candidate_package_jsons.push(grandparent.join("package.json"));
+                }
+            }
+        }
+    }
+
+    #[cfg(target_os = "windows")]
+    if let Some(appdata) = dirs::data_dir() {
+        candidate_package_jsons.push(appdata.join("npm").join("node_modules").join("opencode-ai").join("package.json"));
+    }
+
+    if let Some(home) = dirs::home_dir() {
+        candidate_package_jsons.push(home.join(".npm-global").join("lib").join("node_modules").join("opencode-ai").join("package.json"));
+    }
+
+    for path in candidate_package_jsons {
+        if path.is_file() {
+            if let Ok(content) = fs::read_to_string(&path) {
+                if let Ok(val) = serde_json::from_str::<serde_json::Value>(&content) {
+                    if let Some(v) = val.get("version").and_then(|v| v.as_str()) {
+                        return Some(v.to_string());
+                    }
+                }
+            }
+        }
+    }
+
+    None
+}
+
+/// 联网查询 Agent 最新发布版本（优先国内 npmmirror，回退至 npmjs 官方 registry）
+pub fn fetch_agent_latest_version(agent_name: &str) -> Result<String, String> {
+    let pkg_name = match agent_name.to_lowercase().as_str() {
+        "opencode" => "opencode-ai",
+        "mcode" => "@minimax-ai/code",
+        other => return Err(format!("Unsupported agent: {}", other)),
+    };
+
+    let client = reqwest::blocking::Client::builder()
+        .connect_timeout(std::time::Duration::from_secs(3))
+        .timeout(std::time::Duration::from_secs(5))
+        .build()
+        .map_err(|e| format!("Failed to build HTTP client: {}", e))?;
+
+    let urls = [
+        format!("https://registry.npmmirror.com/{}/latest", pkg_name),
+        format!("https://registry.npmjs.org/{}/latest", pkg_name),
+    ];
+
+    let mut last_err = String::new();
+    for url in urls {
+        match client.get(&url).header("User-Agent", "loom").send() {
+            Ok(resp) => {
+                if resp.status().is_success() {
+                    if let Ok(json) = resp.json::<serde_json::Value>() {
+                        if let Some(ver) = json.get("version").and_then(|v| v.as_str()) {
+                            return Ok(ver.to_string());
+                        }
+                    }
+                } else {
+                    last_err = format!("HTTP {}", resp.status());
+                }
+            }
+            Err(e) => {
+                last_err = e.to_string();
+            }
+        }
+    }
+
+    Err(if last_err.is_empty() {
+        "Failed to fetch latest version".to_string()
+    } else {
+        last_err
+    })
+}
+
 pub fn discover_agents() -> DiscoveryOverview {
     let mut agents = Vec::new();
 
@@ -83,16 +208,21 @@ pub fn discover_agents() -> DiscoveryOverview {
     let npm_installed = npm_path.is_some();
 
     // 1. OpenCode
-    // 仅探测可执行文件是否存在，绝不执行 `--version` 等子命令：
-    // 1) 违反安全规则（禁止执行 PATH 扫描发现的 CLI 工具）；
-    // 2) 启动外部进程会阻塞 IPC 线程，导致切换页面卡顿。
+    // 仅探测可执行文件是否存在与读取静态 package.json，绝不执行 `--version` 等子命令：
+    // 1) 严格遵守安全规则（禁止执行 PATH 扫描发现的 CLI 工具）；
+    // 2) 避免启动外部进程阻塞 IPC 线程导致切页卡顿。
     let opencode_path = check_executable("opencode");
     let opencode_installed = opencode_path.is_some();
+    let opencode_version = if opencode_installed {
+        detect_opencode_version(opencode_path.as_deref())
+    } else {
+        None
+    };
 
     agents.push(AgentDiscoveryStatus {
         name: "opencode".to_string(),
         installed: opencode_installed,
-        version: None,
+        version: opencode_version,
         executable_path: opencode_path,
         install_command: "npm install -g opencode-ai".to_string(),
         download_url: "https://opencode.ai/docs/zh-cn".to_string(),
@@ -101,11 +231,16 @@ pub fn discover_agents() -> DiscoveryOverview {
     // 2. Mcode
     let mcode_path = check_executable("mcode");
     let mcode_installed = mcode_path.is_some();
+    let mcode_version = if mcode_installed {
+        detect_mcode_version(mcode_path.as_deref())
+    } else {
+        None
+    };
 
     agents.push(AgentDiscoveryStatus {
         name: "mcode".to_string(),
         installed: mcode_installed,
-        version: None,
+        version: mcode_version,
         executable_path: mcode_path,
         install_command: "irm https://filecdn.minimax.chat/public/install.ps1 | iex".to_string(),
         download_url: "https://www.minimaxi.com/".to_string(),
@@ -714,5 +849,11 @@ mod tests {
         assert_eq!(overview.agents[0].install_command, "npm install -g opencode-ai");
         assert_eq!(overview.agents[1].name, "mcode");
         assert_eq!(overview.agents[1].install_command, "irm https://filecdn.minimax.chat/public/install.ps1 | iex");
+    }
+
+    #[test]
+    fn test_fetch_agent_latest_version_unsupported() {
+        let res = fetch_agent_latest_version("unknown_agent");
+        assert!(res.is_err());
     }
 }

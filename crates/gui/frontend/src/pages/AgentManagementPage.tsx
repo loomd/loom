@@ -1,13 +1,34 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { getAgentDiscoveryStatus, fetchProviderModels, configureOpencodeProvider, configureMcodeProvider, triggerInjectLoomSkills, getInjectedSkillPaths, getLoomSkillVersion, installLoomCli, getLoomCliStatus, getTemplates, createTemplate, importCliTool, getCliTools, openUrl } from '../api';
+import WindowControlButtons from '../components/WindowControlButtons';
+import { getAgentDiscoveryStatus, checkAgentLatestVersion, fetchProviderModels, configureOpencodeProvider, configureMcodeProvider, triggerInjectLoomSkills, getInjectedSkillPaths, getLoomSkillVersion, installLoomCli, getLoomCliStatus, getTemplates, createTemplate, importCliTool, getCliTools, openUrl } from '../api';
 import type { AgentDiscoveryStatus, CliInstallStatus, FetchedModel } from '../types';
 import { useToast } from '../ToastContext';
 
 interface AgentManagementPageProps {
   onOpenTerminal?: (cmd: string) => void;
-  /** 页面是否处于激活状态（用于切回页面时重新检测环境） */
+  /** 页面是否处于激活状态（用于切回页面时重新检测环境与最新版本） */
   active?: boolean;
+}
+
+interface LatestVersionState {
+  version: string | null;
+  loading: boolean;
+  error: string | null;
+}
+
+function compareSemver(v1?: string | null, v2?: string | null): number {
+  if (!v1 || !v2) return 0;
+  const parse = (v: string) => v.replace(/^v/i, '').split('.').map(n => parseInt(n, 10) || 0);
+  const p1 = parse(v1);
+  const p2 = parse(v2);
+  for (let i = 0; i < Math.max(p1.length, p2.length); i++) {
+    const a = p1[i] ?? 0;
+    const b = p2[i] ?? 0;
+    if (a > b) return 1;
+    if (a < b) return -1;
+  }
+  return 0;
 }
 
 const STORAGE_KEY_TARGET_AGENT = 'loom_auto_config_target_agent';
@@ -23,9 +44,15 @@ export const AgentManagementPage: React.FC<AgentManagementPageProps> = ({ onOpen
   const [refreshing, setRefreshing] = useState<boolean>(false);
   const [injectingSkill, setInjectingSkill] = useState<boolean>(false);
   const [injectedPaths, setInjectedPaths] = useState<string[]>([]);
-  const [skillVersion, setSkillVersion] = useState<string>('0.7.21');
+  const [skillVersion, setSkillVersion] = useState<string>('0.8.1');
   const [cliStatus, setCliStatus] = useState<CliInstallStatus | null>(null);
   const [installingCli, setInstallingCli] = useState<boolean>(false);
+
+  // opencode / mcode 最新版本检测状态（仅切入本页时触发）
+  const [latestVersions, setLatestVersions] = useState<Record<string, LatestVersionState>>({
+    opencode: { version: null, loading: false, error: null },
+    mcode: { version: null, loading: false, error: null },
+  });
 
   // Target Agent selection (opencode / mcode)
   const [targetAgent, setTargetAgent] = useState<'opencode' | 'mcode'>(() => {
@@ -147,10 +174,53 @@ export const AgentManagementPage: React.FC<AgentManagementPageProps> = ({ onOpen
     }
   }, [toast, syncDiscoveredAgents]);
 
+  const checkLatestVersions = useCallback(async () => {
+    const agentsToCheck = ['opencode', 'mcode'];
+    for (const name of agentsToCheck) {
+      setLatestVersions(prev => ({
+        ...prev,
+        [name]: { ...prev[name], loading: true, error: null }
+      }));
+      checkAgentLatestVersion(name)
+        .then(ver => {
+          setLatestVersions(prev => ({
+            ...prev,
+            [name]: { version: ver, loading: false, error: null }
+          }));
+        })
+        .catch(err => {
+          setLatestVersions(prev => ({
+            ...prev,
+            [name]: { version: null, loading: false, error: err instanceof Error ? err.message : String(err) }
+          }));
+        });
+    }
+  }, []);
+
+  const retryCheckLatestVersion = useCallback((name: string) => {
+    setLatestVersions(prev => ({
+      ...prev,
+      [name]: { ...prev[name], loading: true, error: null }
+    }));
+    checkAgentLatestVersion(name)
+      .then(ver => {
+        setLatestVersions(prev => ({
+          ...prev,
+          [name]: { version: ver, loading: false, error: null }
+        }));
+      })
+      .catch(err => {
+        setLatestVersions(prev => ({
+          ...prev,
+          [name]: { version: null, loading: false, error: err instanceof Error ? err.message : String(err) }
+        }));
+      });
+  }, []);
+
   useEffect(() => {
     let cancelled = false;
 
-    // 每次页面激活（含首次挂载）时重新检测环境，保证安装 node/agent 后返回本页能实时刷新并自动注册
+    // 每次页面激活（含首次挂载）时重新检测环境及最新版本，切出时不检测
     if (active) {
       getAgentDiscoveryStatus()
         .then(async res => {
@@ -162,6 +232,12 @@ export const AgentManagementPage: React.FC<AgentManagementPageProps> = ({ onOpen
         .catch(err => {
           if (!cancelled) toast.error(err?.toString() || '加载 Agent 发现状态失败');
         });
+
+      Promise.resolve().then(() => {
+        if (!cancelled) {
+          checkLatestVersions();
+        }
+      });
     }
 
     getInjectedSkillPaths()
@@ -185,12 +261,15 @@ export const AgentManagementPage: React.FC<AgentManagementPageProps> = ({ onOpen
     return () => {
       cancelled = true;
     };
-  }, [active, toast, syncDiscoveredAgents]);
+  }, [active, toast, syncDiscoveredAgents, checkLatestVersions]);
 
   const handleRefresh = async () => {
     setRefreshing(true);
     try {
-      await loadDiscovery();
+      await Promise.all([
+        loadDiscovery(),
+        checkLatestVersions(),
+      ]);
     } finally {
       setRefreshing(false);
     }
@@ -320,8 +399,34 @@ export const AgentManagementPage: React.FC<AgentManagementPageProps> = ({ onOpen
   };
 
   return (
-    <div data-tauri-drag-region style={{ padding: '24px', maxWidth: '1200px', margin: '0 auto', color: 'var(--text-primary)' }}>
-      <div data-tauri-drag-region style={{ marginBottom: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
+      {/* 顶部窗口拖拽栏，右侧放置窗口控制按钮 */}
+      <div
+        data-tauri-drag-region
+        style={{
+          display: 'flex',
+          alignItems: 'stretch',
+          justifyContent: 'flex-end',
+          height: '38px',
+          flexShrink: 0,
+        }}
+      >
+        <div style={{ display: 'flex', gap: '2px', alignItems: 'stretch', alignSelf: 'stretch' }}>
+          <WindowControlButtons />
+        </div>
+      </div>
+
+      {/* 滚动内容区 */}
+      <div
+        style={{
+          flexGrow: 1,
+          minHeight: 0,
+          overflowY: 'auto',
+          padding: '24px 24px 80px',
+        }}
+      >
+        <div data-tauri-drag-region style={{ maxWidth: '1200px', margin: '0 auto', color: 'var(--text-primary)' }}>
+          <div data-tauri-drag-region style={{ marginBottom: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px' }}>
         <div>
           <h1
             data-tauri-drag-region
@@ -511,76 +616,189 @@ export const AgentManagementPage: React.FC<AgentManagementPageProps> = ({ onOpen
                 )}
               </div>
 
-              {discovery.agents.map((agent) => (
-                <div key={agent.name} style={{ padding: '16px', borderRadius: 'var(--radius-sm, 6px)', border: '1px solid var(--border-subtle)', background: 'var(--bg-surface)' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <h3 style={{ margin: 0, color: 'var(--text-primary)', fontSize: '15px' }}>{agent.name}</h3>
-                    <span style={{
-                      padding: '2px 8px',
-                      borderRadius: '12px',
-                      fontSize: '12px',
-                      background: agent.installed ? 'rgba(16, 185, 129, 0.15)' : 'rgba(245, 158, 11, 0.15)',
-                      color: agent.installed ? 'var(--accent-emerald, #10b981)' : '#f59e0b',
-                      border: `1px solid ${agent.installed ? 'rgba(16, 185, 129, 0.3)' : 'rgba(245, 158, 11, 0.3)'}`
-                    }}>
-                      {agent.installed ? '已就绪' : '未检测到'}
-                    </span>
-                  </div>
-                  <p style={{ fontSize: '13px', color: 'var(--text-secondary)', margin: '8px 0' }}>
-                    {agent.installed ? `路径: ${agent.executable_path}` : `建议命令: ${agent.install_command}`}
-                  </p>
-                  <div style={{ display: 'flex', gap: '10px', marginTop: '12px' }}>
-                    {!agent.installed && (
-                      (!agent.install_command.startsWith('npm') || discovery.npm_installed) ? (
+              {discovery.agents.map((agent) => {
+                const agentKey = agent.name.toLowerCase();
+                const latestInfo = latestVersions[agentKey];
+                const hasNewVersion = Boolean(
+                  agent.installed &&
+                  agent.version &&
+                  latestInfo?.version &&
+                  compareSemver(agent.version, latestInfo.version) < 0
+                );
+                const isLatest = Boolean(
+                  agent.installed &&
+                  agent.version &&
+                  latestInfo?.version &&
+                  compareSemver(agent.version, latestInfo.version) >= 0
+                );
+
+                return (
+                  <div key={agent.name} style={{ padding: '16px', borderRadius: 'var(--radius-sm, 6px)', border: '1px solid var(--border-subtle)', background: 'var(--bg-surface)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <h3 style={{ margin: 0, color: 'var(--text-primary)', fontSize: '15px' }}>{agent.name}</h3>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        {isLatest && (
+                          <span style={{
+                            padding: '2px 8px',
+                            borderRadius: '12px',
+                            fontSize: '11px',
+                            background: 'rgba(16, 185, 129, 0.15)',
+                            color: 'var(--accent-emerald, #10b981)',
+                            border: '1px solid rgba(16, 185, 129, 0.3)'
+                          }}>
+                            已是最新
+                          </span>
+                        )}
+                        {hasNewVersion && (
+                          <span style={{
+                            padding: '2px 8px',
+                            borderRadius: '12px',
+                            fontSize: '11px',
+                            background: 'rgba(245, 158, 11, 0.15)',
+                            color: '#f59e0b',
+                            border: '1px solid rgba(245, 158, 11, 0.3)'
+                          }}>
+                            有新版本
+                          </span>
+                        )}
+                        <span style={{
+                          padding: '2px 8px',
+                          borderRadius: '12px',
+                          fontSize: '12px',
+                          background: agent.installed ? 'rgba(16, 185, 129, 0.15)' : 'rgba(245, 158, 11, 0.15)',
+                          color: agent.installed ? 'var(--accent-emerald, #10b981)' : '#f59e0b',
+                          border: `1px solid ${agent.installed ? 'rgba(16, 185, 129, 0.3)' : 'rgba(245, 158, 11, 0.3)'}`
+                        }}>
+                          {agent.installed ? '已就绪' : '未检测到'}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* 当前版本与最新版本状态栏 */}
+                    <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '10px', marginTop: '8px', fontSize: '12px' }}>
+                      <div>
+                        <span style={{ color: 'var(--text-secondary)' }}>当前版本: </span>
+                        <span style={{ fontFamily: 'monospace', fontWeight: 500, color: agent.installed ? 'var(--text-primary)' : 'var(--text-tertiary)' }}>
+                          {agent.installed ? (agent.version ? `v${agent.version}` : '已安装 (未知版本)') : '未安装'}
+                        </span>
+                      </div>
+                      <span style={{ color: 'var(--border-subtle)' }}>•</span>
+                      <div style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                        <span style={{ color: 'var(--text-secondary)' }}>最新版本: </span>
+                        <span style={{ fontFamily: 'monospace', fontWeight: 500, color: 'var(--text-primary)' }}>
+                          {latestInfo?.loading ? '检测中...' : latestInfo?.version ? `v${latestInfo.version}` : (latestInfo?.error ? '检测失败' : '--')}
+                        </span>
+                        {latestInfo?.error && (
+                          <button
+                            onClick={() => retryCheckLatestVersion(agentKey)}
+                            title={latestInfo.error}
+                            style={{
+                              background: 'none',
+                              border: 'none',
+                              color: 'var(--text-link, #3b82f6)',
+                              fontSize: '11px',
+                              cursor: 'pointer',
+                              padding: '0 2px',
+                              textDecoration: 'underline'
+                            }}
+                          >
+                            重试
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* 检测到新版本时的提示与一键升级 */}
+                    {hasNewVersion && (
+                      <div style={{
+                        marginTop: '10px',
+                        padding: '8px 12px',
+                        borderRadius: 'var(--radius-sm, 4px)',
+                        background: 'rgba(245, 158, 11, 0.08)',
+                        border: '1px solid rgba(245, 158, 11, 0.25)',
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        gap: '8px'
+                      }}>
+                        <span style={{ fontSize: '12px', color: '#f59e0b' }}>
+                          检测到新版本 v{latestInfo?.version}（当前 v{agent.version}），可点击右侧更新
+                        </span>
                         <button
-                          onClick={() => onOpenTerminal?.(agent.install_command)}
+                          onClick={() => onOpenTerminal?.(agentKey === 'mcode' ? 'mcode update' : agent.install_command)}
                           style={{
-                            padding: '6px 12px',
-                            fontSize: '12px',
-                            borderRadius: '4px',
-                            background: 'var(--accent-primary, #3b82f6)',
+                            padding: '3px 10px',
+                            fontSize: '11px',
+                            borderRadius: '3px',
+                            background: '#f59e0b',
                             color: '#fff',
                             border: 'none',
-                            cursor: 'pointer'
+                            cursor: 'pointer',
+                            fontWeight: 500,
+                            flexShrink: 0
                           }}
                         >
-                          点击安装
+                          点击更新
                         </button>
-                      ) : (
-                        <button
-                          disabled
-                          style={{
-                            padding: '6px 12px',
-                            fontSize: '12px',
-                            borderRadius: '4px',
-                            background: 'var(--border-subtle)',
-                            color: 'var(--text-tertiary)',
-                            border: 'none',
-                            cursor: 'not-allowed'
-                          }}
-                        >
-                          需先安装 Node.js
-                        </button>
-                      )
+                      </div>
                     )}
-                    <button
-                      onClick={() => openUrl(agent.download_url)}
-                      style={{
-                        background: 'none',
-                        border: 'none',
-                        color: 'var(--text-link, #3b82f6)',
-                        fontSize: '12px',
-                        cursor: 'pointer',
-                        padding: 0,
-                        alignSelf: 'center',
-                        textDecoration: 'none'
-                      }}
-                    >
-                      查看官方文档
-                    </button>
+
+                    <p style={{ fontSize: '13px', color: 'var(--text-secondary)', margin: '8px 0' }}>
+                      {agent.installed ? `路径: ${agent.executable_path}` : `建议命令: ${agent.install_command}`}
+                    </p>
+                    <div style={{ display: 'flex', gap: '10px', marginTop: '12px' }}>
+                      {!agent.installed && (
+                        (!agent.install_command.startsWith('npm') || discovery.npm_installed) ? (
+                          <button
+                            onClick={() => onOpenTerminal?.(agent.install_command)}
+                            style={{
+                              padding: '6px 12px',
+                              fontSize: '12px',
+                              borderRadius: '4px',
+                              background: 'var(--accent-primary, #3b82f6)',
+                              color: '#fff',
+                              border: 'none',
+                              cursor: 'pointer'
+                            }}
+                          >
+                            点击安装
+                          </button>
+                        ) : (
+                          <button
+                            disabled
+                            style={{
+                              padding: '6px 12px',
+                              fontSize: '12px',
+                              borderRadius: '4px',
+                              background: 'var(--border-subtle)',
+                              color: 'var(--text-tertiary)',
+                              border: 'none',
+                              cursor: 'not-allowed'
+                            }}
+                          >
+                            需先安装 Node.js
+                          </button>
+                        )
+                      )}
+                      <button
+                        onClick={() => openUrl(agent.download_url)}
+                        style={{
+                          background: 'none',
+                          border: 'none',
+                          color: 'var(--text-link, #3b82f6)',
+                          fontSize: '12px',
+                          cursor: 'pointer',
+                          padding: 0,
+                          alignSelf: 'center',
+                          textDecoration: 'none'
+                        }}
+                      >
+                        查看官方文档
+                      </button>
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </section>
@@ -904,6 +1122,8 @@ export const AgentManagementPage: React.FC<AgentManagementPageProps> = ({ onOpen
           </div>
         </section>
       </div>
+    </div>
+    </div>
     </div>
   );
 };

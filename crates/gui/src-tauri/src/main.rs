@@ -3,7 +3,7 @@
 const MIN_WINDOW_WIDTH: u32 = 800;
 const MIN_WINDOW_HEIGHT: u32 = 560;
 
-use loom_core::agent_config::{discover_agents, fetch_models, write_mcode_config, write_opencode_config, DiscoveryOverview, FetchedModel};
+use loom_core::agent_config::{discover_agents, fetch_agent_latest_version, fetch_models, write_mcode_config, write_opencode_config, DiscoveryOverview, FetchedModel};
 use loom_core::cli_install::{self as cli_install, CliInstallStatus};
 use loom_core::git::{check_git_status, pull_git_project as core_pull_git_project, GitProjectStatus, GitPullResult};
 use loom_core::skills::{get_existing_skill_paths, inject_loom_skills, LOOM_SKILL_VERSION};
@@ -2032,6 +2032,17 @@ async fn get_agent_discovery_status() -> Result<DiscoveryOverview, String> {
 
 #[tauri::command]
 #[allow(non_snake_case)]
+async fn check_agent_latest_version(agent_name: Option<String>, agentName: Option<String>) -> Result<String, String> {
+    let name = agent_name.or(agentName).unwrap_or_default();
+    tauri::async_runtime::spawn_blocking(move || {
+        fetch_agent_latest_version(&name)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+#[allow(non_snake_case)]
 async fn fetch_provider_models(
     base_url: Option<String>,
     baseUrl: Option<String>,
@@ -2557,6 +2568,7 @@ fn main() {
             get_injected_skill_paths,
             get_loom_skill_version,
             get_agent_discovery_status,
+            check_agent_latest_version,
             fetch_provider_models,
             configure_opencode_provider,
             configure_mcode_provider,

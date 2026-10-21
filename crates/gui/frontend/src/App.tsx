@@ -344,7 +344,7 @@ function App() {
 			let newWidth = startWidth + deltaX;
 			if (newWidth < 80) { setIsCollapsed(true); return; }
 			setIsCollapsed(false);
-			if (newWidth < 140) newWidth = 140;
+			if (newWidth < 120) newWidth = 120;
 			if (newWidth > 450) newWidth = 450;
 			setSidebarWidth(newWidth);
 		};
@@ -363,7 +363,7 @@ function App() {
 		const handleMouseMove = (moveEvent: MouseEvent) => {
 			const deltaX = startX - moveEvent.clientX;
 			let newWidth = startWidth + deltaX;
-			if (newWidth < 140) newWidth = 140;
+			if (newWidth < 120) newWidth = 120;
 			if (newWidth > 450) newWidth = 450;
 			setRightSidebarWidth(newWidth);
 		};
@@ -643,7 +643,7 @@ function App() {
 								onShellBorderWidthChange={handleShellBorderWidthChange}
 							/>
 						</div>
-						<div style={{ display: page === "agents" ? "flex" : "none", flexDirection: "column", flex: 1, minHeight: 0, overflow: "auto" }}>
+						<div style={{ display: page === "agents" ? "flex" : "none", flexDirection: "column", flex: 1, minHeight: 0, overflow: "hidden" }}>
 							<AgentManagementPage active={page === "agents"} onOpenTerminal={(cmd) => {
 								if (p.selectedProjectId) {
 									setPage("workspace");
