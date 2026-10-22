@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { GridLayout } from '../hooks/useTabs';
 import { GRID_LAYOUTS, isCompositeLayout, layoutPreview } from '../hooks/useTabs';
 import { useI18n } from '../I18nContext';
@@ -51,6 +51,37 @@ export function LayoutSelector({ layoutMode, pendingLayout, onRestorePending, on
   const containerRef = useRef<HTMLDivElement>(null);
   const btnRef = useRef<HTMLDivElement>(null);
   const effectiveMode = layoutMode ?? pendingLayout ?? null;
+  const closeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const clearCloseTimeout = useCallback(() => {
+    if (closeTimeoutRef.current) {
+      clearTimeout(closeTimeoutRef.current);
+      closeTimeoutRef.current = null;
+    }
+  }, []);
+
+  const handleMouseEnter = () => {
+    clearCloseTimeout();
+    setOpen(true);
+  };
+
+  const handleMouseLeave = () => {
+    clearCloseTimeout();
+    closeTimeoutRef.current = setTimeout(() => {
+      setOpen(false);
+    }, 20);
+  };
+
+  const closePopup = useCallback(() => {
+    clearCloseTimeout();
+    setOpen(false);
+  }, [clearCloseTimeout]);
+
+  useEffect(() => {
+    return () => {
+      clearCloseTimeout();
+    };
+  }, [clearCloseTimeout]);
 
   useEffect(() => {
     const onDirty = (e: Event) => {
@@ -76,7 +107,7 @@ export function LayoutSelector({ layoutMode, pendingLayout, onRestorePending, on
       next.delete(effectiveMode);
       return next;
     });
-    setOpen(false);
+    closePopup();
   };
 
   const handleClick = () => {
@@ -84,6 +115,7 @@ export function LayoutSelector({ layoutMode, pendingLayout, onRestorePending, on
       onRestorePending();
       return;
     }
+    clearCloseTimeout();
     setOpen(o => !o);
   };
 
@@ -91,19 +123,24 @@ export function LayoutSelector({ layoutMode, pendingLayout, onRestorePending, on
     if (!open) return;
     const onMouseDown = (e: MouseEvent) => {
       if (btnRef.current?.contains(e.target as Node) || containerRef.current?.contains(e.target as Node)) return;
-      setOpen(false);
+      closePopup();
     };
-    const onKeyDown = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false); };
+    const onKeyDown = (e: KeyboardEvent) => { if (e.key === 'Escape') closePopup(); };
     window.addEventListener('mousedown', onMouseDown);
     window.addEventListener('keydown', onKeyDown);
     return () => {
       window.removeEventListener('mousedown', onMouseDown);
       window.removeEventListener('keydown', onKeyDown);
     };
-  }, [open]);
+  }, [open, closePopup]);
 
   return (
-    <div ref={containerRef} style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', gap: '2px' }}>
+    <div
+      ref={containerRef}
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
+      style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', gap: '2px' }}
+    >
       <div
         ref={btnRef}
         onClick={handleClick}
@@ -144,6 +181,15 @@ export function LayoutSelector({ layoutMode, pendingLayout, onRestorePending, on
           backgroundColor: 'var(--bg-modal, #1c1917)', border: '1px solid var(--border-subtle, #27272a)',
           borderRadius: 'var(--radius-md, 8px)', padding: '8px', boxShadow: '0 8px 24px rgba(0, 0, 0, 0.4)',
         }}>
+          <div
+            style={{
+              position: 'absolute',
+              top: -8,
+              left: 0,
+              right: 0,
+              height: 8,
+            }}
+          />
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '2px 4px 6px', userSelect: 'none' }}>
             <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>{t('proj.layout.title')}</span>
             <button
@@ -168,12 +214,12 @@ export function LayoutSelector({ layoutMode, pendingLayout, onRestorePending, on
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, auto)', gap: '6px' }}>
             <LayoutOption active={effectiveMode === null} label={t('proj.layout.single')} {...layoutPreview(null)}
-              onClick={() => { onSelect(null); setOpen(false); }} />
+              onClick={() => { onSelect(null); closePopup(); }} />
             {GRID_LAYOUTS.map(l => {
               const { cols, rows, areas } = layoutPreview(l);
               return (
                 <LayoutOption key={l} active={effectiveMode === l} label={isCompositeLayout(l) ? l : `${cols}×${rows}`} cols={cols} rows={rows} areas={areas}
-                  onClick={() => { onSelect(l); setOpen(false); }} />
+                  onClick={() => { onSelect(l); closePopup(); }} />
               );
             })}
           </div>
