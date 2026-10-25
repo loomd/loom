@@ -30,7 +30,17 @@ export interface PairVerifyResponse {
 }
 
 export interface RelayMessage {
-  type: "chat" | "control" | "ping" | "pong";
+  type:
+    | "chat"
+    | "chat_end"
+    | "thinking"
+    | "tool_call"
+    | "permission_request"
+    | "permission_response"
+    | "error"
+    | "control"
+    | "ping"
+    | "pong";
   payload: string;
   timestamp: number;
 }

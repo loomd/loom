@@ -25,3 +25,36 @@ import React, { useState, useEffect } from "react";
 
 ### 相关文件
 - `crates/gui/frontend/src/pages/SettingsPage.tsx`
+
+## 2026-10-25: mcode app-server 不是 Agent 协议服务，手机端远程对话链路全断
+
+### 现象
+手机端配对成功、输入 prompt 后，Agent 毫无反应，界面停在用户气泡上，且**没有任何错误提示**。
+
+### 原因
+两个协议错配叠加：
+
+1. **子进程选错**：`mcode app-server --stdio` 是**运行时服务**，只暴露 `account/*`、`server/prepareRestart`、`desktopService/transport`，**不实现** `session/new` / `session/prompt`。真正的 Agent 协议服务是 `mcode acp`（stdin/stdout 上的 ACP / JSON-RPC 2.0）。
+2. **报文格式不匹配**：手机端发的是自定义信封 `{"type":"chat","payload":"..."}`，被原样写进 app-server stdin 后被判为非法 JSON-RPC：
+   ```json
+   {"id":null,"error":{"code":-32600,"message":"Message must be a request, notification, or response."}}
+   ```
+   prompt 从未执行。回程的 JSON-RPC 帧又因缺少 `type` 字段被手机端 `relayMsg.type === "chat"` 的判断静默丢弃。
+3. **心跳污染**：手机每 30s 发的 `{"type":"pong"}` 同样被写进 stdin，持续产生 -32600 噪音。
+
+### 修复
+- 桌面端改拉起 `mcode acp`，新增 `crates/gui/src-tauri/src/acp.rs` 适配层做双向协议翻译。
+- 中继层 `control` / `ping` / `pong` 帧一律不下发给 Agent。
+
+### 经验
+1. **区分 `mcode app-server` 与 `mcode acp`**：前者是运行时服务，后者才是 Agent 协议服务。接入前先跑 `mcode <cmd> --help` 看它到底暴露哪些方法，别凭名字猜。
+2. **ACP 握手要点**（已实测）：`initialize` 的 `params.protocolVersion` 必须是**数字** `1`（传字符串报 -32602）；顺序是 `initialize` → 收到响应 → `notifications/initialized` → `session/new`；`session/new` 返回的 `sessionId`（形如 `mvs_xxx`）是 `session/prompt` 的必需参数；正文以 `session/update` 的 `agent_message_chunk` 增量推送。
+3. **静默失败最危险**：报文格式错时手机端表现为"没反应"，没有报错日志。接入新协议时一定要先做「发一条 → 看对端是否真的执行」的单向验证，再往上叠 UI。
+4. **子进程 stderr 必须回收**：不回收会填满管道缓冲并阻塞子进程（原先 `app_server.rs` 就漏了这块）。
+5. **别让心跳进入业务协议流**：中继层的保活帧要在适配层就挡掉。
+
+### 相关文件
+- `crates/gui/src-tauri/src/acp.rs`
+- `crates/gui/src-tauri/src/app_server.rs`
+- `mobile/services/websocket.ts`、`mobile/app/chat.tsx`
+- `specs/073-custom-relay-mobile-remote-control/README.md`

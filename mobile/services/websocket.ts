@@ -116,7 +116,7 @@ function connectInternal(): void {
         }
         notifyMessage(message);
       } catch {
-        // Raw text stream from app-server, wrap as chat
+        // Raw text stream, wrap as chat
         notifyMessage({
           type: "chat",
           payload: raw,
@@ -158,6 +158,27 @@ export function send(message: string): void {
     const relayMessage: RelayMessage = {
       type: "chat",
       payload: message,
+      timestamp: Date.now(),
+    };
+    ws.send(JSON.stringify(relayMessage));
+  }
+}
+
+/**
+ * 回应桌面端发来的权限审批请求。
+ *
+ * 桌面端会把它转换成对 `session/request_permission` 的 JSON-RPC 响应，
+ * 因此这里只传回请求 ID、是否同意以及选中的选项 ID。
+ */
+export function sendPermissionResponse(
+  requestId: string,
+  approved: boolean,
+  optionId?: string,
+): void {
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    const relayMessage: RelayMessage = {
+      type: "permission_response",
+      payload: JSON.stringify({ id: requestId, approved, optionId }),
       timestamp: Date.now(),
     };
     ws.send(JSON.stringify(relayMessage));

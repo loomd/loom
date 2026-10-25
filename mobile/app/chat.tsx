@@ -15,17 +15,35 @@ import {
   onMessage,
   onStatusChange,
   send,
+  sendPermissionResponse,
   disconnect,
 } from "@/services/websocket";
 import { clearToken } from "@/services/storage";
 import { StatusBar } from "@/components/StatusBar";
 import { ChatBubble } from "@/components/ChatBubble";
-import { PermissionCard, type PermissionRequest } from "@/components/PermissionCard";
+import { PermissionCard, type PermissionOption, type PermissionRequest } from "@/components/PermissionCard";
 
 let nextId = 1;
 
 function generateId(): string {
   return `msg_${Date.now()}_${nextId++}`;
+}
+
+/** 把桌面端下发的权限请求 JSON 转成审批卡片需要的结构。 */
+function toPermissionRequest(parsed: {
+  id?: string;
+  params?: {
+    title?: string;
+    description?: string;
+    options?: PermissionOption[];
+  };
+}): PermissionRequest {
+  return {
+    id: parsed.id || `perm_${Date.now()}`,
+    title: parsed.params?.title || "权限确认请求",
+    description: parsed.params?.description || "",
+    options: parsed.params?.options || [],
+  };
 }
 
 export default function ChatScreen() {
@@ -35,6 +53,80 @@ export default function ChatScreen() {
   const [connected, setConnected] = useState(false);
   const [pendingPermission, setPendingPermission] = useState<PermissionRequest | null>(null);
   const flatListRef = useRef<FlatList<ChatMessage>>(null);
+  // 正在累积内容的 Agent 回复气泡
+  const activeAgentIdRef = useRef<string | null>(null);
+  // 尚未归入气泡的思考过程
+  const thinkingRef = useRef("");
+  // toolCallId -> 已创建的气泡 ID
+  const toolCallIdsRef = useRef<Record<string, string>>({});
+
+  // 追加 Agent 回复增量：同一轮的多段增量合并到同一个气泡里
+  const appendAgentText = useCallback((text: string, timestamp: number) => {
+    if (!text) return;
+    const activeId = activeAgentIdRef.current;
+    if (activeId) {
+      setMessages((prev) =>
+        prev.map((m) => (m.id === activeId ? { ...m, content: m.content + text } : m)),
+      );
+      return;
+    }
+    const id = generateId();
+    activeAgentIdRef.current = id;
+    const thinking = thinkingRef.current;
+    thinkingRef.current = "";
+    const content = thinking ? `<thinking>${thinking}</thinking>\n${text}` : text;
+    setMessages((prev) => [
+      ...prev,
+      { id, role: "agent", content, timestamp, status: "delivered" },
+    ]);
+  }, []);
+
+  // 工具调用：同一个 toolCallId 的状态更新合并到同一条
+  const appendToolCall = useCallback((payload: string) => {
+    let toolCallId = "";
+    let label = payload;
+    try {
+      const info = JSON.parse(payload) as {
+        toolCallId?: string;
+        name?: string;
+        title?: string;
+        status?: string;
+      };
+      toolCallId = info.toolCallId || "";
+      const name = info.name || info.title || "工具";
+      label = `[工具] ${name} · ${info.status || "pending"}`;
+    } catch {
+      return;
+    }
+    if (!toolCallId) return;
+    const existingId = toolCallIdsRef.current[toolCallId];
+    if (existingId) {
+      setMessages((prev) =>
+        prev.map((m) => (m.id === existingId ? { ...m, content: label } : m)),
+      );
+      return;
+    }
+    const id = generateId();
+    toolCallIdsRef.current[toolCallId] = id;
+    setMessages((prev) => [
+      ...prev,
+      { id, role: "agent", content: label, timestamp: Date.now(), status: "delivered" },
+    ]);
+  }, []);
+
+  const appendError = useCallback((text: string) => {
+    const id = generateId();
+    setMessages((prev) => [
+      ...prev,
+      {
+        id,
+        role: "agent",
+        content: `[错误] ${text}`,
+        timestamp: Date.now(),
+        status: "error",
+      },
+    ]);
+  }, []);
 
   useEffect(() => {
     const unsubStatus = onStatusChange((isConnected) => {
@@ -42,31 +134,53 @@ export default function ChatScreen() {
     });
 
     const unsubMessage = onMessage((relayMsg: RelayMessage) => {
-      if (relayMsg.type === "chat") {
-        // 尝试解析是否是权限请求 JSON-RPC
-        try {
-          const parsed = JSON.parse(relayMsg.payload);
-          if (parsed && parsed.method === "request_permission" && parsed.params) {
-            setPendingPermission({
-              id: parsed.id || `perm_${Date.now()}`,
-              title: parsed.params.title || "权限确认请求",
-              description: parsed.params.description || "",
-              options: parsed.params.options || [],
-            });
-            return;
+      switch (relayMsg.type) {
+        case "chat": {
+          // 兼容旧版桌面端：权限请求以 JSON 形式塞在 chat 信封里
+          if (relayMsg.payload.startsWith("{")) {
+            try {
+              const parsed = JSON.parse(relayMsg.payload);
+              if (parsed && parsed.method === "request_permission" && parsed.params) {
+                setPendingPermission(toPermissionRequest(parsed));
+                return;
+              }
+            } catch {
+              // 普通文本消息
+            }
           }
-        } catch {
-          // 普通文本消息
+          appendAgentText(relayMsg.payload, relayMsg.timestamp);
+          return;
         }
-
-        const agentMessage: ChatMessage = {
-          id: generateId(),
-          role: "agent",
-          content: relayMsg.payload,
-          timestamp: relayMsg.timestamp,
-          status: "delivered",
-        };
-        setMessages((prev) => [...prev, agentMessage]);
+        case "chat_end": {
+          activeAgentIdRef.current = null;
+          thinkingRef.current = "";
+          return;
+        }
+        case "thinking": {
+          thinkingRef.current += relayMsg.payload;
+          return;
+        }
+        case "tool_call": {
+          appendToolCall(relayMsg.payload);
+          return;
+        }
+        case "permission_request": {
+          try {
+            const parsed = JSON.parse(relayMsg.payload);
+            if (parsed && parsed.params) {
+              setPendingPermission(toPermissionRequest(parsed));
+            }
+          } catch {
+            // 忽略无法解析的权限请求
+          }
+          return;
+        }
+        case "error": {
+          appendError(relayMsg.payload);
+          return;
+        }
+        default:
+          return;
       }
     });
 
@@ -74,7 +188,7 @@ export default function ChatScreen() {
       unsubStatus();
       unsubMessage();
     };
-  }, []);
+  }, [appendAgentText, appendToolCall, appendError]);
 
   useEffect(() => {
     if (messages.length > 0) {
@@ -112,27 +226,12 @@ export default function ChatScreen() {
   }
 
   const handleApprovePermission = (requestId: string, selectedOptions?: string[]) => {
-    const response = {
-      jsonrpc: "2.0",
-      id: requestId,
-      result: {
-        confirmed: true,
-        selectedOptions: selectedOptions || [],
-      },
-    };
-    send(JSON.stringify(response));
+    sendPermissionResponse(requestId, true, selectedOptions?.[0]);
     setPendingPermission(null);
   };
 
   const handleRejectPermission = (requestId: string) => {
-    const response = {
-      jsonrpc: "2.0",
-      id: requestId,
-      result: {
-        confirmed: false,
-      },
-    };
-    send(JSON.stringify(response));
+    sendPermissionResponse(requestId, false);
     setPendingPermission(null);
   };
 

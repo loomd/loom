@@ -558,7 +558,7 @@ export const RemoteConnectionPage: React.FC<RemoteConnectionPageProps> = ({
                   <div className="remote-connected-title">手机端已建立双向管道</div>
                   <div className="remote-connected-meta">
                     {session.mobileDeviceName ? `已配对设备：${session.mobileDeviceName} · ` : ''}
-                    工作区子进程 PID: {session.pid ?? '活跃'} | 管道直通 mcode app-server --stdio
+                    工作区子进程 PID: {session.pid ?? '活跃'} | ACP 通道 mcode acp
                   </div>
                 </div>
                 <span className="badge badge-emerald">传输中</span>

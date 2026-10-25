@@ -5,6 +5,8 @@ use std::process::{Child, Command, Stdio};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use crate::acp::AcpBridge;
+
 // ── Types ──────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -370,7 +372,7 @@ pub fn relay_logout() -> Result<(), String> {
     Ok(())
 }
 
-/// Start remote session: spawn mcode app-server and connect to relay
+/// Start remote session: spawn mcode acp and connect to relay
 #[tauri::command]
 pub fn start_app_server(workspace_dir: String) -> Result<AppServerSessionInfo, String> {
     let cfg = get_relay_config()
@@ -425,18 +427,21 @@ pub fn start_app_server(workspace_dir: String) -> Result<AppServerSessionInfo, S
         }
     }
 
-    // Spawn mcode app-server --stdio
+    // Spawn mcode acp: the Agent Client Protocol server that provides
+    // session/new, session/prompt and session/update over stdin/stdout.
+    // Note: mcode app-server only exposes low-level account/runtime methods
+    // and does not implement the Agent protocol.
     #[cfg(windows)]
     let mut cmd = {
         let mut c = Command::new("cmd");
-        c.args(["/C", "mcode", "app-server", "--stdio"]);
+        c.args(["/C", "mcode", "acp"]);
         c
     };
 
     #[cfg(not(windows))]
     let mut cmd = {
         let mut c = Command::new("mcode");
-        c.args(["app-server", "--stdio"]);
+        c.args(["acp"]);
         c
     };
 
@@ -452,13 +457,15 @@ pub fn start_app_server(workspace_dir: String) -> Result<AppServerSessionInfo, S
     }
 
     let mut child = cmd.spawn()
-        .map_err(|e| format!("启动 mcode app-server 失败: {}", e))?;
+        .map_err(|e| format!("启动 mcode acp 失败: {}", e))?;
 
     let pid = child.id();
     let child_stdin = child.stdin.take()
-        .ok_or("无法获取 app-server stdin")?;
+        .ok_or("无法获取 mcode acp stdin")?;
     let child_stdout = child.stdout.take()
-        .ok_or("无法获取 app-server stdout")?;
+        .ok_or("无法获取 mcode acp stdout")?;
+    let child_stderr = child.stderr.take()
+        .ok_or("无法获取 mcode acp stderr")?;
 
     let ws_connected = Arc::new(Mutex::new(false));
     let stop_signal = Arc::new(Mutex::new(false));
@@ -486,11 +493,14 @@ pub fn start_app_server(workspace_dir: String) -> Result<AppServerSessionInfo, S
         token
     );
 
+    let workspace_dir_clone = workspace_dir.clone();
     std::thread::spawn(move || {
         relay_bridge_thread(
             ws_url,
             child_stdin,
             child_stdout,
+            child_stderr,
+            workspace_dir_clone,
             ws_connected_clone,
             stop_signal_clone,
         );
@@ -598,8 +608,23 @@ pub fn init_relay_config() {
 
 // ── WebSocket relay bridge thread ──────────────────────────────────────────
 
-/// Background thread that connects to the relay WebSocket and bridges
-/// stdin/stdout of the mcode app-server process.
+/// Write JSON-RPC lines to the Agent's stdin. Returns false on write failure.
+fn write_to_agent(stdin: &mut std::process::ChildStdin, lines: &[String]) -> bool {
+    for line in lines {
+        if writeln!(stdin, "{}", line).is_err() {
+            return false;
+        }
+        let _ = stdin.flush();
+    }
+    true
+}
+
+/// Background thread that connects to the relay WebSocket and bridges it to
+/// the `mcode acp` child process over the Agent Client Protocol.
+///
+/// The thread acts as the ACP client: it performs the handshake, converts the
+/// phone's envelopes into ACP requests, and converts ACP notifications into
+/// phone frames. The relay server itself stays a stateless byte pipe.
 ///
 /// Uses `tungstenite` for synchronous WebSocket communication paired with
 /// standard threads, matching the project-wide convention of avoiding
@@ -608,6 +633,8 @@ fn relay_bridge_thread(
     ws_url: String,
     mut stdin: std::process::ChildStdin,
     stdout: std::process::ChildStdout,
+    stderr: std::process::ChildStderr,
+    workspace_dir: String,
     ws_connected: Arc<Mutex<bool>>,
     stop_signal: Arc<Mutex<bool>>,
 ) {
@@ -617,7 +644,7 @@ fn relay_bridge_thread(
 
     let (tx_out, rx_out) = mpsc::channel::<String>();
 
-    // Thread: read lines from app-server stdout and send through channel
+    // Thread: read lines from the Agent's stdout and send through channel
     let stop_clone1 = stop_signal.clone();
     let stdout_reader_thread = std::thread::spawn(move || {
         let reader = BufReader::new(stdout);
@@ -637,6 +664,35 @@ fn relay_bridge_thread(
             }
         }
     });
+
+    // Thread: continuously drain the Agent's stderr. Without draining it the
+    // pipe buffer fills up and blocks the child process.
+    let stop_clone2 = stop_signal.clone();
+    let stderr_reader_thread = std::thread::spawn(move || {
+        let reader = BufReader::new(stderr);
+        for line in reader.lines() {
+            if let Ok(stopped) = stop_clone2.lock() {
+                if *stopped {
+                    break;
+                }
+            }
+            match line {
+                Ok(l) => eprintln!("[ACP] {}", l),
+                Err(_) => break,
+            }
+        }
+    });
+
+    // ACP handshake: send `initialize` first; the session is created once the
+    // initialize response comes back.
+    let mut bridge = AcpBridge::new(workspace_dir);
+    for req in bridge.start() {
+        if writeln!(stdin, "{}", req).is_err() {
+            eprintln!("[RELAY-BRIDGE] 写入 initialize 失败");
+            return;
+        }
+        let _ = stdin.flush();
+    }
 
     let mut retry_delay_ms = 1000u64;
 
@@ -672,17 +728,30 @@ fn relay_bridge_thread(
                         }
                     }
 
-                    // 1. Send all queued stdout lines to WebSocket
+                    // 1. Drain the Agent's stdout, translate it, and forward it to the phone
                     while let Ok(line) = rx_out.try_recv() {
-                        if !line.trim().is_empty() {
-                            if let Err(e) = socket.send(Message::Text(line)) {
+                        if line.trim().is_empty() {
+                            continue;
+                        }
+                        let actions = bridge.on_agent_line(&line);
+                        if !write_to_agent(&mut stdin, &actions.to_agent) {
+                            eprintln!("[RELAY-BRIDGE] 写入 stdin 失败");
+                            break;
+                        }
+                        let mut failed = false;
+                        for frame in actions.to_mobile {
+                            if let Err(e) = socket.send(Message::Text(frame)) {
                                 eprintln!("[RELAY-BRIDGE] 发送消息到 WebSocket 失败: {}", e);
+                                failed = true;
                                 break;
                             }
                         }
+                        if failed {
+                            break;
+                        }
                     }
 
-                    // 2. Read from WebSocket and write to stdin
+                    // 2. Read from WebSocket and translate it into an ACP request
                     match socket.read() {
                         Ok(msg) => match msg {
                             Message::Text(text) => {
@@ -706,20 +775,20 @@ fn relay_bridge_thread(
                                     }
                                 }
 
-                                // Forward to app-server stdin
-                                if let Err(e) = writeln!(stdin, "{}", text) {
-                                    eprintln!("[RELAY-BRIDGE] 写入 stdin 失败: {}", e);
+                                // Translate the phone's envelope into an ACP request
+                                let actions = bridge.on_mobile_frame(&text);
+                                if !write_to_agent(&mut stdin, &actions.to_agent) {
+                                    eprintln!("[RELAY-BRIDGE] 写入 stdin 失败");
                                     break;
                                 }
-                                let _ = stdin.flush();
-                            }
-                            Message::Binary(bin) => {
-                                if let Err(e) = stdin.write_all(&bin) {
-                                    eprintln!("[RELAY-BRIDGE] 写入 stdin 失败: {}", e);
-                                    break;
+                                for frame in actions.to_mobile {
+                                    if let Err(e) = socket.send(Message::Text(frame)) {
+                                        eprintln!("[RELAY-BRIDGE] 发送消息到 WebSocket 失败: {}", e);
+                                        break;
+                                    }
                                 }
-                                let _ = stdin.flush();
                             }
+                            Message::Binary(_) => {}
                             Message::Ping(p) => {
                                 let _ = socket.send(Message::Pong(p));
                             }
@@ -756,6 +825,7 @@ fn relay_bridge_thread(
 
     drop(stdin);
     let _ = stdout_reader_thread.join();
+    let _ = stderr_reader_thread.join();
 }
 
 #[cfg(test)]

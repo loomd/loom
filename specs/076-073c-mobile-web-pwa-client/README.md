@@ -29,7 +29,14 @@ updated_at: 2026-10-25T06:30:00.000000000Z
 - [x] 本地记忆: 利用 AsyncStorage 记录上次成功连接的服务器地址，支持一键重连或重新配对。
 
 ### 核心流式对话工作区（Chat View）
-- [x] 对接 JSON-RPC 流: 通过 WebSocket 接收 Relay 转发的 app-server 输出，逐字打字机渲染 Agent 回复内容。
+- [x] 对接 Loom 远程聊天帧协议: 通过 WebSocket 接收电脑端（ACP 适配层）下发的帧并增量渲染。
+  - [x] `chat`: Agent 回复正文增量，同一轮的多个增量合并进同一个气泡。
+  - [x] `chat_end`: 本轮结束，关闭当前气泡。
+  - [x] `thinking`: 思考过程增量，归入下一条 Agent 消息的 `<thinking>` 块（由 `ChatBubble` 折叠展示）。
+  - [x] `tool_call`: 工具调用状态（同一 `toolCallId` 的更新合并为一条）。
+  - [x] `permission_request`: 权限审批请求，载荷为 JSON 字符串。
+  - [x] `error`: 错误提示。
+  - [x] 上行: 用户文本走 `chat` 信封；审批裁决走 `permission_response` 帧（`{"id","approved","optionId"}`）。
 - [x] 思考状态折叠展开展现（Thinking Process）。
 - [x] Markdown 渲染: 支持标题、列表、代码块高亮（react-native-markdown-display）。
 - [x] 代码块一键复制到剪贴板。

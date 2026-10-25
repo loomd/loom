@@ -1880,6 +1880,7 @@ mod notification;
 mod crash_shield;
 mod whats_new;
 mod app_server;
+mod acp;
 
 fn get_window_state_path() -> std::path::PathBuf {
     let mut path = cstore::get_config_path();
