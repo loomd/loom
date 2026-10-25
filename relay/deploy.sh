@@ -21,7 +21,7 @@ APP_DIR="${APP_DIR:-/opt/loom-relay}"
 DOMAIN="${DOMAIN:-agent.ccxcc.cn}"
 REPO_URL="${REPO_URL:-https://github.com/loomd/loom.git}"
 CERT_LINK="/etc/letsencrypt/live/${DOMAIN}"
-NGINX_DIR="/etc/nginx/conf.d"
+NGINX_SITE_DIRS="/etc/nginx/conf.d /etc/nginx/sites-enabled"
 
 log()  { echo "==> $*"; }
 fail() { echo "!! $*" >&2; exit 1; }
@@ -38,6 +38,20 @@ for cmd in docker nginx openssl curl git; do
     command -v "$cmd" >/dev/null 2>&1 || fail "缺少依赖命令: $cmd"
 done
 docker compose version >/dev/null 2>&1 || fail "缺少 docker compose 插件"
+
+# 站点安装目录：取 nginx.conf 实际 include 的那个目录。
+# 不同发行版/面板的 nginx.conf 只 include conf.d 或只 include sites-enabled，
+# 装错目录会导致配置静默不生效。
+NGINX_DIR=""
+for d in $NGINX_SITE_DIRS; do
+    [ -d "$d" ] || continue
+    if grep -qE "^[[:space:]]*include[[:space:]]+[^;]*${d}" /etc/nginx/nginx.conf 2>/dev/null; then
+        NGINX_DIR="$d"
+        break
+    fi
+done
+[ -n "$NGINX_DIR" ] || NGINX_DIR="/etc/nginx/conf.d"
+log "nginx 站点安装目录: ${NGINX_DIR}"
 
 # ── 1. 同步代码 ──────────────────────────────────────────────────────────────
 log "同步代码到 ${APP_DIR}"
@@ -76,6 +90,15 @@ reload_nginx() {
     nginx -t || fail "nginx 配置校验失败，未重载（详见上方错误）"
     systemctl reload nginx
     log "nginx 已重载"
+}
+
+# 自检：打印 nginx 的 include 路径与已安装的站点文件，
+# 便于确认 conf.d 下的配置是否真的会被加载
+dump_nginx_include() {
+    log "nginx include 路径（/etc/nginx/nginx.conf）:"
+    grep -nE '^[[:space:]]*include[[:space:]]' /etc/nginx/nginx.conf 2>/dev/null | head -20 >&2 || true
+    log "已安装的站点文件（${NGINX_DIR}）:"
+    ls -1 "${NGINX_DIR}" 2>/dev/null >&2 || true
 }
 
 install_vhost() {
@@ -251,26 +274,33 @@ ensure_cert
 
 # ── 6. 安装正式站点 (443 TLS) ───────────────────────────────────────────────
 log "安装 nginx TLS 站点"
-rm -f "${NGINX_DIR}/loom-relay-acme.conf"
 
-# WebSocket 升级映射：loom-relay.conf 里的 $connection_upgrade 依赖它，
-# 必须先于站点配置安装，否则 nginx -t 会报 unknown "connection_upgrade" variable
+# 清理历史遗留的临时站点文件（可能装在任意一个目录）
+for d in $NGINX_SITE_DIRS; do
+    rm -f "${d}/loom-relay-acme.conf"
+done
+
+# WebSocket 升级映射：供其它可能引用 $connection_upgrade 的配置使用。
+# loom-relay.conf 本身已内联 upgrade 头，不依赖此文件。
 install_vhost nginx/00-connection-upgrade-map.conf 00-connection-upgrade-map.conf
 install_vhost nginx/loom-relay.conf loom-relay.conf
 
 # 提示其它同样声明了该域名的站点配置（仅告警，不改动他人配置；
-# nginx 按 include 顺序取第一个匹配，conf.d 优先于 sites-enabled）
-for f in "${NGINX_DIR}"/*.conf /etc/nginx/sites-enabled/*; do
-    [ -f "$f" ] || continue
-    case "$f" in
-        "${NGINX_DIR}/loom-relay.conf") continue ;;
-    esac
-    if grep -E "server_name" "$f" 2>/dev/null | grep -qF "$DOMAIN"; then
-        log "提示: ${f} 也声明了 ${DOMAIN}，请确认其与本中继的优先级"
-    fi
+# nginx 按 include 顺序取第一个匹配）
+for d in $NGINX_SITE_DIRS; do
+    for f in "${d}"/*; do
+        [ -f "$f" ] || continue
+        case "$f" in
+            "${NGINX_DIR}/loom-relay.conf"|"${NGINX_DIR}/00-connection-upgrade-map.conf") continue ;;
+        esac
+        if grep -E "server_name" "$f" 2>/dev/null | grep -qF "$DOMAIN"; then
+            log "提示: ${f} 也声明了 ${DOMAIN}，请确认其与本中继的优先级"
+        fi
+    done
 done
 
 reload_nginx
+dump_nginx_include
 
 # ── 7. HTTPS 存活探测 ───────────────────────────────────────────────────────
 log "HTTPS 存活探测: https://${DOMAIN}/api/health"
