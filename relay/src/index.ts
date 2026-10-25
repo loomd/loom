@@ -330,6 +330,9 @@ async function handleHttpRequest(
           paired: Boolean(binding),
           pairedAt: binding?.pairedAt ?? null,
           deviceName: binding?.deviceName ?? null,
+          // 绑定归属的设备标识：手机端据此判断「绑定是否属于本机」，
+          // 避免把「绑定到其他设备」误当成「尚未绑定」而反复要求输码
+          deviceId: binding?.deviceId ?? null,
         },
       });
       return;
