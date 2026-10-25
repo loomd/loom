@@ -12,6 +12,20 @@ interface Props {
 // 模块级状态缓存：保留每个项目路径最近一次的检测结果，切换时第 1 帧秒级展示，杜绝闪烁消失
 const gitStatusCache = new Map<string, GitProjectStatus>();
 
+// 上游分支文本统一字体（可见标签与隐藏测量探针共用，保证测量宽度与实际渲染一致）
+const upstreamTextStyle: React.CSSProperties = {
+  fontSize: '0.72rem',
+  whiteSpace: 'nowrap',
+};
+
+// 由远端跟踪分支推导展示文本：完整形态 @origin/main，紧凑形态 @main
+const buildUpstreamLabels = (upstream: string | null) => {
+  const raw = (upstream || '').replace(/^refs\/remotes\//, '');
+  if (!raw) return { full: '', short: '' };
+  const short = raw.split('/').slice(1).join('/') || raw;
+  return { full: `@${raw}`, short: `@${short}` };
+};
+
 export const GitStatusBar: React.FC<Props> = ({ projectPath, active = true }) => {
   const { t } = useI18n();
   const toast = useToast();
@@ -29,6 +43,25 @@ export const GitStatusBar: React.FC<Props> = ({ projectPath, active = true }) =>
   const [isCompact, setIsCompact] = useState<boolean>(false);
   const observerRef = useRef<ResizeObserver | null>(null);
 
+  // 上游分支展示形态：宽度足够显示完整形态（@origin/main），否则降级为紧凑形态（@main）
+  const { full: upstreamFull, short: upstreamShort } = buildUpstreamLabels(status?.upstream ?? null);
+  const [useShortUpstream, setUseShortUpstream] = useState<boolean>(false);
+  // 检查中按钮：整行仍放不下时收起文案，仅保留转圈图标
+  const [hideCheckingText, setHideCheckingText] = useState<boolean>(false);
+  const checkingLabel = isCompact
+    ? t('proj.git.checkingCompact') || '检查中...'
+    : t('proj.git.checking') || '检查中...';
+
+  // 上游文本形态测量所需节点
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  const groupRef = useRef<HTMLDivElement | null>(null);
+  const capsuleRef = useRef<HTMLDivElement | null>(null);
+  const branchRef = useRef<HTMLSpanElement | null>(null);
+  const buttonsRef = useRef<HTMLDivElement | null>(null);
+  const fullProbeRef = useRef<HTMLSpanElement | null>(null);
+  const shortProbeRef = useRef<HTMLSpanElement | null>(null);
+  const checkingProbeRef = useRef<HTMLSpanElement | null>(null);
+
   useEffect(() => {
     isMountedRef.current = true;
     return () => {
@@ -40,21 +73,97 @@ export const GitStatusBar: React.FC<Props> = ({ projectPath, active = true }) =>
     };
   }, []);
 
-  const containerCallbackRef = useCallback((node: HTMLDivElement | null) => {
-    if (observerRef.current) {
-      observerRef.current.disconnect();
-      observerRef.current = null;
+  // 依据整行可用宽度决定上游分支形态与检查按钮文案：
+  // 一行放得下显示 @origin/main 与检查文案；放不下先把上游降级为 @main，仍放不下则检查中只保留转圈图标
+  const evaluateUpstreamFit = useCallback(() => {
+    const root = rootRef.current;
+    const group = groupRef.current;
+    const capsule = capsuleRef.current;
+    const branch = branchRef.current;
+    const buttons = buttonsRef.current;
+    const fullProbe = fullProbeRef.current;
+    const shortProbe = shortProbeRef.current;
+    const checkingProbe = checkingProbeRef.current;
+    if (!root || !group || !capsule || !branch || !buttons || !fullProbe || !shortProbe || !checkingProbe) {
+      return;
     }
-    if (node && typeof ResizeObserver !== 'undefined') {
-      const observer = new ResizeObserver((entries) => {
-        for (const entry of entries) {
-          setIsCompact(entry.contentRect.width < 540);
-        }
-      });
-      observer.observe(node);
-      observerRef.current = observer;
+
+    const { full } = buildUpstreamLabels(status?.upstream ?? null);
+    if (!full) {
+      setUseShortUpstream(false);
+      setHideCheckingText(false);
+      return;
     }
-  }, []);
+
+    // 状态条内容宽度（扣除左右内边距，与容器内联样式保持一致）
+    const barPaddingX = isCompact ? 8 : 12;
+    const barWidth = root.clientWidth - barPaddingX * 2;
+    if (barWidth <= 0) return;
+
+    // 胶囊固定占位：左右内边距 + 分支图标 + 两段间隙
+    const fixedWidth = 14 + 13 + 5 + 5;
+    // 分支名占位（受自身 maxWidth 上限约束）
+    const branchWidth = Math.min(branch.scrollWidth, isCompact ? 100 : 150);
+
+    // 同排状态徽标占位（含与胶囊之间的间距）
+    let badgeWidth = 0;
+    let badgeCount = 0;
+    for (const child of Array.from(group.children)) {
+      if (child === capsule) continue;
+      badgeWidth += child.getBoundingClientRect().width;
+      badgeCount += 1;
+    }
+
+    // 检查按钮保留文案时的宽度（由当前渲染状态反推，保证评估结果稳定）
+    const checkingTextWidth = checkingProbe.getBoundingClientRect().width;
+    const currentButtonsWidth = buttons.getBoundingClientRect().width;
+    const buttonsWithText = hideCheckingText
+      ? currentButtonsWidth + checkingTextWidth + 4
+      : currentButtonsWidth;
+
+    // 左侧内容占满一行所需的固定宽度
+    const reserved = fixedWidth + branchWidth + badgeWidth + badgeCount * 6 + 10;
+
+    // 上游文本可用宽度
+    const availableWithText = barWidth - reserved - buttonsWithText;
+
+    const fullWidth = fullProbe.getBoundingClientRect().width;
+    const shortWidth = shortProbe.getBoundingClientRect().width;
+
+    let nextShort = false;
+    let nextHideChecking = false;
+    if (fullWidth <= availableWithText) {
+      // 完整上游 + 检查文案：整行放得下，无需降级
+    } else {
+      // 放不下：上游降级为 @main；若降级后仍放不下，检查中只保留转圈图标
+      nextShort = true;
+      nextHideChecking = checking && shortWidth > availableWithText;
+    }
+    setUseShortUpstream(nextShort);
+    setHideCheckingText(nextHideChecking);
+  }, [isCompact, status, checking, hideCheckingText]);
+
+  // 状态条宽度监听：小于 540px 切换紧凑文案，并按整行宽度重新评估上游分支形态
+  const containerCallbackRef = useCallback(
+    (node: HTMLDivElement | null) => {
+      rootRef.current = node;
+      if (observerRef.current) {
+        observerRef.current.disconnect();
+        observerRef.current = null;
+      }
+      if (node && typeof ResizeObserver !== 'undefined') {
+        const observer = new ResizeObserver((entries) => {
+          for (const entry of entries) {
+            setIsCompact(entry.contentRect.width < 540);
+          }
+          evaluateUpstreamFit();
+        });
+        observer.observe(node);
+        observerRef.current = observer;
+      }
+    },
+    [evaluateUpstreamFit],
+  );
 
   const loadStatus = useCallback(async (fetchRemote: boolean) => {
     if (!projectPath) return;
@@ -187,6 +296,7 @@ export const GitStatusBar: React.FC<Props> = ({ projectPath, active = true }) =>
     >
       {/* 左侧：分支信息与状态徽章 */}
       <div
+        ref={groupRef}
         style={{
           display: 'flex',
           alignItems: 'center',
@@ -198,6 +308,7 @@ export const GitStatusBar: React.FC<Props> = ({ projectPath, active = true }) =>
       >
         {/* 分支标识胶囊 */}
         <div
+          ref={capsuleRef}
           style={{
             display: 'inline-flex',
             alignItems: 'center',
@@ -207,6 +318,7 @@ export const GitStatusBar: React.FC<Props> = ({ projectPath, active = true }) =>
             borderRadius: '4px',
             maxWidth: '100%',
             overflow: 'hidden',
+            position: 'relative',
           }}
           title={
             status.upstream
@@ -238,6 +350,7 @@ export const GitStatusBar: React.FC<Props> = ({ projectPath, active = true }) =>
 
           {/* 分支名称 */}
           <span
+            ref={branchRef}
             style={{
               fontWeight: 600,
               color: 'var(--text-primary, #f4f4f5)',
@@ -252,20 +365,52 @@ export const GitStatusBar: React.FC<Props> = ({ projectPath, active = true }) =>
             {status.branch || 'HEAD'}
           </span>
 
-          {/* 远端分支追踪信息：统一使用 @ 前缀展示 */}
-          {status.upstream && (
+          {/* 远端分支追踪信息：统一使用 @ 前缀展示，宽度不足时降级为 @main */}
+          {upstreamFull && (
             <span
               style={{
-                fontSize: '0.72rem',
+                ...upstreamTextStyle,
                 color: 'var(--text-tertiary, #71717a)',
-                whiteSpace: 'nowrap',
                 overflow: 'hidden',
                 textOverflow: 'ellipsis',
-                maxWidth: isCompact ? '90px' : '150px',
               }}
             >
-              @{status.upstream.replace(/^refs\/remotes\//, '')}
+              {useShortUpstream ? upstreamShort : upstreamFull}
             </span>
+          )}
+
+          {/* 隐藏探针：测量两种形态的真实渲染宽度 */}
+          {upstreamFull && (
+            <>
+              <span
+                ref={fullProbeRef}
+                aria-hidden="true"
+                style={{
+                  ...upstreamTextStyle,
+                  position: 'absolute',
+                  visibility: 'hidden',
+                  pointerEvents: 'none',
+                  top: 0,
+                  left: 0,
+                }}
+              >
+                {upstreamFull}
+              </span>
+              <span
+                ref={shortProbeRef}
+                aria-hidden="true"
+                style={{
+                  ...upstreamTextStyle,
+                  position: 'absolute',
+                  visibility: 'hidden',
+                  pointerEvents: 'none',
+                  top: 0,
+                  left: 0,
+                }}
+              >
+                {upstreamShort}
+              </span>
+            </>
           )}
         </div>
 
@@ -369,6 +514,7 @@ export const GitStatusBar: React.FC<Props> = ({ projectPath, active = true }) =>
 
       {/* 右侧：操作按钮组 */}
       <div
+        ref={buttonsRef}
         style={{
           display: 'inline-flex',
           alignItems: 'center',
@@ -397,6 +543,7 @@ export const GitStatusBar: React.FC<Props> = ({ projectPath, active = true }) =>
             fontSize: '0.72rem',
             opacity: checking ? 0.6 : 1,
             whiteSpace: 'nowrap',
+            position: 'relative',
             transition: 'all 0.15s ease',
           }}
           onMouseEnter={(e) => {
@@ -430,14 +577,32 @@ export const GitStatusBar: React.FC<Props> = ({ projectPath, active = true }) =>
             <path d="M13.5 8a5.5 5.5 0 0 1-9.39 3.89L2.5 10.5" />
             <path d="M2.5 14v-3.5H6" />
           </svg>
-          <span>
-            {checking
-              ? isCompact
-                ? (t('proj.git.checkingCompact') || '检查中...')
-                : (t('proj.git.checking') || '检查中...')
-              : isCompact
-              ? (t('proj.git.checkCompact') || '检查')
-              : (t('proj.git.check') || '检查更新')}
+          {/* 按钮文案：检查中且整行放不下时收起，仅保留转圈图标 */}
+          {!(checking && hideCheckingText) && (
+            <span>
+              {checking
+                ? checkingLabel
+                : isCompact
+                ? (t('proj.git.checkCompact') || '检查')
+                : (t('proj.git.check') || '检查更新')}
+            </span>
+          )}
+
+          {/* 隐藏探针：测量检查中文字宽度 */}
+          <span
+            ref={checkingProbeRef}
+            aria-hidden="true"
+            style={{
+              position: 'absolute',
+              visibility: 'hidden',
+              pointerEvents: 'none',
+              top: 0,
+              left: 0,
+              fontSize: '0.72rem',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {checkingLabel}
           </span>
         </button>
 
