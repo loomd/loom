@@ -1,6 +1,6 @@
 import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
-import { getDb, getUserCount, updateUserPassword } from "./db.js";
+import { getDb, updateUserPassword } from "./db.js";
 import type { AuthResponse, JwtPayload } from "./types.js";
 
 const BCRYPT_ROUNDS = 10;
@@ -34,9 +34,9 @@ export function validateRegistrationInput(username: string, password: string): v
   }
 }
 
-function signToken(userId: number, username: string, role: "admin" | "user" = "user"): AuthResponse {
+function signToken(userId: number, username: string): AuthResponse {
   const secret = getSecret();
-  const token = jwt.sign({ userId, username, role } satisfies JwtPayload, secret, {
+  const token = jwt.sign({ userId, username } satisfies JwtPayload, secret, {
     algorithm: "HS256",
     expiresIn: JWT_EXPIRES_IN,
   });
@@ -63,47 +63,43 @@ export async function register(
     throw new Error("用户名已存在");
   }
 
-  // 首个注册用户自动提升为管理员，方便自建节点快速初始化
-  const totalUsers = getUserCount();
-  const role: "admin" | "user" = totalUsers === 0 ? "admin" : "user";
-
   const hash = await bcrypt.hash(password, BCRYPT_ROUNDS);
   const result = db
-    .prepare("INSERT INTO users (username, password_hash, role, status) VALUES (?, ?, ?, 'active')")
-    .run(trimmedUser, hash, role);
+    .prepare("INSERT INTO users (username, password_hash) VALUES (?, ?)")
+    .run(trimmedUser, hash);
 
   const userId = Number(result.lastInsertRowid);
-  console.log(`[RELAY] 新用户注册: ${trimmedUser} (id=${userId}, role=${role})`);
-  return signToken(userId, trimmedUser, role);
+  console.log(`[RELAY] 新用户注册: ${trimmedUser} (id=${userId})`);
+  return signToken(userId, trimmedUser);
 }
 
 /**
- * 管理员直接创建新用户。
+ * 用户登录，验证密码后返回 JWT。
  */
-export async function adminCreateUserAccount(
+export async function login(
   username: string,
   password: string,
-  role: "admin" | "user" = "user",
-): Promise<{ id: number; username: string; role: string }> {
-  const trimmedUser = username ? username.trim() : "";
-  validateRegistrationInput(trimmedUser, password);
-
-  const db = getDb();
-  const existing = db
-    .prepare("SELECT id FROM users WHERE username = ?")
-    .get(trimmedUser) as { id: number } | undefined;
-  if (existing) {
-    throw new Error("用户名已存在");
+): Promise<AuthResponse> {
+  if (!username || !password) {
+    throw new Error("用户名和密码不能为空");
   }
 
-  const hash = await bcrypt.hash(password, BCRYPT_ROUNDS);
-  const result = db
-    .prepare("INSERT INTO users (username, password_hash, role, status) VALUES (?, ?, ?, 'active')")
-    .run(trimmedUser, hash, role);
+  const trimmedUser = username.trim();
+  const db = getDb();
+  const row = db
+    .prepare("SELECT id, password_hash FROM users WHERE username = ?")
+    .get(trimmedUser) as { id: number; password_hash: string } | undefined;
+  if (!row) {
+    throw new Error("用户名或密码错误");
+  }
 
-  const userId = Number(result.lastInsertRowid);
-  console.log(`[RELAY] 管理员创建用户: ${trimmedUser} (id=${userId}, role=${role})`);
-  return { id: userId, username: trimmedUser, role };
+  const match = await bcrypt.compare(password, row.password_hash);
+  if (!match) {
+    throw new Error("用户名或密码错误");
+  }
+
+  console.log(`[RELAY] 用户登录: ${trimmedUser}`);
+  return signToken(row.id, trimmedUser);
 }
 
 /**
@@ -129,40 +125,6 @@ export async function adminResetUserPassword(
 }
 
 /**
- * 用户登录，验证密码后返回 JWT。
- */
-export async function login(
-  username: string,
-  password: string,
-): Promise<AuthResponse> {
-  if (!username || !password) {
-    throw new Error("用户名和密码不能为空");
-  }
-
-  const trimmedUser = username.trim();
-  const db = getDb();
-  const row = db
-    .prepare("SELECT id, password_hash, COALESCE(role, 'user') as role, COALESCE(status, 'active') as status FROM users WHERE username = ?")
-    .get(trimmedUser) as { id: number; password_hash: string; role: string; status: string } | undefined;
-  if (!row) {
-    throw new Error("用户名或密码错误");
-  }
-
-  if (row.status === "disabled") {
-    throw new Error("该账号已被管理员封禁，无法登录");
-  }
-
-  const match = await bcrypt.compare(password, row.password_hash);
-  if (!match) {
-    throw new Error("用户名或密码错误");
-  }
-
-  const role: "admin" | "user" = row.role === "admin" ? "admin" : "user";
-  console.log(`[RELAY] 用户登录: ${trimmedUser} (role=${role})`);
-  return signToken(row.id, trimmedUser, role);
-}
-
-/**
  * 刷新 JWT。验证旧 token 后签发新 token。
  */
 export function refreshToken(oldToken: string): AuthResponse {
@@ -171,7 +133,7 @@ export function refreshToken(oldToken: string): AuthResponse {
   }
   const decoded = verifyToken(oldToken);
   console.log(`[RELAY] Token 刷新: ${decoded.username}`);
-  return signToken(decoded.userId, decoded.username, decoded.role || "user");
+  return signToken(decoded.userId, decoded.username);
 }
 
 /**
@@ -189,10 +151,8 @@ export function verifyToken(token: string): JwtPayload {
     return {
       userId: decoded.userId,
       username: decoded.username,
-      role: decoded.role === "admin" ? "admin" : "user",
     };
   } catch {
     throw new Error("无效或过期的 token");
   }
 }
-

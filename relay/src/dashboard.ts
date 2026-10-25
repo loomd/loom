@@ -253,17 +253,6 @@ export function renderDashboardHtml(): string {
       color: #a5b4fc;
       border: 1px solid rgba(99, 102, 241, 0.3);
     }
-    .badge-danger {
-      background: rgba(239, 68, 68, 0.15);
-      color: var(--status-danger);
-      border: 1px solid rgba(239, 68, 68, 0.3);
-    }
-    .badge-role-admin {
-      background: rgba(245, 158, 11, 0.15);
-      color: var(--status-warning);
-      border: 1px solid rgba(245, 158, 11, 0.3);
-      font-weight: 600;
-    }
     .code-tag {
       font-family: var(--font-mono);
       font-size: 1.1rem;
@@ -300,19 +289,10 @@ export function renderDashboardHtml(): string {
       color: var(--text-main);
       font-size: 0.85rem;
       outline: none;
-      min-width: 180px;
+      min-width: 220px;
     }
     .input-text:focus {
       border-color: var(--accent-primary);
-    }
-    .input-select {
-      background: var(--bg-base);
-      border: 1px solid var(--border-subtle);
-      border-radius: 6px;
-      padding: 6px 10px;
-      color: var(--text-main);
-      font-size: 0.85rem;
-      outline: none;
     }
     /* Info Box */
     .info-grid {
@@ -444,7 +424,7 @@ export function renderDashboardHtml(): string {
       <div class="metric-card">
         <div class="metric-title">注册用户数</div>
         <div class="metric-value" id="metric-users">0</div>
-        <div class="metric-sub">SQLite 用户档案</div>
+        <div class="metric-sub">已注册账号档案</div>
       </div>
       <div class="metric-card">
         <div class="metric-title">服务运行时间</div>
@@ -457,19 +437,18 @@ export function renderDashboardHtml(): string {
     <section class="panel" id="admin-panel">
       <div class="panel-header">
         <h2 class="panel-title">
-          <span>账号体系与用户管理 (User Management)</span>
+          <span>账号控制台 (User Management)</span>
           <span id="admin-badge" class="badge badge-secondary">未解锁管理员</span>
         </h2>
         <div class="action-group" id="admin-top-actions">
-          <!-- 解锁后动态插入创建账号等按钮 -->
         </div>
       </div>
 
       <!-- 未解锁提示与表单 -->
       <div id="admin-login-box" class="admin-auth-bar">
-        <span style="font-size: 0.85rem; color: var(--text-muted);">管理员身份认证:</span>
-        <input type="password" id="admin-key-input" class="input-text" placeholder="输入 ADMIN_KEY 密钥或管理员密码" />
-        <button class="btn btn-primary" onclick="handleAdminLogin()">解锁管理控制台</button>
+        <span style="font-size: 0.85rem; color: var(--text-muted);">管理员密钥认证:</span>
+        <input type="password" id="admin-key-input" class="input-text" placeholder="输入 ADMIN_KEY 密钥解锁" />
+        <button class="btn btn-primary" onclick="handleAdminLogin()">解锁账号控制台</button>
       </div>
 
       <!-- 已解锁用户管理列表 -->
@@ -479,15 +458,12 @@ export function renderDashboardHtml(): string {
             <tr>
               <th>ID</th>
               <th>用户名</th>
-              <th>角色</th>
-              <th>状态</th>
               <th>注册时间</th>
-              <th>最后更新</th>
               <th>管理操作</th>
             </tr>
           </thead>
           <tbody id="users-tbody">
-            <tr><td colspan="7" class="empty-row">正在加载用户档案...</td></tr>
+            <tr><td colspan="4" class="empty-row">正在加载用户档案...</td></tr>
           </tbody>
         </table>
       </div>
@@ -585,7 +561,7 @@ export function renderDashboardHtml(): string {
   <!-- Modal: Create User -->
   <div id="modal-create-user" class="modal-backdrop" style="display: none;">
     <div class="modal-card">
-      <div class="modal-title">新建系统账号</div>
+      <div class="modal-title">新建账号</div>
       <div class="form-group">
         <label class="form-label">用户名</label>
         <input type="text" id="new-user-name" class="input-text" placeholder="3-24位英文字母/数字/下划线" />
@@ -594,13 +570,6 @@ export function renderDashboardHtml(): string {
       <div class="form-group">
         <label class="form-label">初始密码</label>
         <input type="password" id="new-user-pwd" class="input-text" placeholder="至少 6 位字符" />
-      </div>
-      <div class="form-group">
-        <label class="form-label">账号角色</label>
-        <select id="new-user-role" class="input-select">
-          <option value="user">普通用户 (User)</option>
-          <option value="admin">系统管理员 (Admin)</option>
-        </select>
       </div>
       <div class="modal-actions">
         <button class="btn" onclick="closeCreateModal()">取消</button>
@@ -655,7 +624,7 @@ export function renderDashboardHtml(): string {
     async function handleAdminLogin() {
       const key = document.getElementById("admin-key-input").value.trim();
       if (!key) {
-        alert("请输入管理员密钥或密码");
+        alert("请输入管理员密钥");
         return;
       }
 
@@ -694,14 +663,14 @@ export function renderDashboardHtml(): string {
       const topActions = document.getElementById("admin-top-actions");
 
       if (isLogged) {
-        badge.className = "badge badge-role-admin";
+        badge.className = "badge badge-active";
         badge.innerText = "管理员已授权";
         loginBox.style.display = "none";
         tableContainer.style.display = "block";
         topActions.innerHTML =
           '<button class="btn btn-primary btn-sm" onclick="openCreateModal()">+ 新建账号</button>' +
           '<button class="btn btn-sm" onclick="loadUsers()">刷新列表</button>' +
-          '<button class="btn btn-danger btn-sm" onclick="handleAdminLogout()">锁定退出</button>';
+          '<button class="btn btn-danger btn-sm" onclick="handleAdminLogout()">退出</button>';
       } else {
         badge.className = "badge badge-secondary";
         badge.innerText = "未解锁管理员";
@@ -721,7 +690,7 @@ export function renderDashboardHtml(): string {
         if (!json.ok) {
           if (res.status === 403 || res.status === 401) {
             handleAdminLogout();
-            alert("管理员会话过期或无权访问，请重新认证");
+            alert("管理员密钥错误或会话已过期");
             return;
           }
           alert(json.error || "获取用户列表失败");
@@ -731,34 +700,19 @@ export function renderDashboardHtml(): string {
         const tbody = document.getElementById("users-tbody");
         const list = json.data || [];
         if (list.length === 0) {
-          tbody.innerHTML = '<tr><td colspan="7" class="empty-row">数据库暂无注册账号</td></tr>';
+          tbody.innerHTML = '<tr><td colspan="4" class="empty-row">数据库暂无注册账号</td></tr>';
           return;
         }
 
         tbody.innerHTML = list.map(u => {
-          const roleBadge = u.role === "admin"
-            ? '<span class="badge badge-role-admin">管理员</span>'
-            : '<span class="badge badge-secondary">普通用户</span>';
-
-          const statusBadge = u.status === "active"
-            ? '<span class="badge badge-success">正常使用</span>'
-            : '<span class="badge badge-danger">已封禁</span>';
-
-          const toggleStatusBtn = u.status === "active"
-            ? '<button class="btn btn-danger btn-sm" onclick="toggleUserStatus(' + u.id + ', \'disabled\')">禁用</button>'
-            : '<button class="btn btn-sm" onclick="toggleUserStatus(' + u.id + ', \'active\')">启用</button>';
-
           const resetPwdBtn = '<button class="btn btn-sm" onclick="openResetModal(' + u.id + ', \'' + u.username + '\')">重置密码</button>';
           const deleteBtn = '<button class="btn btn-danger btn-sm" onclick="deleteUserAccount(' + u.id + ', \'' + u.username + '\')">删除</button>';
 
           return '<tr>' +
             '<td>#' + u.id + '</td>' +
             '<td><strong>' + u.username + '</strong></td>' +
-            '<td>' + roleBadge + '</td>' +
-            '<td>' + statusBadge + '</td>' +
             '<td>' + new Date(u.createdAt).toLocaleString() + '</td>' +
-            '<td>' + new Date(u.updatedAt).toLocaleString() + '</td>' +
-            '<td><div class="action-group">' + resetPwdBtn + toggleStatusBtn + deleteBtn + '</div></td>' +
+            '<td><div class="action-group">' + resetPwdBtn + deleteBtn + '</div></td>' +
             '</tr>';
         }).join('');
       } catch (e) {
@@ -779,7 +733,6 @@ export function renderDashboardHtml(): string {
     async function submitCreateUser() {
       const username = document.getElementById("new-user-name").value.trim();
       const password = document.getElementById("new-user-pwd").value;
-      const role = document.getElementById("new-user-role").value;
 
       if (!username || !password) {
         alert("请填写完整的用户名和密码");
@@ -790,7 +743,7 @@ export function renderDashboardHtml(): string {
         const res = await fetch("/api/admin/users", {
           method: "POST",
           headers: getAdminHeaders(),
-          body: JSON.stringify({ username, password, role })
+          body: JSON.stringify({ username, password })
         });
         const json = await res.json();
         if (!json.ok) {
@@ -844,30 +797,8 @@ export function renderDashboardHtml(): string {
       }
     }
 
-    async function toggleUserStatus(userId, targetStatus) {
-      const actionName = targetStatus === "disabled" ? "封禁并断开连接" : "解除封禁";
-      if (!confirm("确定要" + actionName + "该账号吗？")) return;
-
-      try {
-        const res = await fetch("/api/admin/users/status", {
-          method: "POST",
-          headers: getAdminHeaders(),
-          body: JSON.stringify({ userId, status: targetStatus })
-        });
-        const json = await res.json();
-        if (!json.ok) {
-          alert(json.error || "更新状态失败");
-          return;
-        }
-        loadUsers();
-        fetchStatus();
-      } catch (e) {
-        alert("请求失败: " + e.message);
-      }
-    }
-
     async function deleteUserAccount(userId, username) {
-      if (!confirm("警告: 确定要彻底删除账号 " + username + " 吗？此操作无法撤销！")) return;
+      if (!confirm("确定要删除账号 " + username + " 吗？")) return;
 
       try {
         const res = await fetch("/api/admin/users?userId=" + userId, {

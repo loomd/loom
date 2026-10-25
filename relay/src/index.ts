@@ -6,7 +6,6 @@ import {
   login,
   refreshToken,
   verifyToken,
-  adminCreateUserAccount,
   adminResetUserPassword,
 } from "./auth.js";
 import {
@@ -30,8 +29,6 @@ import {
   getUserCount,
   getUserMap,
   getAllUsers,
-  getUserById,
-  updateUserStatus,
   deleteUser,
 } from "./db.js";
 import { renderDashboardHtml } from "./dashboard.js";
@@ -42,7 +39,6 @@ import type {
   PairVerifyRequest,
   AdminCreateUserRequest,
   AdminResetPasswordRequest,
-  AdminUpdateStatusRequest,
 } from "./types.js";
 
 // ---- 配置 ----
@@ -113,10 +109,7 @@ function extractBearerToken(
 
 /**
  * 校验当前请求是否具备管理员权限。
- * 支持：
- * 1. Header `x-admin-key` 匹配 process.env.ADMIN_KEY / process.env.JWT_SECRET
- * 2. Header `Authorization: Bearer <admin-key>`
- * 3. 携带管理员角色 (role=admin) 的有效 JWT Token
+ * 纯基于管理密钥认证（ADMIN_KEY 或 JWT_SECRET），不污染数据库表结构。
  */
 function checkIsAdmin(req: http.IncomingMessage): boolean {
   const configuredAdminKey = process.env.ADMIN_KEY || process.env.JWT_SECRET || "loom-admin-secret";
@@ -126,24 +119,8 @@ function checkIsAdmin(req: http.IncomingMessage): boolean {
   }
 
   const token = extractBearerToken(req);
-  if (!token) return false;
-
-  if (token === configuredAdminKey) {
-    return true;
-  }
-
-  try {
-    const payload = verifyToken(token);
-    if (payload.role === "admin") return true;
-    const user = getUserById(payload.userId);
-    if (user && user.role === "admin" && user.status !== "disabled") {
-      return true;
-    }
-  } catch {}
-
-  return false;
+  return token === configuredAdminKey;
 }
-
 
 // ---- HTTP 路由处理 ----
 
@@ -181,7 +158,7 @@ async function handleHttpRequest(
     // ---- System Status & Metrics (Used by Dashboard) ----
     if (pathname === "/api/status" && method === "GET") {
       const sessions = getActiveSessionSummaries();
-      const pairings = getActivePairingSummaries();
+      const pairings = getActivePairingSummaries(true); // 默认脱敏显示
       const totalUsers = getUserCount();
       const userMap = getUserMap();
 
@@ -289,7 +266,7 @@ async function handleHttpRequest(
 
     // ---- Admin: Login / Authenticate ----
     if (pathname === "/api/admin/login" && method === "POST") {
-      const body = parseJson<{ adminKey?: string; username?: string; password?: string }>(await readBody(req));
+      const body = parseJson<{ adminKey?: string }>(await readBody(req));
       const configuredAdminKey = process.env.ADMIN_KEY || process.env.JWT_SECRET || "loom-admin-secret";
 
       if (body.adminKey && body.adminKey === configuredAdminKey) {
@@ -297,32 +274,12 @@ async function handleHttpRequest(
           ok: true,
           data: {
             adminToken: configuredAdminKey,
-            username: "root-admin",
-            role: "admin",
           },
         });
         return;
       }
 
-      if (body.username && body.password) {
-        const loginRes = await login(body.username, body.password);
-        const payload = verifyToken(loginRes.token);
-        if (payload.role !== "admin") {
-          jsonResponse(res, 403, { ok: false, error: "该账号没有管理员权限" });
-          return;
-        }
-        jsonResponse(res, 200, {
-          ok: true,
-          data: {
-            adminToken: loginRes.token,
-            username: loginRes.username,
-            role: "admin",
-          },
-        });
-        return;
-      }
-
-      jsonResponse(res, 401, { ok: false, error: "管理员密钥或账号密码错误" });
+      jsonResponse(res, 401, { ok: false, error: "管理员密钥错误" });
       return;
     }
 
@@ -344,8 +301,8 @@ async function handleHttpRequest(
         return;
       }
       const body = parseJson<AdminCreateUserRequest>(await readBody(req));
-      const user = await adminCreateUserAccount(body.username, body.password, body.role || "user");
-      jsonResponse(res, 201, { ok: true, data: user });
+      const userRes = await register(body.username, body.password);
+      jsonResponse(res, 201, { ok: true, data: { username: userRes.username } });
       return;
     }
 
@@ -355,36 +312,13 @@ async function handleHttpRequest(
         jsonResponse(res, 403, { ok: false, error: "无权访问，需要管理员权限" });
         return;
       }
-      const body = parseJson<{ userId: number; password: string }>(await readBody(req));
+      const body = parseJson<AdminResetPasswordRequest>(await readBody(req));
       if (!body.userId || !body.password) {
         jsonResponse(res, 400, { ok: false, error: "缺少 userId 或 password" });
         return;
       }
       await adminResetUserPassword(body.userId, body.password);
       jsonResponse(res, 200, { ok: true, data: { message: "密码重置成功" } });
-      return;
-    }
-
-    // ---- Admin: Update User Status ----
-    if (pathname === "/api/admin/users/status" && method === "POST") {
-      if (!checkIsAdmin(req)) {
-        jsonResponse(res, 403, { ok: false, error: "无权访问，需要管理员权限" });
-        return;
-      }
-      const body = parseJson<{ userId: number; status: "active" | "disabled" }>(await readBody(req));
-      if (!body.userId || !body.status) {
-        jsonResponse(res, 400, { ok: false, error: "缺少 userId 或 status" });
-        return;
-      }
-      const success = updateUserStatus(body.userId, body.status);
-      if (!success) {
-        jsonResponse(res, 404, { ok: false, error: "未找到该用户" });
-        return;
-      }
-      if (body.status === "disabled") {
-        terminateUserSessions(body.userId, "账号已被管理员冻结禁用");
-      }
-      jsonResponse(res, 200, { ok: true, data: { status: body.status } });
       return;
     }
 
@@ -400,7 +334,7 @@ async function handleHttpRequest(
         jsonResponse(res, 400, { ok: false, error: "请提供有效的 userId 参数" });
         return;
       }
-      terminateUserSessions(userId, "用户已被管理员注销");
+      terminateUserSessions(userId, "用户已被管理员删除");
       const success = deleteUser(userId);
       if (!success) {
         jsonResponse(res, 404, { ok: false, error: "未找到该用户" });
@@ -409,7 +343,6 @@ async function handleHttpRequest(
       jsonResponse(res, 200, { ok: true, data: { message: "用户已删除" } });
       return;
     }
-
 
     // ---- 404 ----
     jsonResponse(res, 404, { ok: false, error: "未找到该路由" });
@@ -422,7 +355,9 @@ async function handleHttpRequest(
       message.includes("已存在") ||
       message.includes("不能为空") ||
       message.includes("无效") ||
-      message.includes("错误")
+      message.includes("错误") ||
+      message.includes("少于") ||
+      message.includes("超过")
         ? 400
         : 500;
     jsonResponse(res, status, { ok: false, error: message });
@@ -453,12 +388,6 @@ server.on("upgrade", (req, socket, head) => {
   let user: { userId: number; username: string };
   try {
     user = verifyToken(token);
-    const userInfo = getUserById(user.userId);
-    if (!userInfo || userInfo.status === "disabled") {
-      socket.write("HTTP/1.1 403 Forbidden\r\n\r\n");
-      socket.destroy();
-      return;
-    }
   } catch {
     socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
     socket.destroy();

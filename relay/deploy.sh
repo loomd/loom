@@ -304,14 +304,19 @@ dump_nginx_include
 
 # ── 7. HTTPS 存活探测 ───────────────────────────────────────────────────────
 log "HTTPS 存活探测: https://${DOMAIN}/api/health"
-for i in $(seq 1 10); do
+for i in $(seq 1 15); do
     if curl -fsS --max-time 10 "https://${DOMAIN}/api/health"; then
         echo ""
         log "部署完成: https://${DOMAIN}"
         exit 0
     fi
-    echo "    等待服务就绪 (${i}/10)..."
+    echo "    等待服务就绪 (${i}/15)..."
     sleep 3
 done
 
+log "容器状态与最近日志:"
+docker compose ps || true
+docker compose logs --tail 100 || true
+
 fail "健康检查未通过，请检查: docker compose ps / nginx -t / journalctl -u nginx"
+
