@@ -8,17 +8,27 @@ import {
   StyleSheet,
   KeyboardAvoidingView,
   Platform,
+  Alert,
 } from "react-native";
 import { useRouter } from "expo-router";
 import type { ChatMessage, RelayMessage } from "@/types";
 import {
   onMessage,
   onStatusChange,
+  onAuthError,
   send,
   sendPermissionResponse,
+  connectToRelay,
   disconnect,
 } from "@/services/websocket";
-import { clearToken } from "@/services/storage";
+import {
+  clearToken,
+  getToken,
+  getServerUrl,
+  getDeviceId,
+  getLastPairInfo,
+} from "@/services/storage";
+import { setBaseUrl } from "@/services/api";
 import { StatusBar } from "@/components/StatusBar";
 import { ChatBubble } from "@/components/ChatBubble";
 import { PermissionCard, type PermissionOption, type PermissionRequest } from "@/components/PermissionCard";
@@ -154,6 +164,15 @@ export default function ChatScreen() {
       setConnected(isConnected);
     });
 
+    // 鉴权失败（未绑定 / 绑定失效 / 绑定到其他设备）：引导用户重新配对
+    const unsubAuthError = onAuthError((reason) => {
+      Alert.alert(
+        "需要重新配对",
+        reason || "绑定已失效，请在桌面端生成新的配对码后重新输入",
+      );
+      router.replace("/pair");
+    });
+
     const unsubMessage = onMessage((relayMsg: RelayMessage) => {
       switch (relayMsg.type) {
         case "chat": {
@@ -207,9 +226,33 @@ export default function ChatScreen() {
 
     return () => {
       unsubStatus();
+      unsubAuthError();
       unsubMessage();
     };
-  }, [appendAgentText, appendThinking, appendToolCall, appendError]);
+  }, [appendAgentText, appendThinking, appendToolCall, appendError, router]);
+
+  // 进入聊天页即自动建联：已绑定的账号凭 token 直接连上，无需输入配对码
+  useEffect(() => {
+    let cancelled = false;
+
+    (async () => {
+      const token = await getToken();
+      if (!token) {
+        if (!cancelled) router.replace("/login");
+        return;
+      }
+      const serverUrl = await getServerUrl();
+      setBaseUrl(serverUrl);
+      const deviceId = await getDeviceId();
+      const pairInfo = await getLastPairInfo();
+      if (cancelled) return;
+      connectToRelay(serverUrl, token, pairInfo?.code, deviceId);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [router]);
 
   useEffect(() => {
     if (messages.length > 0) {

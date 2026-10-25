@@ -2,6 +2,7 @@ import type {
   AuthResponse,
   PairCreateResponse,
   PairVerifyResponse,
+  PairBindingResponse,
 } from "@/types";
 
 let baseUrl = "https://agent.ccxcc.cn";
@@ -117,10 +118,24 @@ export async function createPairCode(
 export async function verifyPairCode(
   token: string,
   code: string,
+  deviceId?: string,
 ): Promise<PairVerifyResponse> {
   return request<PairVerifyResponse>("/api/pair/verify", {
     method: "POST",
     token,
-    body: { code },
+    body: { code, deviceId },
+  });
+}
+
+/**
+ * 查询账号与手机端的绑定状态。
+ * 已绑定 → 后续重连凭 token 即可，无需再次输入配对码。
+ */
+export async function getPairBinding(
+  token: string,
+): Promise<PairBindingResponse> {
+  return request<PairBindingResponse>("/api/pair/binding", {
+    method: "GET",
+    token,
   });
 }

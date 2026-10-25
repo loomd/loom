@@ -4,6 +4,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 const TOKEN_KEY = "loom_jwt_token";
 const SERVER_URL_KEY = "loom_server_url";
 const PAIR_INFO_KEY = "loom_pair_info";
+const DEVICE_ID_KEY = "loom_device_id";
 
 const DEFAULT_SERVER_URL = "https://agent.ccxcc.cn";
 
@@ -55,4 +56,23 @@ export async function getLastPairInfo(): Promise<PairInfo | null> {
   } catch {
     return null;
   }
+}
+
+/**
+ * 获取本机设备标识（首次调用时生成并持久化）。
+ *
+ * 中继按「账号 ↔ 设备」维护绑定：同一账号只允许一台手机复用绑定，
+ * 避免两台手机用同一账号互相顶替连接。
+ */
+export async function getDeviceId(): Promise<string> {
+  const existing = await AsyncStorage.getItem(DEVICE_ID_KEY);
+  if (existing) return existing;
+  const generated = generateDeviceId();
+  await AsyncStorage.setItem(DEVICE_ID_KEY, generated);
+  return generated;
+}
+
+function generateDeviceId(): string {
+  const part = () => Math.random().toString(36).slice(2, 10);
+  return `d-${Date.now().toString(36)}-${part()}${part()}`;
 }

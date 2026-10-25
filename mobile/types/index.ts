@@ -20,6 +20,8 @@ export interface PairCreateResponse {
 
 export interface PairVerifyRequest {
   code: string;
+  /** 手机端设备标识 */
+  deviceId?: string;
 }
 
 export interface PairVerifyResponse {
@@ -27,6 +29,13 @@ export interface PairVerifyResponse {
   valid?: boolean;
   workspaceId?: string;
   workspaceName?: string;
+}
+
+/** 账号与手机端的绑定状态 */
+export interface PairBindingResponse {
+  paired: boolean;
+  pairedAt: string | null;
+  deviceName: string | null;
 }
 
 export interface RelayMessage {

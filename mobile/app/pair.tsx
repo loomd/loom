@@ -14,6 +14,7 @@ import {
   getToken,
   clearToken,
   getServerUrl,
+  getDeviceId,
   saveLastPairInfo,
 } from "@/services/storage";
 import { setBaseUrl } from "@/services/api";
@@ -84,7 +85,8 @@ export default function PairScreen() {
       const serverUrl = await getServerUrl();
       setBaseUrl(serverUrl);
 
-      const result = await verifyPairCode(token, code);
+      const deviceId = await getDeviceId();
+      const result = await verifyPairCode(token, code, deviceId);
       const isSuccess = Boolean(result.success ?? result.valid);
       if (isSuccess) {
         await saveLastPairInfo({
@@ -92,7 +94,7 @@ export default function PairScreen() {
           workspaceId: result.workspaceId || "default",
           workspaceName: result.workspaceName || "Loom Workspace",
         });
-        connectToRelay(serverUrl, token, code);
+        connectToRelay(serverUrl, token, code, deviceId);
         router.replace("/chat");
       } else {
         const errorText = (result as { error?: string }).error || "验证码无效或已过期";

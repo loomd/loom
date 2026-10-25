@@ -68,6 +68,24 @@ mobile/
 上行：用户文本走 `chat` 信封；审批裁决走 `permission_response` 帧
 `{"type":"permission_response","payload":"{\"id\",\"approved\",\"optionId\"}"}`。
 
+### 2.4 账号级绑定与重连语义（中继侧已实现）
+
+配对码只是**一次性的绑定授权凭据**，不是会话凭据：
+
+| 阶段 | 手机端行为 | 中继行为 |
+|---|---|---|
+| 首次配对 | `POST /api/pair/verify {code, deviceId}` → 成功即建立绑定 | 校验通过后把 `user_id ↔ device_id` 写入 `mobile_bindings` |
+| 后续重连 | `GET /api/pair/binding` 判断已绑定 → 直接进聊天页；`/ws/mobile?token=..&deviceId=..` **不带 code** | 已绑定 → 仅凭 token 放行；未绑定 → 必须带有效 code，否则 `close(4001)` |
+| 换设备 | 同账号的其它 `deviceId` 会被拒绝（`close(4001)`），需桌面端先解绑 | 绑定按账号唯一，`device_id` 记录具体设备 |
+| 强制解绑 | 桌面端「解绑手机端」→ `POST /api/pair/unbind` | 删除绑定行并断开该账号全部连接 |
+
+**不要再把「重新输入配对码」当成断连后的恢复手段** —— 绑定是持久的，
+断连恢复路径是「自动重连」。只有 `close(4001)`（未绑定 / 绑定失效 / 绑定到其他设备）
+才需要回到 `/pair` 页面。
+
+中继的心跳以「最后一次收到 pong」为基准，阈值 90s（允许连续 2 次 pong 丢失），
+手机息屏或切网导致的 pong 迟到不会导致链路被误杀。
+
 ---
 
 ## 3. 易踩的坑（务必先读）
