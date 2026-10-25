@@ -18,7 +18,7 @@ function signToken(userId: number, username: string): AuthResponse {
     expiresIn: JWT_EXPIRES_IN,
   });
   const expiresAt = Math.floor(Date.now() / 1000) + JWT_EXPIRES_SECONDS;
-  return { token, expiresAt };
+  return { token, expiresAt, username };
 }
 
 /**

@@ -39,7 +39,9 @@ pub struct RelayAuthResponse {
 #[serde(rename_all = "camelCase")]
 pub struct RelayAuthData {
     pub token: String,
+    #[serde(default)]
     pub expires_at: u64,
+    #[serde(default)]
     pub username: String,
 }
 
@@ -264,7 +266,10 @@ pub fn relay_login(server_url: String, username: String, password: String) -> Re
         return Err(parsed.error.unwrap_or_else(|| "登录失败".to_string()));
     }
 
-    let data = parsed.data.ok_or("响应中缺少登录数据")?;
+    let mut data = parsed.data.ok_or("响应中缺少登录数据")?;
+    if data.username.is_empty() {
+        data.username = username;
+    }
 
     // Persist config
     let mut cfg = get_relay_config()
@@ -311,7 +316,10 @@ pub fn relay_register(server_url: String, username: String, password: String) ->
         return Err(parsed.error.unwrap_or_else(|| "注册失败".to_string()));
     }
 
-    let data = parsed.data.ok_or("响应中缺少注册数据")?;
+    let mut data = parsed.data.ok_or("响应中缺少注册数据")?;
+    if data.username.is_empty() {
+        data.username = username;
+    }
 
     // Persist config
     let mut cfg = get_relay_config()
@@ -749,3 +757,31 @@ fn relay_bridge_thread(
     drop(stdin);
     let _ = stdout_reader_thread.join();
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_deserialize_relay_auth_response_with_username() {
+        let json = r#"{"ok":true,"data":{"token":"abc","expiresAt":123456,"username":"user1"}}"#;
+        let res: RelayAuthResponse = serde_json::from_str(json).expect("should deserialize");
+        assert!(res.ok);
+        let data = res.data.expect("data should exist");
+        assert_eq!(data.token, "abc");
+        assert_eq!(data.expires_at, 123456);
+        assert_eq!(data.username, "user1");
+    }
+
+    #[test]
+    fn test_deserialize_relay_auth_response_without_username_backward_compatible() {
+        let json = r#"{"ok":true,"data":{"token":"abc","expiresAt":123456}}"#;
+        let res: RelayAuthResponse = serde_json::from_str(json).expect("should deserialize without username");
+        assert!(res.ok);
+        let data = res.data.expect("data should exist");
+        assert_eq!(data.token, "abc");
+        assert_eq!(data.expires_at, 123456);
+        assert_eq!(data.username, "");
+    }
+}
+

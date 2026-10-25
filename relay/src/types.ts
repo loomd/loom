@@ -17,6 +17,7 @@ export interface AuthLoginRequest {
 export interface AuthResponse {
   token: string;
   expiresAt: number; // Unix timestamp (seconds)
+  username: string;
 }
 
 // ---- Pairing ----
