@@ -424,6 +424,11 @@ export function renderDashboardHtml(): string {
         <div class="metric-sub">5 分钟内待连 (安全脱敏)</div>
       </div>
       <div class="metric-card">
+        <div class="metric-title">已绑定手机</div>
+        <div class="metric-value" id="metric-bound">0</div>
+        <div class="metric-sub">绑定后重连免配对码</div>
+      </div>
+      <div class="metric-card">
         <div class="metric-title">注册用户数</div>
         <div class="metric-value" id="metric-users">0</div>
         <div class="metric-sub">已注册账号档案</div>
@@ -835,6 +840,7 @@ export function renderDashboardHtml(): string {
         document.getElementById('metric-desktop').innerText = data.metrics.desktopOnline;
         document.getElementById('metric-mobile').innerText = data.metrics.mobileOnline;
         document.getElementById('metric-codes').innerText = data.metrics.activeCodes;
+        document.getElementById('metric-bound').innerText = data.metrics.boundAccounts ?? 0;
         document.getElementById('metric-users').innerText = data.metrics.totalUsers;
         document.getElementById('metric-uptime').innerText = formatUptime(data.uptimeSeconds);
         document.getElementById('metric-started').innerText = "自 " + new Date(Date.now() - data.uptimeSeconds * 1000).toLocaleTimeString();

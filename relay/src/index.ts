@@ -12,6 +12,10 @@ import {
   createPairingCode,
   verifyPairingCode,
   getActivePairingSummaries,
+  isAccountPaired,
+  getAccountBinding,
+  markAccountPaired,
+  unbindAccount,
 } from "./pairing.js";
 import {
   handleDesktopConnection,
@@ -30,6 +34,7 @@ import {
   getUserMap,
   getAllUsers,
   deleteUser,
+  countMobileBindings,
 } from "./db.js";
 import { renderDashboardHtml } from "./dashboard.js";
 import type {
@@ -189,6 +194,7 @@ async function handleHttpRequest(
             mobileOnline,
             bridgedChannels,
             activeCodes: pairings.length,
+            boundAccounts: countMobileBindings(),
             totalUsers,
           },
           sessions: sessionsWithNames,
@@ -248,6 +254,21 @@ async function handleHttpRequest(
       }
       const user = verifyToken(token);
       const body = parseJson<PairVerifyRequest>(await readBody(req));
+
+      // 已绑定的账号无需再次校验配对码（重连场景）
+      if (isAccountPaired(user.userId)) {
+        jsonResponse(res, 200, {
+          ok: true,
+          data: {
+            valid: true,
+            success: true,
+            workspaceId: "default",
+            workspaceName: "Loom Workspace",
+          },
+        });
+        return;
+      }
+
       const verifyResult = verifyPairingCode(user.userId, body.code);
       if (!verifyResult.valid) {
         jsonResponse(res, 200, {
@@ -256,6 +277,9 @@ async function handleHttpRequest(
         });
         return;
       }
+
+      // 校验通过即建立账号级绑定：此后手机端重连只需 token
+      markAccountPaired(user.userId, body.deviceId);
       jsonResponse(res, 200, {
         ok: true,
         data: {
@@ -264,6 +288,44 @@ async function handleHttpRequest(
           workspaceId: "default",
           workspaceName: "Loom Workspace",
         },
+      });
+      return;
+    }
+
+    // ---- Pair: Binding Status ----
+    if (pathname === "/api/pair/binding" && method === "GET") {
+      const token = extractBearerToken(req);
+      if (!token) {
+        jsonResponse(res, 401, { ok: false, error: "缺少 Authorization header" });
+        return;
+      }
+      const user = verifyToken(token);
+      const binding = getAccountBinding(user.userId);
+      jsonResponse(res, 200, {
+        ok: true,
+        data: {
+          paired: Boolean(binding),
+          pairedAt: binding?.pairedAt ?? null,
+          deviceName: binding?.deviceName ?? null,
+        },
+      });
+      return;
+    }
+
+    // ---- Pair: Unbind (强制解绑) ----
+    if (pathname === "/api/pair/unbind" && method === "POST") {
+      const token = extractBearerToken(req);
+      if (!token) {
+        jsonResponse(res, 401, { ok: false, error: "缺少 Authorization header" });
+        return;
+      }
+      const user = verifyToken(token);
+      const removed = unbindAccount(user.userId);
+      // 解绑后立刻断开手机端连接，让手机端回到「需要配对码」的状态
+      terminateUserSessions(user.userId, "绑定已解除，请重新输入配对码");
+      jsonResponse(res, 200, {
+        ok: true,
+        data: { success: true, removed },
       });
       return;
     }
@@ -410,14 +472,11 @@ server.on("upgrade", (req, socket, head) => {
   }
 
   if (pathname === "/ws/mobile") {
-    const code = url.searchParams.get("code");
-    if (!code) {
-      socket.write("HTTP/1.1 400 Bad Request\r\n\r\n");
-      socket.destroy();
-      return;
-    }
+    // code 可选：账号已完成绑定时仅凭 token 即可重连
+    const code = url.searchParams.get("code") ?? undefined;
+    const deviceId = url.searchParams.get("deviceId") ?? undefined;
     wss.handleUpgrade(req, socket, head, (ws) => {
-      handleMobileConnection(ws, user.userId, code);
+      handleMobileConnection(ws, user.userId, code, deviceId);
     });
     return;
   }

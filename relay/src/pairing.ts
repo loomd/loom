@@ -1,4 +1,11 @@
 import type { WebSocket } from "ws";
+import {
+  getMobileBinding,
+  upsertMobileBinding,
+  deleteMobileBinding,
+  setMobileBindingDeviceId,
+  type MobileBinding,
+} from "./db.js";
 
 interface PairingEntry {
   userId: number;
@@ -101,6 +108,58 @@ export function getPairingByUserId(userId: number): PairingEntry | undefined {
   return entry;
 }
 
+// ---- 账号级绑定 ----
+//
+// 配对码只用于「首次把手机端绑定到账号」这一次授权动作。
+// 绑定成功后手机端重连只需要账号 token，无需再次输入配对码；
+// 只有显式解绑（桌面端「解绑手机」或管理接口）才会让配对码重新生效。
+
+/**
+ * 账号是否已完成手机端绑定。
+ */
+export function isAccountPaired(userId: number): boolean {
+  return getMobileBinding(userId) !== null;
+}
+
+/**
+ * 查询账号的绑定信息。
+ */
+export function getAccountBinding(userId: number): MobileBinding | null {
+  return getMobileBinding(userId);
+}
+
+/**
+ * 标记账号已完成手机端绑定。
+ */
+export function markAccountPaired(
+  userId: number,
+  deviceId?: string | null,
+  deviceName?: string | null,
+): MobileBinding {
+  return upsertMobileBinding(userId, deviceId, deviceName);
+}
+
+/**
+ * 为已绑定但没有设备标识的账号补齐 deviceId（老版本客户端升级路径）。
+ * @returns 是否发生了补写。
+ */
+export function ensureBindingDeviceId(
+  userId: number,
+  deviceId: string,
+): boolean {
+  const binding = getMobileBinding(userId);
+  if (!binding || binding.deviceId) return false;
+  setMobileBindingDeviceId(userId, deviceId);
+  return true;
+}
+
+/**
+ * 解除账号的手机端绑定（强制解绑）。
+ */
+export function unbindAccount(userId: number): boolean {
+  return deleteMobileBinding(userId);
+}
+
 /**
  * 绑定桌面端 WebSocket 到当前用户的配对条目。
  */
@@ -112,13 +171,16 @@ export function setDesktopWs(userId: number, ws: WebSocket): void {
 }
 
 /**
- * 消费配对码（验证成功后移除，防止重复使用）。
+ * 配对码进入绑定流程后的处理。
+ *
+ * 配对码在有效期内保持可用，避免「HTTP 校验通过但 WebSocket 建连失败」后
+ * 手机端因为码已被销毁而彻底无法重试。真正的一次性语义落在账号绑定上：
+ * 绑定成功后手机端重连不再需要配对码。
  */
-export function consumePairingCode(code: string): void {
+export function markPairingCodeBound(code: string): void {
   const entry = pairings.get(code);
   if (entry) {
-    userToCode.delete(entry.userId);
-    pairings.delete(code);
+    console.log(`[RELAY] 配对码已进入绑定流程: userId=${entry.userId}, code=${code}`);
   }
 }
 

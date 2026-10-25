@@ -29,6 +29,8 @@ export interface PairCreateResponse {
 
 export interface PairVerifyRequest {
   code: string;
+  /** 手机端设备标识：绑定后用于识别「同一台设备」的重连 */
+  deviceId?: string;
 }
 
 export interface PairVerifyResponse {
