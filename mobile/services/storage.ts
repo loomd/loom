@@ -5,7 +5,7 @@ const TOKEN_KEY = "loom_jwt_token";
 const SERVER_URL_KEY = "loom_server_url";
 const PAIR_INFO_KEY = "loom_pair_info";
 
-const DEFAULT_SERVER_URL = "wss://localhost:8443";
+const DEFAULT_SERVER_URL = "wss://agent.ccxcc.cn";
 
 export interface PairInfo {
   code: string;

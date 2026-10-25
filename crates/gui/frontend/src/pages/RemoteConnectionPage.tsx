@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import WindowControlButtons from '../components/WindowControlButtons';
+import WorkspaceSelect from '../components/WorkspaceSelect';
 import {
   getRelayStatus,
   setRelayUrl as apiSetRelayUrl,
@@ -15,15 +16,38 @@ import { useToast } from '../ToastContext';
 interface RemoteConnectionPageProps {
   projects: Project[];
   active?: boolean;
+  /** 当前工作区项目，作为远程会话工作区的默认选项 */
+  defaultProjectId?: string;
 }
 
-export const RemoteConnectionPage: React.FC<RemoteConnectionPageProps> = ({ projects, active = true }) => {
+type StatusTone = 'green' | 'blue' | 'amber' | 'gray';
+
+const SESSION_STATUS: Record<string, { label: string; dot: string; badge: string; tone: StatusTone }> = {
+  connected: { label: '手机端已连接', dot: 'dot-green', badge: 'badge-emerald', tone: 'green' },
+  waiting_pairing: { label: '等待手机配对', dot: 'dot-blue', badge: 'badge-blue', tone: 'blue' },
+  starting: { label: '正在启动', dot: 'dot-amber', badge: 'badge-amber', tone: 'amber' },
+  stopped: { label: '服务已停止', dot: 'dot-gray', badge: 'badge-gray', tone: 'gray' },
+};
+
+const getStatusMeta = (status?: string) => SESSION_STATUS[status ?? 'stopped'] ?? SESSION_STATUS.stopped;
+
+const formatCountdown = (seconds: number) => {
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+};
+
+export const RemoteConnectionPage: React.FC<RemoteConnectionPageProps> = ({
+  projects,
+  active = true,
+  defaultProjectId,
+}) => {
   const toast = useToast();
   const isMountedRef = useRef<boolean>(true);
 
   // Relay 配置与认证状态
-  const [relayUrl, setRelayUrl] = useState<string>('ws://agent.ccxcc.cn:9099');
-  const [editingRelayUrl, setEditingRelayUrl] = useState<string>('ws://agent.ccxcc.cn:9099');
+  const [relayUrl, setRelayUrl] = useState<string>('wss://agent.ccxcc.cn');
+  const [editingRelayUrl, setEditingRelayUrl] = useState<string>('wss://agent.ccxcc.cn');
   const [isSavingUrl, setIsSavingUrl] = useState<boolean>(false);
 
   // 账号输入
@@ -38,7 +62,13 @@ export const RemoteConnectionPage: React.FC<RemoteConnectionPageProps> = ({ proj
   const [copied, setCopied] = useState<boolean>(false);
   const [now, setNow] = useState<number>(() => Date.now());
 
-  const activeWorkspace = selectedWorkspace || (projects.length > 0 ? projects[0].root_path : '');
+  const isSessionRunning = Boolean(session && session.status !== 'stopped');
+  // 运行中的会话以后端记录为准，避免下拉框与实际会话错位
+  const runningWorkspace = isSessionRunning ? (session?.workspaceDir ?? '') : '';
+  const fallbackWorkspace =
+    projects.find((p) => p.id === defaultProjectId)?.root_path ??
+    (projects.length > 0 ? projects[0].root_path : '');
+  const activeWorkspace = runningWorkspace || selectedWorkspace || fallbackWorkspace;
 
   useEffect(() => {
     isMountedRef.current = true;
@@ -208,10 +238,11 @@ export const RemoteConnectionPage: React.FC<RemoteConnectionPageProps> = ({ proj
 
   // 停止远程会话
   const handleStopSession = async () => {
-    if (!activeWorkspace) return;
+    const target = session?.workspaceDir || activeWorkspace;
+    if (!target) return;
     setActionLoading(true);
     try {
-      const res = await stopAppServer(activeWorkspace);
+      const res = await stopAppServer(target);
       setSession(res);
       toast.success('远程会话已安全终止');
     } catch (e: unknown) {
@@ -241,409 +272,314 @@ export const RemoteConnectionPage: React.FC<RemoteConnectionPageProps> = ({ proj
     ? Math.max(0, Math.floor((session.expiresAtMs * (session.expiresAtMs < 10000000000 ? 1000 : 1) - now) / 1000))
     : 0;
 
-  const isSessionRunning = session && session.status !== 'stopped';
+  const statusMeta = getStatusMeta(session?.status);
+  const loggedIn = Boolean(session?.loggedIn);
+  const relayHost = (() => {
+    try {
+      return new URL(relayUrl).host || relayUrl;
+    } catch {
+      return relayUrl;
+    }
+  })();
 
   return (
-    <div
-      style={{
-        display: 'flex',
-        flexDirection: 'column',
-        height: '100%',
-        width: '100%',
-        backgroundColor: 'var(--bg-primary)',
-        color: 'var(--text-primary)',
-        overflow: 'hidden',
-      }}
-    >
+    <div className="remote-page">
       {/* 顶部标题栏 */}
-      <header
-        data-tauri-drag-region
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          padding: '12px 24px',
-          borderBottom: '1px solid var(--border-subtle)',
-          backgroundColor: 'var(--bg-secondary)',
-          minHeight: '48px',
-          userSelect: 'none',
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', pointerEvents: 'none' }}>
-          <h1 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 600 }}>远程连接</h1>
-          <span style={{ fontSize: '0.8rem', color: 'var(--text-tertiary)' }}>
-            自建中继手机端远程控制与配对管理
+      <header className="remote-header" data-tauri-drag-region>
+        <div className="remote-header-text">
+          <h1 className="page-title">远程连接</h1>
+          <div className="page-subtitle">自建中继手机端远程控制与配对管理</div>
+        </div>
+        <div className="remote-header-badges">
+          <span className={`badge ${loggedIn ? 'badge-emerald' : 'badge-gray'}`}>
+            <span className={`dot ${loggedIn ? 'dot-green' : 'dot-gray'}`} />
+            {loggedIn ? `已登录 ${session?.username ?? ''}`.trim() : '未登录'}
+          </span>
+          <span className={`badge ${statusMeta.badge}`}>
+            <span className={`dot ${statusMeta.dot}`} />
+            {statusMeta.label}
           </span>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+        <div className="remote-window-controls">
           <WindowControlButtons />
         </div>
       </header>
 
-      {/* 主体滚动区 */}
-      <div
-        style={{
-          flex: 1,
-          overflowY: 'auto',
-          padding: '24px 32px',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: '24px',
-          maxWidth: '860px',
-          margin: '0 auto',
-          width: '100%',
-          boxSizing: 'border-box',
-        }}
-      >
-        {/* 卡片 1: 自建 Relay 服务器地址配置 */}
-        <section
-          style={{
-            backgroundColor: 'var(--bg-card)',
-            border: '1px solid var(--border-subtle)',
-            borderRadius: 'var(--radius-md)',
-            padding: '20px',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '12px',
-          }}
-        >
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <h2 style={{ margin: 0, fontSize: '0.95rem', fontWeight: 600 }}>自建 Relay 中继服务器</h2>
-            <span
-              style={{
-                fontSize: '0.75rem',
-                padding: '2px 8px',
-                borderRadius: 'var(--radius-sm)',
-                backgroundColor: 'var(--bg-elevated)',
-                color: 'var(--text-secondary)',
-              }}
-            >
-              当前生效: {relayUrl}
-            </span>
-          </div>
-          <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
-            用于桌面端与移动端之间的 WebSocket 管道中继与账号认证，支持 ws:// 或 wss:// 协议。
-          </p>
-          <div style={{ display: 'flex', gap: '8px' }}>
-            <input
-              type="text"
-              value={editingRelayUrl}
-              onChange={(e) => setEditingRelayUrl(e.target.value)}
-              placeholder="ws://agent.ccxcc.cn:9099 或 wss://agent.ccxcc.cn"
-              style={{
-                flex: 1,
-                padding: '8px 12px',
-                borderRadius: 'var(--radius-sm)',
-                border: '1px solid var(--border-subtle)',
-                backgroundColor: 'var(--bg-input, var(--bg-primary))',
-                color: 'var(--text-primary)',
-                fontSize: '0.9rem',
-              }}
-            />
-            <button
-              className="btn-secondary"
-              onClick={handleSaveRelayUrl}
-              disabled={isSavingUrl || editingRelayUrl.trim() === relayUrl}
-              style={{ padding: '8px 16px', fontSize: '0.85rem' }}
-            >
-              {isSavingUrl ? '保存中...' : '保存地址'}
-            </button>
-          </div>
-        </section>
-
-        {/* 卡片 2: 账号认证管理 */}
-        <section
-          style={{
-            backgroundColor: 'var(--bg-card)',
-            border: '1px solid var(--border-subtle)',
-            borderRadius: 'var(--radius-md)',
-            padding: '20px',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '16px',
-          }}
-        >
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <h2 style={{ margin: 0, fontSize: '0.95rem', fontWeight: 600 }}>中继账号认证</h2>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <span
-                style={{
-                  width: '8px',
-                  height: '8px',
-                  borderRadius: '50%',
-                  backgroundColor: session?.loggedIn ? 'var(--status-online, #22c55e)' : 'var(--text-tertiary)',
-                }}
-              />
-              <span style={{ fontSize: '0.85rem', color: session?.loggedIn ? 'var(--text-primary)' : 'var(--text-tertiary)' }}>
-                {session?.loggedIn ? `已登录: ${session.username}` : '未登录'}
+      {/* 主体 */}
+      <div className="remote-body">
+        <div className="remote-main">
+          {/* 卡片 1: 自建 Relay 服务器地址配置 */}
+          <section className="card remote-card">
+            <div className="remote-card-head">
+              <div className="remote-card-heading">
+                <h2 className="remote-card-title">自建 Relay 中继服务器</h2>
+                <p className="remote-card-desc">
+                  用于桌面端与移动端之间的 WebSocket 管道中继与账号认证，支持 ws:// 或 wss:// 协议。
+                </p>
+              </div>
+              <span className="badge badge-gray remote-mono" title="当前生效的中继地址">
+                {relayHost}
               </span>
             </div>
-          </div>
-
-          {!session?.loggedIn ? (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
-                手机端与桌面端需使用相同的中继账号方可配对与中继连接。若无账号请直接点击「注册并登录」。
-              </p>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                <input
-                  type="text"
-                  placeholder="用户名"
-                  value={username}
-                  onChange={(e) => setUsername(e.target.value)}
-                  style={{
-                    padding: '8px 12px',
-                    borderRadius: 'var(--radius-sm)',
-                    border: '1px solid var(--border-subtle)',
-                    backgroundColor: 'var(--bg-input, var(--bg-primary))',
-                    color: 'var(--text-primary)',
-                    fontSize: '0.9rem',
-                  }}
-                />
-                <input
-                  type="password"
-                  placeholder="密码"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  style={{
-                    padding: '8px 12px',
-                    borderRadius: 'var(--radius-sm)',
-                    border: '1px solid var(--border-subtle)',
-                    backgroundColor: 'var(--bg-input, var(--bg-primary))',
-                    color: 'var(--text-primary)',
-                    fontSize: '0.9rem',
-                  }}
-                />
-              </div>
-              <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
-                <button
-                  className="btn-secondary"
-                  onClick={handleRegister}
-                  disabled={authLoading}
-                  style={{ padding: '8px 16px', fontSize: '0.85rem' }}
-                >
-                  {authLoading ? '处理中...' : '注册并登录'}
-                </button>
-                <button
-                  className="btn-primary"
-                  onClick={handleLogin}
-                  disabled={authLoading}
-                  style={{ padding: '8px 16px', fontSize: '0.85rem' }}
-                >
-                  {authLoading ? '登录中...' : '立即登录'}
-                </button>
-              </div>
-            </div>
-          ) : (
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
-                当前账号已通过自建 Relay 鉴权，生成的配对码将绑定至该账号。
-              </div>
+            <div className="remote-inline">
+              <input
+                type="text"
+                className="input"
+                value={editingRelayUrl}
+                onChange={(e) => setEditingRelayUrl(e.target.value)}
+                placeholder="wss://agent.ccxcc.cn 或 ws://127.0.0.1:9099"
+                spellCheck={false}
+              />
               <button
-                className="btn-secondary"
-                onClick={handleLogout}
-                style={{ padding: '6px 14px', fontSize: '0.85rem' }}
+                type="button"
+                className="btn btn-ghost"
+                onClick={handleSaveRelayUrl}
+                disabled={isSavingUrl || editingRelayUrl.trim() === relayUrl}
               >
-                退出登录
+                {isSavingUrl ? '保存中...' : '保存地址'}
               </button>
             </div>
-          )}
-        </section>
+          </section>
 
-        {/* 卡片 3: 工作区绑定与核心启停 */}
-        <section
-          style={{
-            backgroundColor: 'var(--bg-card)',
-            border: '1px solid var(--border-subtle)',
-            borderRadius: 'var(--radius-md)',
-            padding: '20px',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '16px',
-          }}
-        >
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <h2 style={{ margin: 0, fontSize: '0.95rem', fontWeight: 600 }}>远程工作区会话</h2>
-            {/* 状态徽标 */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <span
-                style={{
-                  width: '8px',
-                  height: '8px',
-                  borderRadius: '50%',
-                  backgroundColor:
-                    session?.status === 'connected'
-                      ? 'var(--status-online, #22c55e)'
-                      : session?.status === 'waiting_pairing'
-                      ? '#3b82f6'
-                      : session?.status === 'starting'
-                      ? '#eab308'
-                      : 'var(--text-tertiary)',
-                }}
-              />
-              <span style={{ fontSize: '0.85rem', fontWeight: 500 }}>
-                {session?.status === 'connected'
-                  ? '手机端已连接'
-                  : session?.status === 'waiting_pairing'
-                  ? '等待手机配对'
-                  : session?.status === 'starting'
-                  ? '正在启动'
-                  : '服务已停止'}
+          {/* 卡片 2: 账号认证管理 */}
+          <section className="card remote-card">
+            <div className="remote-card-head">
+              <div className="remote-card-heading">
+                <h2 className="remote-card-title">中继账号认证</h2>
+                <p className="remote-card-desc">手机端与桌面端需使用相同的中继账号方可配对与中继连接。</p>
+              </div>
+              <span className={`badge ${loggedIn ? 'badge-emerald' : 'badge-gray'}`}>
+                <span className={`dot ${loggedIn ? 'dot-green' : 'dot-gray'}`} />
+                {loggedIn ? '已登录' : '未登录'}
               </span>
             </div>
-          </div>
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            <label style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>目标工作区项目:</label>
-            <div style={{ display: 'flex', gap: '12px' }}>
-              <select
-                value={activeWorkspace}
-                onChange={(e) => setSelectedWorkspace(e.target.value)}
-                disabled={Boolean(isSessionRunning)}
-                style={{
-                  flex: 1,
-                  padding: '8px 12px',
-                  borderRadius: 'var(--radius-sm)',
-                  border: '1px solid var(--border-subtle)',
-                  backgroundColor: 'var(--bg-input, var(--bg-primary))',
-                  color: 'var(--text-primary)',
-                  fontSize: '0.9rem',
-                }}
-              >
-                {projects.map((p) => (
-                  <option key={p.id} value={p.root_path}>
-                    {p.name} ({p.root_path})
-                  </option>
-                ))}
-              </select>
-
-              {!isSessionRunning ? (
-                <button
-                  className="btn-primary"
-                  onClick={handleStartSession}
-                  disabled={actionLoading || !session?.loggedIn || projects.length === 0}
-                  style={{ padding: '8px 20px', fontSize: '0.85rem', whiteSpace: 'nowrap' }}
-                >
-                  {actionLoading ? '启动中...' : '开启远程会话'}
+            {!loggedIn ? (
+              <>
+                <div className="remote-form-grid">
+                  <input
+                    type="text"
+                    className="input"
+                    placeholder="用户名"
+                    value={username}
+                    onChange={(e) => setUsername(e.target.value)}
+                    autoComplete="username"
+                  />
+                  <input
+                    type="password"
+                    className="input"
+                    placeholder="密码"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    autoComplete="current-password"
+                  />
+                </div>
+                <div className="remote-actions">
+                  <span className="remote-hint">若无账号，请先注册并自动登录。</span>
+                  <div className="remote-actions-buttons">
+                    <button
+                      type="button"
+                      className="btn btn-ghost"
+                      onClick={handleRegister}
+                      disabled={authLoading}
+                    >
+                      {authLoading ? '处理中...' : '注册并登录'}
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-primary"
+                      onClick={handleLogin}
+                      disabled={authLoading}
+                    >
+                      {authLoading ? '登录中...' : '立即登录'}
+                    </button>
+                  </div>
+                </div>
+              </>
+            ) : (
+              <div className="remote-account">
+                <div className="remote-account-avatar" aria-hidden="true">
+                  {(session?.username || '?').slice(0, 1).toUpperCase()}
+                </div>
+                <div className="remote-account-info">
+                  <div className="remote-account-name">{session?.username}</div>
+                  <div className="remote-account-meta">已通过自建 Relay 鉴权，生成的配对码将绑定至该账号。</div>
+                </div>
+                <button type="button" className="btn btn-ghost" onClick={handleLogout}>
+                  退出登录
                 </button>
-              ) : (
-                <button
-                  className="btn-danger"
-                  onClick={handleStopSession}
-                  disabled={actionLoading}
-                  style={{
-                    padding: '8px 20px',
-                    fontSize: '0.85rem',
-                    whiteSpace: 'nowrap',
-                    backgroundColor: 'var(--status-offline, #ef4444)',
-                    color: '#ffffff',
-                    border: 'none',
-                    borderRadius: 'var(--radius-sm)',
-                    cursor: 'pointer',
+              </div>
+            )}
+          </section>
+
+          {/* 卡片 3: 远程工作区会话 */}
+          <section className="card remote-card">
+            <div className="remote-card-head">
+              <div className="remote-card-heading">
+                <h2 className="remote-card-title">远程工作区会话</h2>
+                <p className="remote-card-desc">选择工作区后开启远程会话，手机端输入配对码即可直连该工作区。</p>
+              </div>
+              <span className={`badge ${statusMeta.badge}`}>
+                <span className={`dot ${statusMeta.dot}`} />
+                {statusMeta.label}
+              </span>
+            </div>
+
+            <div className="remote-field">
+              <label className="form-label">目标工作区项目</label>
+              <WorkspaceSelect
+                projects={projects}
+                value={activeWorkspace}
+                onChange={setSelectedWorkspace}
+                disabled={isSessionRunning}
+                placeholder={projects.length === 0 ? '暂无工作区项目' : '选择工作区项目'}
+              />
+            </div>
+
+            {projects.length === 0 && (
+              <div className="remote-hint remote-hint-block">请先在左侧创建工作区项目，再开启远程会话。</div>
+            )}
+
+            <div className="remote-actions">
+              <span className="remote-hint">
+                {isSessionRunning
+                  ? `会话工作区：${runningWorkspace || '未知'}`
+                  : '开启后会在下方生成 4 位配对码，有效期内可重复配对。'}
+              </span>
+              <div className="remote-actions-buttons">
+                {!isSessionRunning ? (
+                  <button
+                    type="button"
+                    className="btn btn-primary"
+                    onClick={handleStartSession}
+                    disabled={actionLoading || !loggedIn || projects.length === 0}
+                  >
+                    {actionLoading ? '启动中...' : '开启远程会话'}
+                  </button>
+                ) : (
+                  <button type="button" className="btn btn-danger" onClick={handleStopSession} disabled={actionLoading}>
+                    {actionLoading ? '断开中...' : '断开连接并停止服务'}
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* 配对码醒目展示区 */}
+            {session?.status === 'waiting_pairing' && session.pairingCode && (
+              <div className="remote-pairing">
+                <span className="remote-pairing-hint">
+                  请在手机端打开 App，登录相同账号并输入下方 4 位配对码：
+                </span>
+                <div
+                  className="remote-pairing-code"
+                  onClick={() => handleCopyCode(session.pairingCode!)}
+                  title="点击复制"
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      handleCopyCode(session.pairingCode!);
+                    }
                   }}
                 >
-                  {actionLoading ? '断开中...' : '断开连接并停止服务'}
-                </button>
-              )}
-            </div>
-          </div>
-
-          {/* 配对码醒目展示区 */}
-          {session?.status === 'waiting_pairing' && session.pairingCode && (
-            <div
-              style={{
-                marginTop: '8px',
-                padding: '24px',
-                borderRadius: 'var(--radius-md)',
-                backgroundColor: 'var(--bg-elevated)',
-                border: '1px dashed var(--accent-purple, #6366f1)',
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '12px',
-              }}
-            >
-              <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
-                请在手机端打开 App，登录相同账号并输入下方 4 位配对码：
-              </span>
-              <div
-                style={{
-                  fontSize: '3.2rem',
-                  fontWeight: 700,
-                  letterSpacing: '12px',
-                  fontFamily: 'monospace',
-                  color: 'var(--accent-purple, #6366f1)',
-                  paddingLeft: '12px',
-                  userSelect: 'all',
-                }}
-              >
-                {session.pairingCode}
+                  {session.pairingCode}
+                </div>
+                <div className="remote-pairing-meta">
+                  <span className={remainingSeconds < 30 ? 'danger' : undefined}>
+                    有效时间剩余: {formatCountdown(remainingSeconds)}
+                  </span>
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-sm"
+                    onClick={() => handleCopyCode(session.pairingCode!)}
+                  >
+                    {copied ? '已复制' : '复制配对码'}
+                  </button>
+                </div>
               </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-                <span style={{ fontSize: '0.85rem', color: remainingSeconds < 30 ? '#ef4444' : 'var(--text-tertiary)' }}>
-                  有效时间剩余: {Math.floor(remainingSeconds / 60)} 分 {remainingSeconds % 60} 秒
+            )}
+
+            {/* 已连接状态说明 */}
+            {session?.status === 'connected' && (
+              <div className="remote-connected">
+                <div className="remote-connected-icon" aria-hidden="true">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M20 6L9 17l-5-5" />
+                  </svg>
+                </div>
+                <div className="remote-connected-info">
+                  <div className="remote-connected-title">手机端已建立双向管道</div>
+                  <div className="remote-connected-meta">
+                    {session.mobileDeviceName ? `已配对设备：${session.mobileDeviceName} · ` : ''}
+                    工作区子进程 PID: {session.pid ?? '活跃'} | 管道直通 mcode app-server --stdio
+                  </div>
+                </div>
+                <span className="badge badge-emerald">传输中</span>
+              </div>
+            )}
+          </section>
+        </div>
+
+        {/* 侧栏: 状态总览与使用说明 */}
+        <aside className="remote-side">
+          <section className="card remote-card">
+            <div className="remote-card-head">
+              <div className="remote-card-heading">
+                <h2 className="remote-card-title">连接状态</h2>
+              </div>
+            </div>
+            <ul className="remote-status-list">
+              <li>
+                <span className="dot dot-green" />
+                <span className="remote-status-label">中继服务器</span>
+                <span className="remote-status-value" title={relayUrl}>
+                  {relayHost}
                 </span>
-                <button
-                  className="btn-secondary"
-                  onClick={() => handleCopyCode(session.pairingCode!)}
-                  style={{ padding: '4px 12px', fontSize: '0.8rem' }}
-                >
-                  {copied ? '已复制' : '复制配对码'}
-                </button>
+              </li>
+              <li>
+                <span className={`dot ${loggedIn ? 'dot-green' : 'dot-gray'}`} />
+                <span className="remote-status-label">账号认证</span>
+                <span className="remote-status-value">{loggedIn ? session?.username : '未登录'}</span>
+              </li>
+              <li>
+                <span className={`dot ${statusMeta.dot}`} />
+                <span className="remote-status-label">远程会话</span>
+                <span className="remote-status-value">{statusMeta.label}</span>
+              </li>
+              <li>
+                <span className={`dot ${session?.status === 'connected' ? 'dot-green' : 'dot-gray'}`} />
+                <span className="remote-status-label">手机端</span>
+                <span className="remote-status-value">
+                  {session?.status === 'connected' ? session.mobileDeviceName || '已配对' : '未连接'}
+                </span>
+              </li>
+              <li>
+                <span className={`dot ${activeWorkspace ? 'dot-green' : 'dot-gray'}`} />
+                <span className="remote-status-label">目标工作区</span>
+                <span className="remote-status-value" title={activeWorkspace}>
+                  {activeWorkspace
+                    ? projects.find((p) => p.root_path === activeWorkspace)?.name || activeWorkspace
+                    : '未选择'}
+                </span>
+              </li>
+            </ul>
+          </section>
+
+          <section className="card remote-card">
+            <div className="remote-card-head">
+              <div className="remote-card-heading">
+                <h2 className="remote-card-title">使用说明</h2>
               </div>
             </div>
-          )}
-
-          {/* 已连接状态说明 */}
-          {session?.status === 'connected' && (
-            <div
-              style={{
-                padding: '16px',
-                borderRadius: 'var(--radius-md)',
-                backgroundColor: 'var(--bg-elevated)',
-                border: '1px solid var(--status-online, #22c55e)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-              }}
-            >
-              <div>
-                <div style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--text-primary)' }}>
-                  手机端已建立双向管道
-                </div>
-                <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginTop: '4px' }}>
-                  工作区子进程 PID: {session.pid ?? '活跃'} | 管道直通 mcode app-server --stdio
-                </div>
-              </div>
-              <span
-                style={{
-                  fontSize: '0.8rem',
-                  color: 'var(--status-online, #22c55e)',
-                  fontWeight: 600,
-                }}
-              >
-                传输中
-              </span>
-            </div>
-          )}
-        </section>
-
-        {/* 提示指南 */}
-        <section
-          style={{
-            fontSize: '0.8rem',
-            color: 'var(--text-tertiary)',
-            lineHeight: '1.6',
-            padding: '0 8px',
-          }}
-        >
-          <div>使用说明:</div>
-          <div>1. 确保公网或本地自建 Relay 中继服务正在正常运行。</div>
-          <div>2. 电脑端与手机端登录同一 Relay 账号。</div>
-          <div>3. 点击「开启远程会话」，将生成的 4 位配对码输入手机端 App 即可建立端到端通信。</div>
-          <div>4. 通信全程由中继透明转发，本地代码不落盘中继服务器，安全高效。</div>
-        </section>
+            <ol className="remote-guide">
+              <li>确保公网或本地自建 Relay 中继服务正在正常运行。</li>
+              <li>电脑端与手机端登录同一 Relay 账号。</li>
+              <li>点击「开启远程会话」，将生成的 4 位配对码输入手机端 App 即可建立端到端通信。</li>
+              <li>通信全程由中继透明转发，本地代码不落盘中继服务器，安全高效。</li>
+            </ol>
+          </section>
+        </aside>
       </div>
     </div>
   );

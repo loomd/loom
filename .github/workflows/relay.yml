@@ -42,7 +42,7 @@ jobs:
         working-directory: relay
 
   deploy:
-    name: Deploy to Server (agent.ccxcc.cn:9099)
+    name: Deploy to Server (https://agent.ccxcc.cn)
     needs: build-and-test
     if: (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master') && github.event_name != 'pull_request'
     runs-on: ubuntu-latest
@@ -51,7 +51,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Deploy via SSH & Docker Compose
+      - name: Deploy via SSH (nginx TLS + docker compose)
         uses: appleboy/ssh-action@v1.2.0
         if: ${{ env.HAS_DEPLOY_SECRET == 'true' }}
         env:
@@ -63,30 +63,27 @@ jobs:
           port: ${{ secrets.DEPLOY_PORT || 22 }}
           script: |
             set -e
-            APP_DIR="/opt/loom-relay"
-            echo "==> Deploying loom-relay to $APP_DIR"
-            mkdir -p $APP_DIR
-            cd $APP_DIR
+            export REPO_URL="https://github.com/${{ github.repository }}.git"
+            export APP_DIR="/opt/loom-relay"
+            export DOMAIN="agent.ccxcc.cn"
+            export ACME_EMAIL="${{ secrets.RELAY_ACME_EMAIL }}"
 
-            # If git repo exists, pull latest; otherwise clone
-            if [ -d ".git" ]; then
-              git fetch origin main
-              git reset --hard origin/main
-            else
-              git clone https://github.com/${{ github.repository }}.git .
+            # 首次部署：服务器上还没有仓库，先克隆再执行统一部署脚本
+            mkdir -p "$APP_DIR"
+            cd "$APP_DIR"
+            if [ ! -d ".git" ]; then
+              echo "==> Cloning repository"
+              git clone "$REPO_URL" .
             fi
-
             cd relay
-            echo "==> Starting containers via docker compose (port 9099:8443)..."
-            docker compose down || true
-            docker compose up -d --build
-            echo "==> Checking container status..."
-            docker compose ps
-            echo "==> Deployment successfully finished at agent.ccxcc.cn:9099"
+            bash deploy.sh
 
-      - name: Reminder if secrets are not configured
+      - name: Fail if deployment secrets are missing
         if: ${{ env.HAS_DEPLOY_SECRET != 'true' }}
         env:
           HAS_DEPLOY_SECRET: ${{ secrets.DEPLOY_KEY != '' && secrets.DEPLOY_HOST != '' }}
         run: |
-          echo "::notice title=Deployment Secret Reminder::To enable auto-deploy, configure GitHub Secrets: DEPLOY_HOST (default: agent.ccxcc.cn), DEPLOY_USER (e.g. root), DEPLOY_KEY (SSH private key), and optional DEPLOY_PORT (default: 22)."
+          echo "::error title=Deployment secrets missing::本项目仅通过 CI 自动部署。请在仓库 Settings → Secrets and variables → Actions 中配置: DEPLOY_HOST (默认 agent.ccxcc.cn)、DEPLOY_USER (默认 root)、DEPLOY_KEY (服务器 authorized_keys 对应的 SSH 私钥)、可选 DEPLOY_PORT (默认 22)、可选 RELAY_ACME_EMAIL (证书注册邮箱)。"
+          exit 1
+
+

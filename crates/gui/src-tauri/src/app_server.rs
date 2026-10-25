@@ -19,7 +19,7 @@ pub struct RelayConfig {
 impl Default for RelayConfig {
     fn default() -> Self {
         Self {
-            server_url: "ws://agent.ccxcc.cn:9099".to_string(),
+            server_url: "wss://agent.ccxcc.cn".to_string(),
             username: None,
             token: None,
             token_expires_at: None,
@@ -105,6 +105,9 @@ fn now_ms() -> u64 {
 
 // ── Config persistence ─────────────────────────────────────────────────────
 
+/// 历史版本默认中继地址（明文 ws + 9099 端口），仅用于配置迁移识别
+const LEGACY_RELAY_URL: &str = "ws://agent.ccxcc.cn:9099";
+
 fn get_config_path() -> std::path::PathBuf {
     if let Ok(dir) = std::env::var("MINIMAX_DATA_DIR") {
         let p = std::path::PathBuf::from(dir);
@@ -131,7 +134,11 @@ fn load_relay_config() -> RelayConfig {
     let path = get_config_path();
     if path.exists() {
         if let Ok(content) = std::fs::read_to_string(&path) {
-            if let Ok(cfg) = serde_json::from_str::<RelayConfig>(&content) {
+            if let Ok(mut cfg) = serde_json::from_str::<RelayConfig>(&content) {
+                // 历史默认地址为明文 ws + 9099 端口，已改由 nginx TLS 终止，统一迁移到 HTTPS 入口
+                if cfg.server_url == LEGACY_RELAY_URL {
+                    cfg.server_url = RelayConfig::default().server_url;
+                }
                 return cfg;
             }
         }

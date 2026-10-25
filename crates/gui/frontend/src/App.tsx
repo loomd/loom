@@ -658,7 +658,7 @@ function App() {
 							}} />
 						</div>
 						<div style={{ display: page === "remote" ? "flex" : "none", flexDirection: "column", flex: 1, minHeight: 0, overflow: "hidden" }}>
-							<RemoteConnectionPage projects={p.projects} active={page === "remote"} />
+							<RemoteConnectionPage projects={p.projects} active={page === "remote"} defaultProjectId={p.selectedProjectId} />
 						</div>
 					</>
 				}

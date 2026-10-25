@@ -6,7 +6,6 @@ import { TerminalPanel } from '../components/TerminalPanel';
 import { LayoutSelector } from '../components/LayoutSelector';
 import { FileExplorerPanel } from '../components/FileExplorerPanel';
 import { GitStatusBar } from '../components/GitStatusBar';
-import { RemoteSessionCard } from '../components/RemoteSessionCard';
 import { useToast } from '../ToastContext';
 import { useI18n } from '../I18nContext';
 import { TemplateModal } from './TemplatesPage';
@@ -670,7 +669,6 @@ const closeActiveByShortcut = useCallback(() => {
 				<h3 style={{ margin: 0, fontSize: '1.0rem', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
 					{t('proj.launcher.title') || 'Quick Spawn'}
               </h3>
-              <RemoteSessionCard workspaceDir={project.root_path} active={isVisible && activeTabId === 'overview' && !showGrid} />
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', width: '100%', paddingBottom: '10px' }}>
                  <button type="button"
                    onClick={() => handleAddTerminal()}

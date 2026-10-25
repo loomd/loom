@@ -5,13 +5,15 @@ services:
       dockerfile: Dockerfile
     container_name: loom-relay
     restart: unless-stopped
+    # 仅绑定回环地址：TLS 由宿主机 nginx 终止，对外统一走 https://agent.ccxcc.cn
+    # 容器内保持明文 HTTP/WS，不直接暴露到公网
     ports:
-      - "9099:8443"
+      - "127.0.0.1:9099:8443"
     environment:
       - PORT=8443
       - NODE_ENV=production
-      - JWT_SECRET=${JWT_SECRET:-loom_relay_production_secret_key_2026}
-      - CORS_ORIGIN=*
+      - JWT_SECRET=${JWT_SECRET:?JWT_SECRET 未设置，请先在 relay/.env 中写入强随机密钥}
+      - CORS_ORIGIN=${CORS_ORIGIN:-*}
     volumes:
       - relay_data:/app/data
     healthcheck:
