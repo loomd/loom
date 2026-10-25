@@ -36,6 +36,8 @@ export interface PairBindingResponse {
   paired: boolean;
   pairedAt: string | null;
   deviceName: string | null;
+  /** 绑定归属的设备标识：用于判断绑定是否属于本机 */
+  deviceId?: string | null;
 }
 
 export interface RelayMessage {

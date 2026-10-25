@@ -61,6 +61,7 @@ export default function ChatScreen() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputText, setInputText] = useState("");
   const [connected, setConnected] = useState(false);
+  const [authError, setAuthError] = useState<string | null>(null);
   const [pendingPermission, setPendingPermission] = useState<PermissionRequest | null>(null);
   const flatListRef = useRef<FlatList<ChatMessage>>(null);
   // 正在累积内容的 Agent 回复气泡
@@ -162,15 +163,25 @@ export default function ChatScreen() {
   useEffect(() => {
     const unsubStatus = onStatusChange((isConnected) => {
       setConnected(isConnected);
+      // 重新连上后清掉鉴权失败提示
+      if (isConnected) setAuthError(null);
     });
 
-    // 鉴权失败（未绑定 / 绑定失效 / 绑定到其他设备）：引导用户重新配对
+    // 鉴权失败（未绑定 / 绑定失效 / 绑定到其他设备）：
+    // 断连与鉴权拒绝是两件事，这里保留「连接中断 / 等待重连」状态，
+    // 由用户决定是否去重新配对，而不是直接把人丢到配对页。
     const unsubAuthError = onAuthError((reason) => {
-      Alert.alert(
-        "需要重新配对",
-        reason || "绑定已失效，请在桌面端生成新的配对码后重新输入",
-      );
-      router.replace("/pair");
+      const detail =
+        reason || "绑定已失效，请在桌面端点击「开启远程会话」生成新的配对码";
+      setAuthError(detail);
+      Alert.alert("绑定已失效", detail, [
+        {
+          text: "去重新配对",
+          onPress: () =>
+            router.replace({ pathname: "/pair", params: { reason: detail } }),
+        },
+        { text: "稍后再说", style: "cancel" },
+      ]);
     });
 
     const unsubMessage = onMessage((relayMsg: RelayMessage) => {
@@ -310,6 +321,27 @@ export default function ChatScreen() {
         onDisconnect={handleDisconnect}
       />
 
+      {/* 鉴权失败横幅：给出「重新配对」入口，而不是强制跳转 */}
+      {authError ? (
+        <View style={styles.authBanner}>
+          <Text style={styles.authBannerText} numberOfLines={2}>
+            {authError}
+          </Text>
+          <TouchableOpacity
+            style={styles.authBannerButton}
+            onPress={() =>
+              router.replace({
+                pathname: "/pair",
+                params: { reason: authError },
+              })
+            }
+            activeOpacity={0.7}
+          >
+            <Text style={styles.authBannerButtonText}>重新配对</Text>
+          </TouchableOpacity>
+        </View>
+      ) : null}
+
       {/* 权限确认审批卡片 */}
       {pendingPermission && (
         <View style={styles.permissionWrapper}>
@@ -390,6 +422,34 @@ const styles = StyleSheet.create({
   emptyText: {
     color: "#52525b",
     fontSize: 14,
+  },
+  authBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    backgroundColor: "#241a10",
+    borderBottomWidth: 1,
+    borderBottomColor: "#78350f",
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    gap: 12,
+  },
+  authBannerText: {
+    flex: 1,
+    color: "#fbbf24",
+    fontSize: 12,
+    lineHeight: 18,
+  },
+  authBannerButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 6,
+    backgroundColor: "#78350f",
+  },
+  authBannerButtonText: {
+    color: "#fef3c7",
+    fontSize: 12,
+    fontWeight: "600",
   },
   inputBar: {
     flexDirection: "row",
