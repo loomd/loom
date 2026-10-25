@@ -5,14 +5,20 @@ import { register, login, refreshToken, verifyToken } from "./auth.js";
 import {
   createPairingCode,
   verifyPairingCode,
+  getActivePairingSummaries,
 } from "./pairing.js";
-import { handleDesktopConnection, handleMobileConnection } from "./relay.js";
+import {
+  handleDesktopConnection,
+  handleMobileConnection,
+  getActiveSessionSummaries,
+} from "./relay.js";
 import {
   corsMiddleware,
   createRateLimiter,
   getClientIp,
 } from "./middleware.js";
-import { getDb } from "./db.js";
+import { getDb, getUserCount, getUserMap } from "./db.js";
+import { renderDashboardHtml } from "./dashboard.js";
 import type {
   ApiResponse,
   AuthRegisterRequest,
@@ -23,6 +29,7 @@ import type {
 // ---- 配置 ----
 
 const PORT = parseInt(process.env.PORT || "8443", 10);
+const START_TIME = Date.now();
 
 // 限流：每个 IP 每分钟最多 60 次请求
 const rateLimiter = createRateLimiter({
@@ -39,6 +46,11 @@ function jsonResponse<T>(
 ): void {
   res.writeHead(statusCode, { "Content-Type": "application/json" });
   res.end(JSON.stringify(body));
+}
+
+function htmlResponse(res: http.ServerResponse, html: string): void {
+  res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+  res.end(html);
 }
 
 function readBody(req: http.IncomingMessage): Promise<string> {
@@ -101,9 +113,54 @@ async function handleHttpRequest(
   const method = req.method || "GET";
 
   try {
+    // ---- Dashboard (Console UI) ----
+    if ((pathname === "/" || pathname === "/admin") && method === "GET") {
+      htmlResponse(res, renderDashboardHtml());
+      return;
+    }
+
     // ---- Health ----
     if (pathname === "/api/health" && method === "GET") {
       jsonResponse(res, 200, { ok: true, data: { status: "ok" } });
+      return;
+    }
+
+    // ---- System Status & Metrics (Used by Dashboard) ----
+    if (pathname === "/api/status" && method === "GET") {
+      const sessions = getActiveSessionSummaries();
+      const pairings = getActivePairingSummaries();
+      const totalUsers = getUserCount();
+      const userMap = getUserMap();
+
+      const sessionsWithNames = sessions.map((s) => ({
+        ...s,
+        username: userMap.get(s.userId) || `用户#${s.userId}`,
+      }));
+
+      const pairingsWithNames = pairings.map((p) => ({
+        ...p,
+        username: userMap.get(p.userId) || `用户#${p.userId}`,
+      }));
+
+      const desktopOnline = sessions.filter((s) => s.desktopOnline).length;
+      const mobileOnline = sessions.filter((s) => s.mobileOnline).length;
+      const bridgedChannels = sessions.filter((s) => s.channelBridged).length;
+
+      jsonResponse(res, 200, {
+        ok: true,
+        data: {
+          uptimeSeconds: Math.floor((Date.now() - START_TIME) / 1000),
+          metrics: {
+            desktopOnline,
+            mobileOnline,
+            bridgedChannels,
+            activeCodes: pairings.length,
+            totalUsers,
+          },
+          sessions: sessionsWithNames,
+          pairings: pairingsWithNames,
+        },
+      });
       return;
     }
 

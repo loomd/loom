@@ -225,3 +225,27 @@ function cleanupEmptySession(userId: number): void {
     sessions.delete(userId);
   }
 }
+
+export interface SessionSummary {
+  userId: number;
+  desktopOnline: boolean;
+  mobileOnline: boolean;
+  channelBridged: boolean;
+}
+
+export function getActiveSessionSummaries(): SessionSummary[] {
+  const list: SessionSummary[] = [];
+  for (const [userId, session] of sessions) {
+    const desktopOnline = session.desktopWs?.readyState === session.desktopWs?.OPEN;
+    const mobileOnline = session.mobileWs?.readyState === session.mobileWs?.OPEN;
+    if (desktopOnline || mobileOnline) {
+      list.push({
+        userId,
+        desktopOnline: Boolean(desktopOnline),
+        mobileOnline: Boolean(mobileOnline),
+        channelBridged: Boolean(desktopOnline && mobileOnline),
+      });
+    }
+  }
+  return list;
+}

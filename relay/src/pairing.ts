@@ -131,3 +131,26 @@ function cleanupExpired(): void {
 
 const cleanupTimer = setInterval(cleanupExpired, CLEANUP_INTERVAL_MS);
 cleanupTimer.unref(); // 不阻止进程退出
+
+export interface PairingSummary {
+  userId: number;
+  code: string;
+  expiresInSeconds: number;
+  createdAt: number;
+}
+
+export function getActivePairingSummaries(): PairingSummary[] {
+  const now = Date.now();
+  const list: PairingSummary[] = [];
+  for (const [code, entry] of pairings) {
+    if (entry.expiresAt > now) {
+      list.push({
+        userId: entry.userId,
+        code,
+        expiresInSeconds: Math.max(0, Math.floor((entry.expiresAt - now) / 1000)),
+        createdAt: entry.createdAt,
+      });
+    }
+  }
+  return list;
+}
