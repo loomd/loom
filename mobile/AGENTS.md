@@ -12,6 +12,7 @@ mobile/
 ├── app/          expo-router 文件系统路由（index/login/register/pair/chat/settings）
 ├── components/   ChatBubble / CodeBlock / ThinkingBlock / PermissionCard / StatusBar
 ├── services/     api.ts（HTTP）、websocket.ts（WS 连接管理）、storage.ts（本地持久化）
+├── scripts/      sync-version.mjs（版本号对齐）、build-apk.mjs（本地打包入口）
 ├── types/        与 relay/src/types.ts 对齐的类型
 ├── android/      **expo prebuild 生成目录，已被 .gitignore 排除，不入库**
 └── dist/         打包产物目录，已被 .gitignore 排除，不入库
@@ -71,18 +72,32 @@ mobile/
 
 ## 3. 易踩的坑（务必先读）
 
-### 3.1 版本号有两处，只改 `app.json` 等于没改
+### 3.1 版本号：单一来源 + 打包前强制对齐
 
-- **事实来源是 `mobile/app.json`**（`version` + `android.versionCode`）。
-- 但 `mobile/android/` 是 `expo prebuild` 生成目录且被 `.gitignore` 排除，
-  里面 `app/build.gradle` 的 `versionCode` / `versionName` **是写死的**。
-- 打包时 gradle 用的是 `build.gradle` 里的值 → **只改 `app.json`，打出来的包版本号不变**，
-  Android 会因 versionCode 未变拒绝覆盖安装，用户手机上的旧包继续生效（现场就是这么复现的）。
-- 改版本号的正确做法：
-  1. 改 `mobile/app.json`（入库，版本号事实来源）
-  2. 同步改 `mobile/android/app/build.gradle` 的 `versionCode` / `versionName`（本地生成目录）
-     或直接 `npx expo prebuild` 重新生成原生工程
-  3. 打包后用 `aapt2 dump badging` 核对 `versionCode` / `versionName`
+版本号在三处出现，**只有 `mobile/app.json` 是事实来源**：
+
+| 位置 | 字段 | 是否入库 |
+|---|---|---|
+| `mobile/app.json` | `expo.version` / `expo.android.versionCode` | ✅ 事实来源 |
+| `mobile/package.json` | `version` | ✅ 与 app.json 保持一致 |
+| `mobile/android/app/build.gradle` | `versionCode` / `versionName` | ❌ 生成目录，被 .gitignore 排除 |
+
+- `expo prebuild`（`@expo/config-plugins` 的 `withVersion`）会自动把 app.json 的版本写进
+  `build.gradle`；但**沿用旧原生目录**（不重新 prebuild）直接打包时，
+  `build.gradle` 里的值会停留在旧版本号 → 打出来的包 versionCode 没变 →
+  Android 拒绝覆盖安装 → 用户手机上的旧包继续生效（现场就是这么复现的）。
+- 因此**改版本号只改 `app.json` 一处**，其余由脚本对齐：
+
+```powershell
+cd mobile
+npm run sync:version    # 对齐 package.json 与 build.gradle（幂等）
+npm run check:version   # 只校验，不一致则退出码 1（CI 可用）
+npm run build:apk:local # 打包入口：自动先 sync 再 gradle，最后拷到 mobile/dist/
+```
+
+- 打包后务必核对：`aapt2 dump badging mobile\dist\loom-remote-release.apk | Select-String "^package:"`
+  → 应看到 `versionCode` 与 `versionName` 和 `app.json` 一致。
+- 别人拉代码后若需要原生工程，先 `npx expo prebuild --platform android`（版本号会自动带上）。
 
 ### 3.2 `thinking` 帧可能晚于首段正文到达
 
@@ -110,16 +125,24 @@ mobile/
 ## 4. 构建与打包
 
 ```powershell
-# 本地 release 打包（node_modules 与 Android SDK 需就绪）
-cd mobile\android
+# 推荐：统一入口（先同步版本号，再打包，最后拷到 dist/）
+cd mobile
 $env:ANDROID_HOME='E:\Develop\AndroidSDK'
-.\gradlew.bat assembleRelease
+npm run build:apk:local
 
-# 产物（dist 被 gitignore，需手动拷贝分发）
-mobile\android\app\build\outputs\apk\release\app-release.apk
-  -> mobile\dist\loom-remote-release.apk
+# 产物（dist 被 gitignore，不入库）
+mobile\dist\loom-remote-release.apk
 ```
 
+脚本入口：
+
+| 命令 | 作用 |
+|---|---|
+| `npm run sync:version` | 把 app.json 的版本号对齐到 package.json 与 build.gradle（幂等） |
+| `npm run check:version` | 只校验版本号一致性，不一致则退出码 1 |
+| `npm run build:apk:local` | sync → `gradlew assembleRelease` → 拷贝 APK 到 `mobile/dist/` 并回显版本号 |
+
+- 若原生工程被删改过，先 `npx expo prebuild --platform android` 重新生成再打包。
 - release 包复用 `signingConfigs.debug`（debug.keystore），**与历史包同签名**，可直接覆盖安装；
   正式分发前应换自有 keystore。
 - gradle 打包会顺带跑 `expo:lintVitalRelease`（lint）与 `createBundleReleaseJsAndAssets`（Metro 导出 JS bundle）。
@@ -139,7 +162,7 @@ mobile\android\app\build\outputs\apk\release\app-release.apk
   `cargo test -p loom-gui --bin loom-gui acp::tests`
 - 真实 `mcode acp` 端到端（需本机已登录 mcode，默认跳过）：
   `cargo test -p loom-gui --bin loom-gui acp::tests::test_live -- --ignored --nocapture`
-- 打包验证：`gradlew.bat assembleRelease` + `aapt2 dump badging` 核对版本号
+- 打包验证：`npm run build:apk:local` + `aapt2 dump badging` 核对版本号
 
 ---
 

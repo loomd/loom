@@ -1,6 +1,6 @@
 {
   "name": "loom-mobile",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "private": true,
   "main": "expo-router/entry",
   "scripts": {
@@ -8,6 +8,9 @@
     "android": "expo run:android",
     "build:apk": "eas build --platform android --profile preview",
     "build:prod": "eas build --platform android --profile production",
+    "build:apk:local": "node scripts/build-apk.mjs",
+    "sync:version": "node scripts/sync-version.mjs",
+    "check:version": "node scripts/sync-version.mjs --check",
     "ios": "expo run:ios"
   },
   "dependencies": {

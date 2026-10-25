@@ -37,6 +37,7 @@ graph TD
 - `crates/gui/src-tauri/`: Rust desktop wrapper logic, Tauri commands, and portable PTY integration.
 - `crates/gui/frontend/`: SPA Frontend using React 19, TypeScript, and Vite 8.
 - `e2e/`: End-to-end integration test suite driven by Vitest.
+- `mobile/`: React Native (Expo) remote-control client for Android. Its own rules live in `mobile/AGENTS.md` (verified ACP/relay protocol facts, version-number management, packaging workflow).
 - `specs/`: SDD feature-design files and specifications.
 - `.agents/`: Automation scripts and custom Agent skills.
 
