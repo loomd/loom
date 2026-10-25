@@ -41,6 +41,9 @@ jobs:
         run: npm run build
         working-directory: relay
 
+      - name: Validate deploy script syntax
+        run: bash -n relay/deploy.sh
+
   deploy:
     name: Deploy to Server (https://agent.ccxcc.cn)
     needs: build-and-test
