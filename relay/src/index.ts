@@ -109,10 +109,14 @@ function extractBearerToken(
 
 /**
  * 校验当前请求是否具备管理员权限。
- * 纯基于管理密钥认证（ADMIN_KEY 或 JWT_SECRET），不污染数据库表结构。
+ * 纯基于管理密钥认证（RELAY_ADMIN_KEY / ADMIN_KEY 或 JWT_SECRET），不污染数据库表结构。
  */
 function checkIsAdmin(req: http.IncomingMessage): boolean {
-  const configuredAdminKey = process.env.ADMIN_KEY || process.env.JWT_SECRET || "loom-admin-secret";
+  const configuredAdminKey =
+    process.env.RELAY_ADMIN_KEY ||
+    process.env.ADMIN_KEY ||
+    process.env.JWT_SECRET ||
+    "loom-admin-secret";
   const customAdminKey = req.headers["x-admin-key"] as string | undefined;
   if (customAdminKey && customAdminKey === configuredAdminKey) {
     return true;
@@ -267,7 +271,11 @@ async function handleHttpRequest(
     // ---- Admin: Login / Authenticate ----
     if (pathname === "/api/admin/login" && method === "POST") {
       const body = parseJson<{ adminKey?: string }>(await readBody(req));
-      const configuredAdminKey = process.env.ADMIN_KEY || process.env.JWT_SECRET || "loom-admin-secret";
+      const configuredAdminKey =
+        process.env.RELAY_ADMIN_KEY ||
+        process.env.ADMIN_KEY ||
+        process.env.JWT_SECRET ||
+        "loom-admin-secret";
 
       if (body.adminKey && body.adminKey === configuredAdminKey) {
         jsonResponse(res, 200, {

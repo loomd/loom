@@ -79,6 +79,16 @@ else
     log "relay/.env 已存在，沿用现有 JWT_SECRET"
 fi
 
+# 同步 RELAY_ADMIN_KEY 到 .env
+if [ -n "${RELAY_ADMIN_KEY:-}" ]; then
+    if grep -q "^RELAY_ADMIN_KEY=" .env 2>/dev/null; then
+        sed -i "s|^RELAY_ADMIN_KEY=.*|RELAY_ADMIN_KEY=${RELAY_ADMIN_KEY}|" .env
+    else
+        printf 'RELAY_ADMIN_KEY=%s\n' "$RELAY_ADMIN_KEY" >> .env
+    fi
+    log "已同步 RELAY_ADMIN_KEY 到 relay/.env"
+fi
+
 # ── 3. 启动 relay 容器 (仅绑定回环) ──────────────────────────────────────────
 log "启动 relay 容器 (127.0.0.1:9099 -> 8443)"
 docker compose down || true

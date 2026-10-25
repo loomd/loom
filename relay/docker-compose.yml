@@ -14,6 +14,7 @@ services:
       - NODE_ENV=production
       - JWT_SECRET=${JWT_SECRET:?JWT_SECRET 未设置，请先在 relay/.env 中写入强随机密钥}
       - CORS_ORIGIN=${CORS_ORIGIN:-*}
+      - RELAY_ADMIN_KEY=${RELAY_ADMIN_KEY:-}
     volumes:
       - relay_data:/app/data
     healthcheck:

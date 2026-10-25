@@ -69,6 +69,7 @@ jobs:
             export REPO_URL="https://github.com/${{ github.repository }}.git"
             export APP_DIR="/opt/loom-relay"
             export DOMAIN="agent.ccxcc.cn"
+            export RELAY_ADMIN_KEY="${{ secrets.RELAY_ADMIN_KEY || vars.RELAY_ADMIN_KEY }}"
 
             # 首次部署：服务器上还没有仓库，先克隆再执行统一部署脚本
             mkdir -p "$APP_DIR"

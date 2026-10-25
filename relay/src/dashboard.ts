@@ -433,42 +433,6 @@ export function renderDashboardHtml(): string {
       </div>
     </section>
 
-    <!-- Admin User Management Panel -->
-    <section class="panel" id="admin-panel">
-      <div class="panel-header">
-        <h2 class="panel-title">
-          <span>账号控制台 (User Management)</span>
-          <span id="admin-badge" class="badge badge-secondary">未解锁管理员</span>
-        </h2>
-        <div class="action-group" id="admin-top-actions">
-        </div>
-      </div>
-
-      <!-- 未解锁提示与表单 -->
-      <div id="admin-login-box" class="admin-auth-bar">
-        <span style="font-size: 0.85rem; color: var(--text-muted);">管理员密钥认证:</span>
-        <input type="password" id="admin-key-input" class="input-text" placeholder="输入 ADMIN_KEY 密钥解锁" />
-        <button class="btn btn-primary" onclick="handleAdminLogin()">解锁账号控制台</button>
-      </div>
-
-      <!-- 已解锁用户管理列表 -->
-      <div id="admin-users-table-container" style="display: none;" class="table-wrapper">
-        <table>
-          <thead>
-            <tr>
-              <th>ID</th>
-              <th>用户名</th>
-              <th>注册时间</th>
-              <th>管理操作</th>
-            </tr>
-          </thead>
-          <tbody id="users-tbody">
-            <tr><td colspan="4" class="empty-row">正在加载用户档案...</td></tr>
-          </tbody>
-        </table>
-      </div>
-    </section>
-
     <!-- Active Sessions -->
     <section class="panel">
       <div class="panel-header">
@@ -550,6 +514,42 @@ export function renderDashboardHtml(): string {
           <div class="info-label">健康探测接口</div>
           <div class="info-val">GET /api/health</div>
         </div>
+      </div>
+    </section>
+
+    <!-- Admin User Management Panel -->
+    <section class="panel" id="admin-panel">
+      <div class="panel-header">
+        <h2 class="panel-title">
+          <span>账号控制台 (User Management)</span>
+          <span id="admin-badge" class="badge badge-secondary">未解锁管理员</span>
+        </h2>
+        <div class="action-group" id="admin-top-actions">
+        </div>
+      </div>
+
+      <!-- 未解锁提示与表单 -->
+      <div id="admin-login-box" class="admin-auth-bar">
+        <span style="font-size: 0.85rem; color: var(--text-muted);">管理员密钥认证:</span>
+        <input type="password" id="admin-key-input" class="input-text" placeholder="输入 RELAY_ADMIN_KEY 密钥解锁" />
+        <button class="btn btn-primary" onclick="handleAdminLogin()">解锁账号控制台</button>
+      </div>
+
+      <!-- 已解锁用户管理列表 -->
+      <div id="admin-users-table-container" style="display: none;" class="table-wrapper">
+        <table>
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>用户名</th>
+              <th>注册时间</th>
+              <th>管理操作</th>
+            </tr>
+          </thead>
+          <tbody id="users-tbody">
+            <tr><td colspan="4" class="empty-row">正在加载用户档案...</td></tr>
+          </tbody>
+        </table>
       </div>
     </section>
 
