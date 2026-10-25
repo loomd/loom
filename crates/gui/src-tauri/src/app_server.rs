@@ -1,18 +1,61 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::fs;
-use std::path::PathBuf;
+use std::io::{BufRead, BufReader, Write};
 use std::process::{Child, Command, Stdio};
-use std::sync::{Mutex, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{SystemTime, UNIX_EPOCH};
+
+// ── Types ──────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct McodeAuthInfo {
-    pub is_logged_in: bool,
-    pub region: Option<String>,
-    pub status: String,
-    pub expires_at_ms: Option<u64>,
+pub struct RelayConfig {
+    pub server_url: String,
+    pub username: Option<String>,
+    pub token: Option<String>,
+    pub token_expires_at: Option<u64>,
+}
+
+impl Default for RelayConfig {
+    fn default() -> Self {
+        Self {
+            server_url: "ws://agent.ccxcc.cn:9099".to_string(),
+            username: None,
+            token: None,
+            token_expires_at: None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RelayAuthResponse {
+    pub ok: bool,
+    pub data: Option<RelayAuthData>,
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RelayAuthData {
+    pub token: String,
+    pub expires_at: u64,
+    pub username: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RelayPairResponse {
+    pub ok: bool,
+    pub data: Option<RelayPairData>,
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RelayPairData {
+    pub code: String,
+    pub expires_at: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -20,380 +63,354 @@ pub struct McodeAuthInfo {
 pub struct AppServerSessionInfo {
     pub status: String, // "stopped" | "starting" | "waiting_pairing" | "connected"
     pub pairing_code: Option<String>,
-    pub region: Option<String>,
-    pub workspace_dir: String,
+    pub workspace_dir: Option<String>,
     pub started_at_ms: Option<u64>,
     pub expires_at_ms: Option<u64>,
     pub pid: Option<u32>,
     pub mobile_device_name: Option<String>,
     pub message: Option<String>,
+    pub relay_url: Option<String>,
+    pub username: Option<String>,
+    pub logged_in: bool,
 }
+
+// ── Internal state ─────────────────────────────────────────────────────────
 
 struct ManagedSession {
     info: AppServerSessionInfo,
     child: Option<Child>,
-    desktop_device_id: String,
+    /// Flag set when WebSocket relay thread detects mobile connected
+    ws_connected: Arc<Mutex<bool>>,
+    /// Stop signal for the relay thread
+    stop_signal: Arc<Mutex<bool>>,
 }
 
 static SESSIONS: OnceLock<Mutex<HashMap<String, ManagedSession>>> = OnceLock::new();
+static RELAY_CONFIG: OnceLock<Mutex<RelayConfig>> = OnceLock::new();
 
 fn get_sessions_map() -> &'static Mutex<HashMap<String, ManagedSession>> {
     SESSIONS.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
-fn get_minimax_dir() -> Option<PathBuf> {
+fn get_relay_config() -> &'static Mutex<RelayConfig> {
+    RELAY_CONFIG.get_or_init(|| Mutex::new(RelayConfig::default()))
+}
+
+fn now_ms() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64
+}
+
+// ── Config persistence ─────────────────────────────────────────────────────
+
+fn get_config_path() -> std::path::PathBuf {
     if let Ok(dir) = std::env::var("MINIMAX_DATA_DIR") {
-        let p = PathBuf::from(dir);
+        let p = std::path::PathBuf::from(dir);
         if p.exists() {
-            return Some(p);
+            return p.join("loom-relay-config.json");
         }
     }
     if let Ok(userprofile) = std::env::var("USERPROFILE") {
-        let p = PathBuf::from(userprofile).join(".minimax");
+        let p = std::path::PathBuf::from(userprofile).join(".minimax");
         if p.exists() {
-            return Some(p);
+            return p.join("loom-relay-config.json");
         }
     }
     if let Ok(home) = std::env::var("HOME") {
-        let p = PathBuf::from(home).join(".minimax");
+        let p = std::path::PathBuf::from(home).join(".minimax");
         if p.exists() {
-            return Some(p);
+            return p.join("loom-relay-config.json");
         }
     }
-    None
+    std::path::PathBuf::from("loom-relay-config.json")
 }
 
-/// 读取或初始化稳定的 desktop_device_id
-fn get_or_create_device_id() -> String {
-    // 优先读取 MiniMax Agent 的 state.json
-    if let Ok(appdata) = std::env::var("APPDATA") {
-        let state_path = PathBuf::from(appdata)
-            .join("MiniMax Agent")
-            .join("remote-control")
-            .join("state.json");
-        if state_path.exists() {
-            if let Ok(content) = fs::read_to_string(&state_path) {
-                if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&content) {
-                    if let Some(id) = parsed.get("desktop_device_id").and_then(|v| v.as_str()) {
-                        return id.to_string();
-                    }
-                }
+fn load_relay_config() -> RelayConfig {
+    let path = get_config_path();
+    if path.exists() {
+        if let Ok(content) = std::fs::read_to_string(&path) {
+            if let Ok(cfg) = serde_json::from_str::<RelayConfig>(&content) {
+                return cfg;
             }
         }
     }
+    RelayConfig::default()
+}
 
-    // 次选在 .minimax/remote-control/state.json
-    if let Some(base_dir) = get_minimax_dir() {
-        let state_dir = base_dir.join("remote-control");
-        let state_path = state_dir.join("state.json");
-        if state_path.exists() {
-            if let Ok(content) = fs::read_to_string(&state_path) {
-                if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&content) {
-                    if let Some(id) = parsed.get("desktop_device_id").and_then(|v| v.as_str()) {
-                        return id.to_string();
-                    }
-                }
-            }
-        } else {
-            let new_id = generate_uuid();
-            let _ = fs::create_dir_all(&state_dir);
-            let val = serde_json::json!({ "desktop_device_id": new_id });
-            let _ = fs::write(state_path, val.to_string());
-            return new_id;
-        }
+fn save_relay_config(cfg: &RelayConfig) {
+    let path = get_config_path();
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
     }
-
-    "dd238609-0202-41ec-87d9-d35c10e3efb9".to_string()
-}
-
-fn generate_uuid() -> String {
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_nanos();
-    format!("{:08x}-{:04x}-4{:03x}-a{:03x}-{:012x}",
-        (now & 0xFFFFFFFF) as u32,
-        ((now >> 32) & 0xFFFF) as u16,
-        ((now >> 48) & 0x0FFF) as u16,
-        ((now >> 60) & 0x0FFF) as u16,
-        now as u64 & 0xFFFFFFFFFFFF
-    )
-}
-
-/// 读取本地 AccessToken
-fn get_local_access_token(region_dir: &str) -> Option<String> {
-    let base_dir = get_minimax_dir()?;
-    let auth_file = base_dir
-        .join("auth")
-        .join("prod")
-        .join(region_dir)
-        .join("mcode-public")
-        .join("auth.json");
-
-    if !auth_file.exists() {
-        return None;
+    if let Ok(json) = serde_json::to_string_pretty(cfg) {
+        let _ = std::fs::write(path, json);
     }
-
-    let content = fs::read_to_string(auth_file).ok()?;
-    let parsed: serde_json::Value = serde_json::from_str(&content).ok()?;
-    let records = parsed.get("records")?.as_object()?;
-    for record in records.values() {
-        if let Some(token) = record.get("accessToken").and_then(|t| t.as_str()) {
-            if !token.is_empty() {
-                return Some(token.to_string());
-            }
-        }
-    }
-    None
 }
 
-#[derive(Deserialize)]
-struct RawAuthState {
-    status: Option<String>,
-    region: Option<String>,
-    #[serde(rename = "expiresAtMs")]
-    expires_at_ms: Option<u64>,
+// ── HTTP helpers ───────────────────────────────────────────────────────────
+
+fn http_client() -> Result<reqwest::blocking::Client, String> {
+    reqwest::blocking::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .build()
+        .map_err(|e| format!("构建 HTTP 客户端失败: {}", e))
 }
 
-/// 识别当前机器上 MiniMax Code 的登录状态与所属区域 (cn / global)
+fn api_url(base: &str, path: &str) -> String {
+    let base = base.trim_end_matches('/');
+    // Convert ws:// to http:// and wss:// to https:// for API calls
+    let http_base = base
+        .replace("wss://", "https://")
+        .replace("ws://", "http://");
+    format!("{}{}", http_base, path)
+}
+
+// ── Tauri commands ─────────────────────────────────────────────────────────
+
+/// Get current relay configuration and login status
 #[tauri::command]
-pub fn get_mcode_auth_status() -> Result<McodeAuthInfo, String> {
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis() as u64;
+pub fn get_relay_status() -> Result<AppServerSessionInfo, String> {
+    let cfg = get_relay_config()
+        .lock()
+        .map_err(|e| format!("锁竞争异常: {}", e))?;
 
-    let base_dir = match get_minimax_dir() {
-        Some(d) => d,
-        None => {
-            return Ok(McodeAuthInfo {
-                is_logged_in: false,
-                region: None,
-                status: "not_installed".to_string(),
-                expires_at_ms: None,
-            });
-        }
-    };
+    // Check if there's an active session
+    let map = get_sessions_map()
+        .lock()
+        .map_err(|e| format!("锁竞争异常: {}", e))?;
 
-    let regions = [("cn", "cn"), ("en", "global")];
-    for (dir_name, region_label) in regions {
-        let state_file = base_dir
-            .join("auth")
-            .join("prod")
-            .join(dir_name)
-            .join("mcode-public")
-            .join("auth-state.json");
-
-        if state_file.exists() {
-            if let Ok(content) = fs::read_to_string(&state_file) {
-                if let Ok(parsed) = serde_json::from_str::<RawAuthState>(&content) {
-                    let status = parsed.status.unwrap_or_default();
-                    let exp = parsed.expires_at_ms.unwrap_or(0);
-                    let is_valid = status == "authenticated" && (exp == 0 || exp > now);
-                    if is_valid {
-                        let detected_region = parsed
-                            .region
-                            .filter(|r| !r.is_empty())
-                            .unwrap_or_else(|| region_label.to_string());
-                        return Ok(McodeAuthInfo {
-                            is_logged_in: true,
-                            region: Some(detected_region),
-                            status: "authenticated".to_string(),
-                            expires_at_ms: parsed.expires_at_ms,
-                        });
-                    }
+    // Find any active session
+    for sess in map.values() {
+        if sess.info.status != "stopped" {
+            let mut info = sess.info.clone();
+            // Check ws_connected flag from relay thread
+            if let Ok(connected) = sess.ws_connected.lock() {
+                if *connected && info.status == "waiting_pairing" {
+                    info.status = "connected".to_string();
+                    info.message = Some("手机端已成功连接".to_string());
                 }
             }
+            info.relay_url = Some(cfg.server_url.clone());
+            info.username = cfg.username.clone();
+            info.logged_in = cfg.token.is_some();
+            return Ok(info);
         }
     }
 
-    Ok(McodeAuthInfo {
-        is_logged_in: false,
-        region: None,
-        status: "logged_out".to_string(),
+    Ok(AppServerSessionInfo {
+        status: "stopped".to_string(),
+        pairing_code: None,
+        workspace_dir: None,
+        started_at_ms: None,
         expires_at_ms: None,
+        pid: None,
+        mobile_device_name: None,
+        message: None,
+        relay_url: Some(cfg.server_url.clone()),
+        username: cfg.username.clone(),
+        logged_in: cfg.token.is_some(),
     })
 }
 
-#[derive(Deserialize)]
-struct PairingCodeResponse {
-    pairing_code: Option<String>,
-    expires_in_s: Option<u64>,
-    base_resp: Option<BaseResp>,
+/// Update relay server URL
+#[tauri::command]
+pub fn set_relay_url(url: String) -> Result<(), String> {
+    let mut cfg = get_relay_config()
+        .lock()
+        .map_err(|e| format!("锁竞争异常: {}", e))?;
+    cfg.server_url = url;
+    save_relay_config(&cfg);
+    Ok(())
 }
 
-#[derive(Deserialize)]
-struct BaseResp {
-    status_code: Option<i32>,
-    status_msg: Option<String>,
-}
+/// Login to self-hosted relay server
+#[tauri::command]
+pub fn relay_login(server_url: String, username: String, password: String) -> Result<RelayAuthData, String> {
+    let client = http_client()?;
+    let url = api_url(&server_url, "/api/auth/login");
 
-#[derive(Deserialize)]
-struct BindingsResponse {
-    binding: Option<BindingDetail>,
-}
-
-#[derive(Deserialize)]
-struct BindingDetail {
-    state: Option<String>,
-    mobile_device_name: Option<String>,
-}
-
-/// 向 MiniMax 官方云端申请真实配对码
-fn request_official_pairing_code(token: &str, device_id: &str) -> Result<(String, u64), String> {
-    let client = reqwest::blocking::Client::builder()
-        .timeout(std::time::Duration::from_secs(8))
-        .build()
-        .map_err(|e| format!("构建 HTTP 客户端失败: {}", e))?;
-
-    let url = "https://agent.minimax.cn/minimax-cloud/api/v1/remote-control/pairing/code";
     let body = serde_json::json!({
-        "device_name": "Loom Desktop",
-        "device_id": device_id
+        "username": username,
+        "password": password
     });
 
     let res = client
-        .post(url)
+        .post(&url)
         .header("Content-Type", "application/json")
-        .header("Authorization", format!("Bearer {}", token))
-        .header("X-Device-Id", device_id)
-        .header("X-Mavis-Desktop-Channel", "desktop")
-        .header("User-Agent", "MiniMaxAgent")
         .json(&body)
         .send()
-        .map_err(|e| format!("请求官方云端配对码失败: {}", e))?;
-
-    let status = res.status();
-    if !status.is_success() {
-        let err_text = res.text().unwrap_or_default();
-        return Err(format!("官方云端返回错误 (HTTP {}): {}", status, err_text));
-    }
-
-    let parsed = res
-        .json::<PairingCodeResponse>()
-        .map_err(|e| format!("解析官方配对码响应失败: {}", e))?;
-
-    if let Some(base) = &parsed.base_resp {
-        if let Some(code) = base.status_code {
-            if code != 0 {
-                return Err(format!(
-                    "官方云端配对错误: {}",
-                    base.status_msg.as_deref().unwrap_or("未知错误")
-                ));
-            }
-        }
-    }
-
-    let code = parsed
-        .pairing_code
-        .ok_or_else(|| "官方云端响应中未包含配对码".to_string())?;
-    let exp_s = parsed.expires_in_s.unwrap_or(300);
-
-    Ok((code, exp_s))
-}
-
-/// 检查云端真实绑定状态
-fn check_cloud_binding_status(token: &str, device_id: &str) -> Option<(String, Option<String>)> {
-    let client = reqwest::blocking::Client::builder()
-        .timeout(std::time::Duration::from_secs(3))
-        .build()
-        .ok()?;
-
-    let url = "https://agent.minimax.cn/minimax-cloud/api/v1/remote-control/desktop/bindings";
-    let res = client
-        .get(url)
-        .header("Authorization", format!("Bearer {}", token))
-        .header("X-Device-Id", device_id)
-        .header("X-Mavis-Desktop-Channel", "desktop")
-        .header("User-Agent", "MiniMaxAgent")
-        .send()
-        .ok()?;
+        .map_err(|e| format!("连接中继服务器失败: {}", e))?;
 
     if !res.status().is_success() {
-        return None;
+        let status = res.status();
+        let err_text = res.text().unwrap_or_default();
+        return Err(format!("登录失败 (HTTP {}): {}", status, err_text));
     }
 
-    let parsed = res.json::<BindingsResponse>().ok()?;
-    if let Some(b) = parsed.binding {
-        let state = b.state.unwrap_or_default();
-        return Some((state, b.mobile_device_name));
+    let parsed: RelayAuthResponse = res
+        .json()
+        .map_err(|e| format!("解析登录响应失败: {}", e))?;
+
+    if !parsed.ok {
+        return Err(parsed.error.unwrap_or_else(|| "登录失败".to_string()));
     }
 
-    None
+    let data = parsed.data.ok_or("响应中缺少登录数据")?;
+
+    // Persist config
+    let mut cfg = get_relay_config()
+        .lock()
+        .map_err(|e| format!("锁竞争异常: {}", e))?;
+    cfg.server_url = server_url;
+    cfg.username = Some(data.username.clone());
+    cfg.token = Some(data.token.clone());
+    cfg.token_expires_at = Some(data.expires_at);
+    save_relay_config(&cfg);
+
+    Ok(data)
 }
 
-/// 获取当前工作区 app-server 的运行与配对状态（带云端状态联动）
+/// Register on self-hosted relay server
 #[tauri::command]
-pub fn get_app_server_status(workspace_dir: String) -> Result<AppServerSessionInfo, String> {
+pub fn relay_register(server_url: String, username: String, password: String) -> Result<RelayAuthData, String> {
+    let client = http_client()?;
+    let url = api_url(&server_url, "/api/auth/register");
+
+    let body = serde_json::json!({
+        "username": username,
+        "password": password
+    });
+
+    let res = client
+        .post(&url)
+        .header("Content-Type", "application/json")
+        .json(&body)
+        .send()
+        .map_err(|e| format!("连接中继服务器失败: {}", e))?;
+
+    if !res.status().is_success() {
+        let status = res.status();
+        let err_text = res.text().unwrap_or_default();
+        return Err(format!("注册失败 (HTTP {}): {}", status, err_text));
+    }
+
+    let parsed: RelayAuthResponse = res
+        .json()
+        .map_err(|e| format!("解析注册响应失败: {}", e))?;
+
+    if !parsed.ok {
+        return Err(parsed.error.unwrap_or_else(|| "注册失败".to_string()));
+    }
+
+    let data = parsed.data.ok_or("响应中缺少注册数据")?;
+
+    // Persist config
+    let mut cfg = get_relay_config()
+        .lock()
+        .map_err(|e| format!("锁竞争异常: {}", e))?;
+    cfg.server_url = server_url;
+    cfg.username = Some(data.username.clone());
+    cfg.token = Some(data.token.clone());
+    cfg.token_expires_at = Some(data.expires_at);
+    save_relay_config(&cfg);
+
+    Ok(data)
+}
+
+/// Logout from relay server
+#[tauri::command]
+pub fn relay_logout() -> Result<(), String> {
+    // Stop any active session first
+    let map = get_sessions_map()
+        .lock()
+        .map_err(|e| format!("锁竞争异常: {}", e))?;
+    for sess in map.values() {
+        if let Ok(mut stop) = sess.stop_signal.lock() {
+            *stop = true;
+        }
+    }
+    drop(map);
+
+    // Clear all sessions
     let mut map = get_sessions_map()
         .lock()
         .map_err(|e| format!("锁竞争异常: {}", e))?;
-
-    if let Some(sess) = map.get_mut(&workspace_dir) {
-        // 如果处于等待配对中，尝试探测云端是否已绑定
-        if sess.info.status == "waiting_pairing" {
-            if let Some(token) = get_local_access_token("cn") {
-                if let Some((state, device_name)) = check_cloud_binding_status(&token, &sess.desktop_device_id) {
-                    if state == "bound" || state == "connected" || device_name.is_some() {
-                        sess.info.status = "connected".to_string();
-                        sess.info.mobile_device_name = device_name;
-                        sess.info.message = Some("手机端已成功连接".to_string());
-                    }
-                }
-            }
+    for (_, mut sess) in map.drain() {
+        if let Some(mut child) = sess.child.take() {
+            let _ = child.kill();
         }
-        Ok(sess.info.clone())
-    } else {
-        Ok(AppServerSessionInfo {
-            status: "stopped".to_string(),
-            pairing_code: None,
-            region: None,
-            workspace_dir,
-            started_at_ms: None,
-            expires_at_ms: None,
-            pid: None,
-            mobile_device_name: None,
-            message: None,
-        })
     }
+
+    // Clear auth
+    let mut cfg = get_relay_config()
+        .lock()
+        .map_err(|e| format!("锁竞争异常: {}", e))?;
+    cfg.username = None;
+    cfg.token = None;
+    cfg.token_expires_at = None;
+    save_relay_config(&cfg);
+
+    Ok(())
 }
 
-/// 启动指定工作区的 app-server 远程控制会话并向官方云端申请真实配对码
+/// Start remote session: spawn mcode app-server and connect to relay
 #[tauri::command]
 pub fn start_app_server(workspace_dir: String) -> Result<AppServerSessionInfo, String> {
-    let auth = get_mcode_auth_status()?;
-    if !auth.is_logged_in {
-        return Err("当前未检测到有效的 MiniMax 登录凭证，请先在终端执行 mcode login 完成登录。".to_string());
+    let cfg = get_relay_config()
+        .lock()
+        .map_err(|e| format!("锁竞争异常: {}", e))?
+        .clone();
+
+    let token = cfg.token.as_ref()
+        .ok_or("未登录，请先在远程连接页面登录自建 Relay 账号")?
+        .clone();
+
+    let server_url = cfg.server_url.clone();
+
+    // Request pairing code from relay server
+    let client = http_client()?;
+    let pair_url = api_url(&server_url, "/api/pair/create");
+
+    let res = client
+        .post(&pair_url)
+        .header("Content-Type", "application/json")
+        .header("Authorization", format!("Bearer {}", token))
+        .send()
+        .map_err(|e| format!("请求配对码失败: {}", e))?;
+
+    if !res.status().is_success() {
+        let status = res.status();
+        let err_text = res.text().unwrap_or_default();
+        return Err(format!("请求配对码失败 (HTTP {}): {}", status, err_text));
     }
 
-    let region_dir = if auth.region.as_deref() == Some("global") { "en" } else { "cn" };
-    let token = get_local_access_token(region_dir)
-        .ok_or_else(|| "无法读取本地有效的 MiniMax AccessToken".to_string())?;
+    let parsed: RelayPairResponse = res
+        .json()
+        .map_err(|e| format!("解析配对码响应失败: {}", e))?;
 
-    let device_id = get_or_create_device_id();
+    if !parsed.ok {
+        return Err(parsed.error.unwrap_or_else(|| "请求配对码失败".to_string()));
+    }
 
-    // 1. 向官方云端请求真实 4 位数字配对码
-    let (pairing_code, expires_in_s) = request_official_pairing_code(&token, &device_id)?;
+    let pair_data = parsed.data.ok_or("响应中缺少配对码数据")?;
 
+    // Stop existing session if any
     let mut map = get_sessions_map()
         .lock()
         .map_err(|e| format!("锁竞争异常: {}", e))?;
 
-    // 如果已在运行，先停止旧实例
     if let Some(mut existing) = map.remove(&workspace_dir) {
+        if let Ok(mut stop) = existing.stop_signal.lock() {
+            *stop = true;
+        }
         if let Some(mut child) = existing.child.take() {
             let _ = child.kill();
         }
     }
 
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis() as u64;
-
-    let expires_at_ms = now + expires_in_s * 1000;
-
-    // 2. 启动本地后台 mcode app-server
+    // Spawn mcode app-server --stdio
     #[cfg(windows)]
     let mut cmd = {
         let mut c = Command::new("cmd");
@@ -416,42 +433,68 @@ pub fn start_app_server(workspace_dir: String) -> Result<AppServerSessionInfo, S
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
-        cmd.creation_flags(0x08000000);
+        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
     }
 
-    let child = match cmd.spawn() {
-        Ok(c) => c,
-        Err(e) => {
-            return Err(format!("启动 mcode app-server 失败: {}", e));
-        }
-    };
+    let mut child = cmd.spawn()
+        .map_err(|e| format!("启动 mcode app-server 失败: {}", e))?;
 
     let pid = child.id();
+    let child_stdin = child.stdin.take()
+        .ok_or("无法获取 app-server stdin")?;
+    let child_stdout = child.stdout.take()
+        .ok_or("无法获取 app-server stdout")?;
+
+    let ws_connected = Arc::new(Mutex::new(false));
+    let stop_signal = Arc::new(Mutex::new(false));
+
     let info = AppServerSessionInfo {
         status: "waiting_pairing".to_string(),
-        pairing_code: Some(pairing_code),
-        region: auth.region,
-        workspace_dir: workspace_dir.clone(),
-        started_at_ms: Some(now),
-        expires_at_ms: Some(expires_at_ms),
+        pairing_code: Some(pair_data.code.clone()),
+        workspace_dir: Some(workspace_dir.clone()),
+        started_at_ms: Some(now_ms()),
+        expires_at_ms: Some(pair_data.expires_at),
         pid: Some(pid),
         mobile_device_name: None,
-        message: Some("官方配对码已生成，请在手机端输入配对码".to_string()),
+        message: Some("配对码已生成，请在手机端输入配对码".to_string()),
+        relay_url: Some(server_url.clone()),
+        username: cfg.username.clone(),
+        logged_in: true,
     };
+
+    // Spawn relay bridge thread
+    let ws_connected_clone = ws_connected.clone();
+    let stop_signal_clone = stop_signal.clone();
+    let ws_url = format!(
+        "{}/ws/desktop?token={}",
+        server_url.trim_end_matches('/'),
+        token
+    );
+
+    std::thread::spawn(move || {
+        relay_bridge_thread(
+            ws_url,
+            child_stdin,
+            child_stdout,
+            ws_connected_clone,
+            stop_signal_clone,
+        );
+    });
 
     map.insert(
         workspace_dir,
         ManagedSession {
             info: info.clone(),
             child: Some(child),
-            desktop_device_id: device_id,
+            ws_connected,
+            stop_signal,
         },
     );
 
     Ok(info)
 }
 
-/// 停止指定工作区的 app-server 会话
+/// Stop the remote session
 #[tauri::command]
 pub fn stop_app_server(workspace_dir: String) -> Result<AppServerSessionInfo, String> {
     let mut map = get_sessions_map()
@@ -459,20 +502,243 @@ pub fn stop_app_server(workspace_dir: String) -> Result<AppServerSessionInfo, St
         .map_err(|e| format!("锁竞争异常: {}", e))?;
 
     if let Some(mut sess) = map.remove(&workspace_dir) {
+        // Signal relay thread to stop
+        if let Ok(mut stop) = sess.stop_signal.lock() {
+            *stop = true;
+        }
+        // Kill child process
         if let Some(mut child) = sess.child.take() {
             let _ = child.kill();
         }
     }
 
+    let cfg = get_relay_config()
+        .lock()
+        .map_err(|e| format!("锁竞争异常: {}", e))?;
+
     Ok(AppServerSessionInfo {
         status: "stopped".to_string(),
         pairing_code: None,
-        region: None,
-        workspace_dir,
+        workspace_dir: Some(workspace_dir),
         started_at_ms: None,
         expires_at_ms: None,
         pid: None,
         mobile_device_name: None,
         message: Some("已断开远程会话".to_string()),
+        relay_url: Some(cfg.server_url.clone()),
+        username: cfg.username.clone(),
+        logged_in: cfg.token.is_some(),
     })
+}
+
+/// Get status of the current session
+#[tauri::command]
+pub fn get_app_server_status(workspace_dir: String) -> Result<AppServerSessionInfo, String> {
+    let cfg = get_relay_config()
+        .lock()
+        .map_err(|e| format!("锁竞争异常: {}", e))?;
+
+    let map = get_sessions_map()
+        .lock()
+        .map_err(|e| format!("锁竞争异常: {}", e))?;
+
+    if let Some(sess) = map.get(&workspace_dir) {
+        let mut info = sess.info.clone();
+        // Check ws_connected flag from relay thread
+        if let Ok(connected) = sess.ws_connected.lock() {
+            if *connected && info.status == "waiting_pairing" {
+                info.status = "connected".to_string();
+                info.message = Some("手机端已成功连接".to_string());
+            }
+        }
+        info.relay_url = Some(cfg.server_url.clone());
+        info.username = cfg.username.clone();
+        info.logged_in = cfg.token.is_some();
+        Ok(info)
+    } else {
+        Ok(AppServerSessionInfo {
+            status: "stopped".to_string(),
+            pairing_code: None,
+            workspace_dir: Some(workspace_dir),
+            started_at_ms: None,
+            expires_at_ms: None,
+            pid: None,
+            mobile_device_name: None,
+            message: None,
+            relay_url: Some(cfg.server_url.clone()),
+            username: cfg.username.clone(),
+            logged_in: cfg.token.is_some(),
+        })
+    }
+}
+
+/// Initialize relay config from disk on startup
+pub fn init_relay_config() {
+    let cfg = load_relay_config();
+    let global = get_relay_config();
+    if let Ok(mut g) = global.lock() {
+        *g = cfg;
+    }
+}
+
+// ── WebSocket relay bridge thread ──────────────────────────────────────────
+
+/// Background thread that connects to the relay WebSocket and bridges
+/// stdin/stdout of the mcode app-server process.
+///
+/// Uses `tungstenite` for synchronous WebSocket communication paired with
+/// standard threads, matching the project-wide convention of avoiding
+/// async runtimes.
+fn relay_bridge_thread(
+    ws_url: String,
+    mut stdin: std::process::ChildStdin,
+    stdout: std::process::ChildStdout,
+    ws_connected: Arc<Mutex<bool>>,
+    stop_signal: Arc<Mutex<bool>>,
+) {
+    use std::sync::mpsc;
+    use std::time::Duration;
+    use tungstenite::{connect, Message};
+
+    let (tx_out, rx_out) = mpsc::channel::<String>();
+
+    // Thread: read lines from app-server stdout and send through channel
+    let stop_clone1 = stop_signal.clone();
+    let stdout_reader_thread = std::thread::spawn(move || {
+        let reader = BufReader::new(stdout);
+        for line in reader.lines() {
+            if let Ok(stopped) = stop_clone1.lock() {
+                if *stopped {
+                    break;
+                }
+            }
+            match line {
+                Ok(l) => {
+                    if tx_out.send(l).is_err() {
+                        break;
+                    }
+                }
+                Err(_) => break,
+            }
+        }
+    });
+
+    let mut retry_delay_ms = 1000u64;
+
+    while let Ok(stopped) = stop_signal.lock() {
+        if *stopped {
+            break;
+        }
+        drop(stopped);
+
+        eprintln!("[RELAY-BRIDGE] 正在连接中继 WebSocket: {}", ws_url);
+        match connect(&ws_url) {
+            Ok((mut socket, _response)) => {
+                eprintln!("[RELAY-BRIDGE] WebSocket 连接成功");
+                retry_delay_ms = 1000;
+
+                // Set read timeout on the underlying stream
+                match socket.get_ref() {
+                    tungstenite::stream::MaybeTlsStream::Plain(s) => {
+                        let _ = s.set_read_timeout(Some(Duration::from_millis(100)));
+                    }
+                    tungstenite::stream::MaybeTlsStream::NativeTls(s) => {
+                        let _ = s.get_ref().set_read_timeout(Some(Duration::from_millis(100)));
+                    }
+                    _ => {}
+                }
+
+                // Bridge loop
+                loop {
+                    if let Ok(stopped) = stop_signal.lock() {
+                        if *stopped {
+                            let _ = socket.close(None);
+                            break;
+                        }
+                    }
+
+                    // 1. Send all queued stdout lines to WebSocket
+                    while let Ok(line) = rx_out.try_recv() {
+                        if !line.trim().is_empty() {
+                            if let Err(e) = socket.send(Message::Text(line)) {
+                                eprintln!("[RELAY-BRIDGE] 发送消息到 WebSocket 失败: {}", e);
+                                break;
+                            }
+                        }
+                    }
+
+                    // 2. Read from WebSocket and write to stdin
+                    match socket.read() {
+                        Ok(msg) => match msg {
+                            Message::Text(text) => {
+                                // Check if this is a relay control message
+                                if let Ok(val) = serde_json::from_str::<serde_json::Value>(&text) {
+                                    if val.get("type").and_then(|v| v.as_str()) == Some("control") {
+                                        if let Some(event) = val.get("event").and_then(|v| v.as_str()) {
+                                            if event == "peer_connected" {
+                                                if let Ok(mut c) = ws_connected.lock() {
+                                                    *c = true;
+                                                }
+                                                eprintln!("[RELAY-BRIDGE] 手机端已连接");
+                                            } else if event == "peer_disconnected" {
+                                                if let Ok(mut c) = ws_connected.lock() {
+                                                    *c = false;
+                                                }
+                                                eprintln!("[RELAY-BRIDGE] 手机端已断开");
+                                            }
+                                        }
+                                        continue;
+                                    }
+                                }
+
+                                // Forward to app-server stdin
+                                if let Err(e) = writeln!(stdin, "{}", text) {
+                                    eprintln!("[RELAY-BRIDGE] 写入 stdin 失败: {}", e);
+                                    break;
+                                }
+                                let _ = stdin.flush();
+                            }
+                            Message::Binary(bin) => {
+                                if let Err(e) = stdin.write_all(&bin) {
+                                    eprintln!("[RELAY-BRIDGE] 写入 stdin 失败: {}", e);
+                                    break;
+                                }
+                                let _ = stdin.flush();
+                            }
+                            Message::Ping(p) => {
+                                let _ = socket.send(Message::Pong(p));
+                            }
+                            Message::Close(_) => {
+                                eprintln!("[RELAY-BRIDGE] 服务端关闭了 WebSocket");
+                                break;
+                            }
+                            _ => {}
+                        },
+                        Err(tungstenite::Error::Io(ref e))
+                            if e.kind() == std::io::ErrorKind::WouldBlock
+                                || e.kind() == std::io::ErrorKind::TimedOut =>
+                        {
+                            // Timeout, continue to next loop iteration
+                        }
+                        Err(e) => {
+                            eprintln!("[RELAY-BRIDGE] 读取 WebSocket 异常: {}", e);
+                            break;
+                        }
+                    }
+                }
+
+                if let Ok(mut c) = ws_connected.lock() {
+                    *c = false;
+                }
+            }
+            Err(e) => {
+                eprintln!("[RELAY-BRIDGE] 连接中继失败: {}, 将在 {}ms 后重试", e, retry_delay_ms);
+                std::thread::sleep(Duration::from_millis(retry_delay_ms));
+                retry_delay_ms = (retry_delay_ms * 2).min(30_000);
+            }
+        }
+    }
+
+    drop(stdin);
+    let _ = stdout_reader_thread.join();
 }

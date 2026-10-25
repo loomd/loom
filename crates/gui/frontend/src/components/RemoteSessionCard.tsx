@@ -1,11 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
-  getMcodeAuthStatus,
   getAppServerStatus,
   startAppServer,
   stopAppServer,
 } from '../api';
-import type { McodeAuthInfo, AppServerSessionInfo } from '../types';
+import type { AppServerSessionInfo } from '../types';
 import { useToast } from '../ToastContext';
 
 interface Props {
@@ -15,7 +14,6 @@ interface Props {
 
 export const RemoteSessionCard: React.FC<Props> = ({ workspaceDir, active = true }) => {
   const toast = useToast();
-  const [auth, setAuth] = useState<McodeAuthInfo | null>(null);
   const [session, setSession] = useState<AppServerSessionInfo | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
   const [copied, setCopied] = useState<boolean>(false);
@@ -33,13 +31,9 @@ export const RemoteSessionCard: React.FC<Props> = ({ workspaceDir, active = true
   useEffect(() => {
     if (!active || !workspaceDir) return;
     let cancelled = false;
-    Promise.all([
-      getMcodeAuthStatus(),
-      getAppServerStatus(workspaceDir),
-    ])
-      .then(([authRes, sessionRes]) => {
+    getAppServerStatus(workspaceDir)
+      .then((sessionRes) => {
         if (!cancelled && isMountedRef.current) {
-          setAuth(authRes);
           setSession(sessionRes);
         }
       })
@@ -52,7 +46,7 @@ export const RemoteSessionCard: React.FC<Props> = ({ workspaceDir, active = true
     };
   }, [active, workspaceDir]);
 
-  // 当处于等待配对时，自动轮询云端绑定状态
+  // 当处于等待配对时，自动轮询连接状态
   useEffect(() => {
     if (!active || !workspaceDir || session?.status !== 'waiting_pairing') return;
     const interval = setInterval(async () => {
@@ -89,7 +83,7 @@ export const RemoteSessionCard: React.FC<Props> = ({ workspaceDir, active = true
       if (isMountedRef.current) {
         setSession(res);
       }
-      toast.success('官方配对码已获取，请在手机端输入配对码');
+      toast.success('自建中继配对码已获取，请在手机端输入配对码');
     } catch (e: unknown) {
       const msg = typeof e === 'string' ? e : (e instanceof Error ? e.message : '启动远程会话失败');
       toast.error(msg);
@@ -132,9 +126,8 @@ export const RemoteSessionCard: React.FC<Props> = ({ workspaceDir, active = true
 
   const isRunning = session && session.status !== 'stopped';
   const isConnected = session?.status === 'connected';
-  const isLoggedIn = auth?.isLoggedIn;
-  const regionLabel = auth?.region === 'cn' ? '国内版 (cn)' : auth?.region === 'global' ? '海外版 (global)' : '未登录';
-  const remainingSec = Math.max(0, Math.floor(((session?.expiresAtMs ?? 0) - now) / 1000));
+  const isLoggedIn = session?.loggedIn;
+  const remainingSec = Math.max(0, Math.floor(((session?.expiresAtMs ?? 0) * ((session?.expiresAtMs ?? 0) < 10000000000 ? 1000 : 1) - now) / 1000));
 
   const formatCountdown = (s: number) => {
     const m = Math.floor(s / 60);
@@ -166,7 +159,7 @@ export const RemoteSessionCard: React.FC<Props> = ({ workspaceDir, active = true
           color: 'var(--text-primary)',
         }}
       >
-        <span>手机远程连接</span>
+        <span>自建中继远程连接</span>
         <span
           style={{
             fontSize: '0.72rem',
@@ -177,14 +170,14 @@ export const RemoteSessionCard: React.FC<Props> = ({ workspaceDir, active = true
             color: isLoggedIn ? 'var(--text-success, #22c55e)' : 'var(--text-danger, #ef4444)',
           }}
         >
-          {regionLabel}
+          {isLoggedIn ? `已登录: ${session?.username}` : '未登录中继'}
         </span>
       </div>
 
       {!isRunning ? (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
           <div style={{ fontSize: '0.76rem', color: 'var(--text-secondary)', lineHeight: '1.4' }}>
-            启动官方远程会话后，可在手机 MiniMax Code App 中输入云端配对码直连此工作区。
+            启动远程会话后，可在手机端 App 中输入 4 位配对码直连此工作区。
           </div>
           <button
             type="button"
@@ -200,11 +193,11 @@ export const RemoteSessionCard: React.FC<Props> = ({ workspaceDir, active = true
               opacity: isLoggedIn ? 1 : 0.6,
             }}
           >
-            {loading ? '正在请求官方云端配对码...' : '开启手机远程会话'}
+            {loading ? '正在请求自建中继配对码...' : '开启手机远程会话'}
           </button>
           {!isLoggedIn && (
             <div style={{ fontSize: '0.72rem', color: 'var(--text-warning, #eab308)' }}>
-              未检测到有效登录态，请先在终端运行 mcode login。
+              请先在左侧「远程连接」页面登录自建中继账号。
             </div>
           )}
         </div>
@@ -233,7 +226,7 @@ export const RemoteSessionCard: React.FC<Props> = ({ workspaceDir, active = true
                 display: 'inline-block',
               }}
             />
-            <span>已连接手机: {session.mobileDeviceName || '移动端已配对'}</span>
+            <span>已连接手机: {session?.mobileDeviceName || '移动端已配对'}</span>
           </div>
 
           <button
@@ -259,68 +252,58 @@ export const RemoteSessionCard: React.FC<Props> = ({ workspaceDir, active = true
               display: 'flex',
               flexDirection: 'column',
               alignItems: 'center',
-              justifyContent: 'center',
-              padding: '10px 8px',
+              padding: '12px 8px',
+              backgroundColor: 'var(--bg-input, rgba(0,0,0,0.2))',
               borderRadius: 'var(--radius-sm, 6px)',
-              backgroundColor: 'var(--bg-active, rgba(99, 102, 241, 0.08))',
               border: '1px dashed var(--accent-purple, #6366f1)',
-              gap: '4px',
             }}
           >
-            <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>
-              MiniMax 官方 4 位配对码
-              {remainingSec > 0 && ` (${formatCountdown(remainingSec)})`}
+            <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginBottom: '4px' }}>
+              请在手机端输入配对码
             </span>
-            <span
+            <div
+              onClick={handleCopyCode}
+              title="点击复制"
               style={{
-                fontSize: '1.7rem',
+                fontSize: '1.6rem',
                 fontWeight: 700,
-                letterSpacing: '8px',
-                color: 'var(--accent-purple, #6366f1)',
+                letterSpacing: '6px',
+                color: 'var(--accent-purple, #818cf8)',
+                cursor: 'pointer',
                 fontFamily: 'monospace',
                 userSelect: 'all',
-              }}
-            >
-              {session.pairingCode || '----'}
-            </span>
-            <button
-              type="button"
-              className="btn btn-ghost"
-              onClick={handleCopyCode}
-              style={{
-                fontSize: '0.72rem',
                 padding: '2px 8px',
-                height: '22px',
-                marginTop: '2px',
-                color: copied ? 'var(--text-success, #22c55e)' : 'var(--text-secondary)',
+                borderRadius: '4px',
               }}
             >
-              {copied ? '已复制' : '复制配对码'}
-            </button>
-          </div>
-
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              fontSize: '0.72rem',
-              color: 'var(--text-secondary)',
-            }}
-          >
-            <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-              <span
+              {session?.pairingCode || '----'}
+            </div>
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                marginTop: '6px',
+                fontSize: '0.72rem',
+                color: remainingSec <= 30 ? 'var(--text-danger, #ef4444)' : 'var(--text-tertiary)',
+              }}
+            >
+              <span>有效期剩余: {formatCountdown(remainingSec)}</span>
+              <button
+                type="button"
+                onClick={handleCopyCode}
                 style={{
-                  width: '6px',
-                  height: '6px',
-                  borderRadius: '50%',
-                  backgroundColor: 'var(--text-success, #22c55e)',
-                  display: 'inline-block',
+                  background: 'none',
+                  border: 'none',
+                  color: 'var(--text-accent, #818cf8)',
+                  cursor: 'pointer',
+                  padding: 0,
+                  fontSize: '0.72rem',
                 }}
-              />
-              等待手机输入配对码...
-            </span>
-            {session.pid && <span>PID: {session.pid}</span>}
+              >
+                {copied ? '已复制' : '复制'}
+              </button>
+            </div>
           </div>
 
           <button
@@ -336,10 +319,12 @@ export const RemoteSessionCard: React.FC<Props> = ({ workspaceDir, active = true
               borderColor: 'rgba(239, 68, 68, 0.2)',
             }}
           >
-            {loading ? '停止中...' : '取消并停止服务'}
+            {loading ? '正在取消...' : '取消远程会话'}
           </button>
         </div>
       )}
     </div>
   );
 };
+
+export default RemoteSessionCard;

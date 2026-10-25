@@ -228,13 +228,27 @@ export interface McodeAuthInfo {
 export interface AppServerSessionInfo {
   status: 'stopped' | 'starting' | 'waiting_pairing' | 'connected';
   pairingCode: string | null;
-  region: string | null;
-  workspaceDir: string;
+  workspaceDir: string | null;
   startedAtMs: number | null;
   expiresAtMs: number | null;
   pid: number | null;
   mobileDeviceName: string | null;
   message: string | null;
+  relayUrl: string | null;
+  username: string | null;
+  loggedIn: boolean;
+}
+
+export interface RelayAuthData {
+  token: string;
+  expiresAt: number;
+  username: string;
+}
+
+export interface RelayLoginRequest {
+  serverUrl: string;
+  username: string;
+  password: string;
 }
 
 

@@ -9,7 +9,7 @@ interface BottomPanelProps {
   selectedProjectId: string;
   onProjectSelect: (projectId: string) => void;
   compositeStates: Record<string, CompositeState>;
-  onNavigate?: (page: "workspace" | "settings" | "agents") => void;
+  onNavigate?: (page: "workspace" | "settings" | "agents" | "remote") => void;
   onRegisterProject?: () => void;
   onHeightChange?: (height: number) => void;
   page?: string;

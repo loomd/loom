@@ -38,11 +38,12 @@ import {
 	getRightSidebarWidth, setRightSidebarWidth as apiSetRightSidebarWidth,
 } from "./api";
 import { AgentManagementPage } from "./pages/AgentManagementPage";
+import RemoteConnectionPage from "./pages/RemoteConnectionPage";
 import { listen } from "@tauri-apps/api/event";
 import type { Template, AgentNotificationPayload } from "./types";
 import { projectPathKey } from "./utils";
 
-type Page = "workspace" | "settings" | "agents";
+type Page = "workspace" | "settings" | "agents" | "remote";
 
 function EmptyState({ onAdd, t }: { onAdd: () => void; t: (key: string) => string }) {
 	return (
@@ -581,6 +582,7 @@ function App() {
 						onProjectSelect={navigateToPage}
 						onSettingsClick={() => setPage("settings")}
 						onAgentsClick={() => setPage("agents")}
+						onRemoteClick={() => setPage("remote")}
 						onAddClick={() => p.setShowModal(true)}
 						onDragStart={p.handleDragStart} onDragOver={p.handleDragOver}
 						onDragLeave={p.handleDragLeave} onDrop={p.handleDrop} onDragEnd={p.handleDragEnd}
@@ -655,6 +657,9 @@ function App() {
 								}
 							}} />
 						</div>
+						<div style={{ display: page === "remote" ? "flex" : "none", flexDirection: "column", flex: 1, minHeight: 0, overflow: "hidden" }}>
+							<RemoteConnectionPage projects={p.projects} active={page === "remote"} />
+						</div>
 					</>
 				}
 				rightSidebar={
@@ -670,6 +675,7 @@ function App() {
 							onProjectSelect={navigateToPage}
 							onSettingsClick={() => setPage("settings")}
 							onAgentsClick={() => setPage("agents")}
+							onRemoteClick={() => setPage("remote")}
 							onAddClick={() => p.setShowModal(true)}
 							onDragStart={p.handleDragStart}
 							onDragOver={p.handleDragOver}

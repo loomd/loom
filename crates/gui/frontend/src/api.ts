@@ -619,7 +619,7 @@ export const setAgentNotificationEnabled = (enabled: boolean): Promise<void> =>
 	invoke("set_agent_notification_enabled", { enabled });
 
 // ─── Git Project Sync ──────────────────────────────────────
-import type { GitProjectStatus, GitPullResult, McodeAuthInfo, AppServerSessionInfo } from "./types";
+import type { GitProjectStatus, GitPullResult, AppServerSessionInfo, RelayAuthData } from "./types";
 
 export const getGitStatus = (
 	projectPath: string,
@@ -632,9 +632,29 @@ export const pullGitProject = (
 ): Promise<GitPullResult> =>
 	invoke("pull_git_project", { projectPath });
 
-// ─── MCode App Server & Remote Control ─────────────────────────
-export const getMcodeAuthStatus = (): Promise<McodeAuthInfo> =>
-	invoke("get_mcode_auth_status");
+// ─── Self-hosted Relay & Remote Control ─────────────────────────
+export const getRelayStatus = (): Promise<AppServerSessionInfo> =>
+	invoke("get_relay_status");
+
+export const setRelayUrl = (url: string): Promise<void> =>
+	invoke("set_relay_url", { url });
+
+export const relayLogin = (
+	serverUrl: string,
+	username: string,
+	password: string,
+): Promise<RelayAuthData> =>
+	invoke("relay_login", { serverUrl, username, password });
+
+export const relayRegister = (
+	serverUrl: string,
+	username: string,
+	password: string,
+): Promise<RelayAuthData> =>
+	invoke("relay_register", { serverUrl, username, password });
+
+export const relayLogout = (): Promise<void> =>
+	invoke("relay_logout");
 
 export const getAppServerStatus = (
 	workspaceDir: string,

@@ -3,7 +3,7 @@ import { useI18n } from "../I18nContext";
 import type { Project } from "../types";
 import type { CompositeState } from "../hooks/useProjectCompositeStates";
 
-type Page = "workspace" | "settings" | "agents";
+type Page = "workspace" | "settings" | "agents" | "remote";
 
 interface RightSidebarProps {
   projects: Project[];
@@ -20,6 +20,7 @@ interface RightSidebarProps {
   onNavigate?: (page: Page) => void;
   onSettingsClick?: () => void;
   onAgentsClick?: () => void;
+  onRemoteClick?: () => void;
   onRegisterProject?: () => void;
   onAddClick?: () => void;
   onDragStart?: (e: React.DragEvent, index: number) => void;
@@ -50,6 +51,7 @@ export default function RightSidebar({
   onDragLeave,
   onDrop,
   onDragEnd,
+  onRemoteClick,
 }: RightSidebarProps) {
   const { t } = useI18n();
 
@@ -57,6 +59,7 @@ export default function RightSidebar({
 
   const handleSettings = onSettingsClick || (() => onNavigate?.("settings"));
   const handleAgents = onAgentsClick || (() => onNavigate?.("agents"));
+  const handleRemote = onRemoteClick || (() => onNavigate?.("remote"));
   const handleAdd = onAddClick || onRegisterProject;
 
   return (
@@ -206,6 +209,42 @@ export default function RightSidebar({
               }}
             >
               {t("proj.sidebar.add")}
+            </span>
+          </button>
+        )}
+
+        {handleRemote && (
+          <button
+            className={`nav-item${page === "remote" ? " active" : ""}`}
+            onClick={handleRemote}
+            style={{
+              width: "100%",
+              textAlign: "left",
+              border: "1px solid transparent",
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              gap: "8px",
+              padding: "8px 8px",
+              borderRadius: "var(--radius-sm)",
+              transition:
+                "opacity 0.2s ease, transform 0.2s ease, border-color 0.2s ease, background-color 0.2s ease",
+            }}
+          >
+            <span
+              style={{
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+                flexGrow: 1,
+                fontWeight: 400,
+                display: "inline-flex",
+                alignItems: "center",
+                lineHeight: "1.2",
+                gap: "6px",
+              }}
+            >
+              远程连接
             </span>
           </button>
         )}

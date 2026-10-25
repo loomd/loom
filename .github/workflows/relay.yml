@@ -1,0 +1,92 @@
+name: Relay Server CI & Deploy
+
+on:
+  push:
+    paths:
+      - 'relay/**'
+      - '.github/workflows/relay.yml'
+    branches: [ "main", "master" ]
+  pull_request:
+    paths:
+      - 'relay/**'
+      - '.github/workflows/relay.yml'
+    branches: [ "main", "master" ]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    name: Build & Test Relay
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+          cache-dependency-path: relay/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+        working-directory: relay
+
+      - name: Build TypeScript
+        run: npm run build
+        working-directory: relay
+
+  deploy:
+    name: Deploy to Server (agent.ccxcc.cn:9099)
+    needs: build-and-test
+    if: (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master') && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Deploy via SSH & Docker Compose
+        uses: appleboy/ssh-action@v1.2.0
+        if: ${{ env.HAS_DEPLOY_SECRET == 'true' }}
+        env:
+          HAS_DEPLOY_SECRET: ${{ secrets.DEPLOY_KEY != '' && secrets.DEPLOY_HOST != '' }}
+        with:
+          host: ${{ secrets.DEPLOY_HOST || 'agent.ccxcc.cn' }}
+          username: ${{ secrets.DEPLOY_USER || 'root' }}
+          key: ${{ secrets.DEPLOY_KEY }}
+          port: ${{ secrets.DEPLOY_PORT || 22 }}
+          script: |
+            set -e
+            APP_DIR="/opt/loom-relay"
+            echo "==> Deploying loom-relay to $APP_DIR"
+            mkdir -p $APP_DIR
+            cd $APP_DIR
+
+            # If git repo exists, pull latest; otherwise clone
+            if [ -d ".git" ]; then
+              git fetch origin main
+              git reset --hard origin/main
+            else
+              git clone https://github.com/${{ github.repository }}.git .
+            fi
+
+            cd relay
+            echo "==> Starting containers via docker compose (port 9099:8443)..."
+            docker compose down || true
+            docker compose up -d --build
+            echo "==> Checking container status..."
+            docker compose ps
+            echo "==> Deployment successfully finished at agent.ccxcc.cn:9099"
+
+      - name: Reminder if secrets are not configured
+        if: ${{ env.HAS_DEPLOY_SECRET != 'true' }}
+        env:
+          HAS_DEPLOY_SECRET: ${{ secrets.DEPLOY_KEY != '' && secrets.DEPLOY_HOST != '' }}
+        run: |
+          echo "::notice title=Deployment Secret Reminder::To enable auto-deploy, configure GitHub Secrets: DEPLOY_HOST (default: agent.ccxcc.cn), DEPLOY_USER (e.g. root), DEPLOY_KEY (SSH private key), and optional DEPLOY_PORT (default: 22)."

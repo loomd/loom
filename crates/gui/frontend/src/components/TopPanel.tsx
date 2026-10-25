@@ -9,9 +9,9 @@ interface TopPanelProps {
   selectedProjectId: string;
   onProjectSelect: (projectId: string) => void;
   compositeStates: Record<string, CompositeState>;
-  onNavigate?: (page: "workspace" | "settings" | "agents") => void;
+  onNavigate?: (page: "workspace" | "settings" | "agents" | "remote") => void;
   onRegisterProject?: () => void;
-  page?: "workspace" | "settings" | "agents";
+  page?: "workspace" | "settings" | "agents" | "remote";
 }
 
 export function TopPanel({

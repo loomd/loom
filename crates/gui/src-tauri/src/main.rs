@@ -2188,6 +2188,9 @@ fn main() {
     pty::init_process_session_job();
     eprintln!("[Startup] process session job ready t=+{}ms", startup_elapsed_ms());
 
+    // 从磁盘加载自建 Relay 配置
+    app_server::init_relay_config();
+
     if let Ok(cmd) = std::env::var("TAURI_TEST_CMD") {
         let args_json = std::env::var("TAURI_TEST_ARGS").unwrap_or_else(|_| "{}".to_string());
         let res = execute_test_command(&cmd, &args_json);
@@ -2595,7 +2598,11 @@ fn main() {
             set_agent_notification_enabled,
             get_git_status,
             pull_git_project,
-            app_server::get_mcode_auth_status,
+            app_server::get_relay_status,
+            app_server::set_relay_url,
+            app_server::relay_login,
+            app_server::relay_register,
+            app_server::relay_logout,
             app_server::get_app_server_status,
             app_server::start_app_server,
             app_server::stop_app_server
