@@ -69,7 +69,6 @@ jobs:
             export REPO_URL="https://github.com/${{ github.repository }}.git"
             export APP_DIR="/opt/loom-relay"
             export DOMAIN="agent.ccxcc.cn"
-            export ACME_EMAIL="${{ secrets.RELAY_ACME_EMAIL }}"
 
             # 首次部署：服务器上还没有仓库，先克隆再执行统一部署脚本
             mkdir -p "$APP_DIR"
@@ -86,7 +85,7 @@ jobs:
         env:
           HAS_DEPLOY_SECRET: ${{ secrets.DEPLOY_KEY != '' && secrets.DEPLOY_HOST != '' }}
         run: |
-          echo "::error title=Deployment secrets missing::本项目仅通过 CI 自动部署。请在仓库 Settings → Secrets and variables → Actions 中配置: DEPLOY_HOST (默认 agent.ccxcc.cn)、DEPLOY_USER (默认 root)、DEPLOY_KEY (服务器 authorized_keys 对应的 SSH 私钥)、可选 DEPLOY_PORT (默认 22)、可选 RELAY_ACME_EMAIL (证书注册邮箱)。"
+          echo "::error title=Deployment secrets missing::本项目仅通过 CI 自动部署。请在仓库 Settings → Secrets and variables → Actions 中配置: DEPLOY_HOST (默认 agent.ccxcc.cn)、DEPLOY_USER (默认 root)、DEPLOY_KEY (服务器 authorized_keys 对应的 SSH 私钥)、可选 DEPLOY_PORT (默认 22)。"
           exit 1
 
 

@@ -11,20 +11,27 @@
 #     APP_DIR      部署目录      (默认 /opt/loom-relay)
 #     DOMAIN       对外域名      (默认 agent.ccxcc.cn)
 #     REPO_URL     仓库地址      (默认 https://github.com/loomd/loom.git)
-#     ACME_EMAIL   证书注册邮箱  (可选，缺省则无邮箱注册)
+#
+#   证书策略: 本脚本不签发证书，直接复用服务器上 nginx 已配置的证书
+#   （覆盖 ${DOMAIN} 的 *.ccxcc.cn 泛域名证书即可）。
 # ─────────────────────────────────────────────────────────────────────────────
 set -euo pipefail
 
 APP_DIR="${APP_DIR:-/opt/loom-relay}"
 DOMAIN="${DOMAIN:-agent.ccxcc.cn}"
 REPO_URL="${REPO_URL:-https://github.com/loomd/loom.git}"
-ACME_EMAIL="${ACME_EMAIL:-}"
 CERT_LINK="/etc/letsencrypt/live/${DOMAIN}"
-ACME_WEBROOT="/var/www/html"
 NGINX_DIR="/etc/nginx/conf.d"
 
 log()  { echo "==> $*"; }
 fail() { echo "!! $*" >&2; exit 1; }
+
+# 去除首尾空白（read 的 IFS 会自动吃掉首尾空白）
+trim() {
+    local s
+    IFS=$' \t\n' read -r s <<<"$1"
+    printf '%s' "$s"
+}
 
 # ── 0. 前置依赖 ─────────────────────────────────────────────────────────────
 for cmd in docker nginx openssl curl git; do
@@ -47,9 +54,7 @@ cd relay
 # ── 2. 准备 .env (JWT 密钥) ─────────────────────────────────────────────────
 if [ ! -f .env ]; then
     log "生成 relay/.env 与随机 JWT_SECRET"
-    # umask 必须限定在子 shell 内：077 会一路影响到后续步骤，使 certbot 创建的
-    # ACME 校验目录变成 0700（root 独占），nginx worker 读不到挑战文件，
-    # Let's Encrypt 校验时会收到 403。
+    # umask 限定在子 shell 内，避免影响脚本后续步骤
     (
         umask 077
         printf 'JWT_SECRET=%s\n' "$(openssl rand -hex 32)" > .env
@@ -117,38 +122,62 @@ cert_covers() {
 
 # ── 4.1 证书发现 ───────────────────────────────────────────────────────────
 # 列出服务器上"可能已经在使用"的证书，每行 "证书路径<TAB>私钥路径"
+#
+# 纯 bash 逐行解析 nginx -T 的输出，不依赖 awk/sed，避免各版本实现差异。
 find_server_certs() {
-    local conf d f
+    local conf line cert="" key="" value f
 
-    # (a) nginx 实际配置的证书 —— 最权威，直接反映这台服务器当前在用什么证书。
-    #     服务器上已有 *.ccxcc.cn 泛域名证书时，这条路径能把它找出来。
     conf="$(mktemp)"
     if nginx -T >"$conf" 2>/dev/null; then
-        awk '
-            /^[[:space:]]*#/ { next }
-            /ssl_certificate[ \t]+/ {
-                line = $0
-                sub(/^.*ssl_certificate[ \t]+/, "", line)
-                gsub(/[;"]/, "", line)
-                gsub(/^[[:space:]]+|[[:space:]]+$/, "", line)
-                if (line != "" && line != "none") cert = line
-                next
-            }
-            /ssl_certificate_key[ \t]+/ {
-                line = $0
-                sub(/^.*ssl_certificate_key[ \t]+/, "", line)
-                gsub(/[;"]/, "", line)
-                gsub(/^[[:space:]]+|[[:space:]]+$/, "", line)
-                if (line != "" && line != "none" && cert != "") {
-                    print cert "\t" line
-                    cert = ""
-                }
-            }
-        ' "$conf" | sort -u
-        rm -f "$conf"
+        echo "==> [证书发现] nginx -T 输出 $(wc -l <"$conf") 行" >&2
+    else
+        echo "==> [证书发现] nginx -T 失败，直接扫描 nginx 配置目录" >&2
+        : >"$conf"
+        for f in /etc/nginx/conf.d/*.conf /etc/nginx/sites-enabled/* /etc/nginx/snippets/*.conf; do
+            [ -f "$f" ] || continue
+            echo "# $f" >>"$conf"
+            cat "$f" >>"$conf"
+        done
     fi
 
+    # 诊断：把配置里所有 ssl_certificate 相关行打印出来，便于核对
+    echo "==> [证书发现] 配置中的 ssl_certificate 指令：" >&2
+    while IFS= read -r line; do
+        case "$line" in
+            *"ssl_certificate"*) echo "    ${line}" >&2 ;;
+        esac
+    done <"$conf"
+
+    # 逐行配对 ssl_certificate 与紧随其后的 ssl_certificate_key
+    while IFS= read -r line; do
+        case "$line" in
+            \#*) continue ;;
+        esac
+        case "$line" in
+            # ssl_certificate_key 必须先判断：它也包含 "ssl_certificate" 子串
+            *"ssl_certificate_key"*)
+                value="$(trim "${line#*ssl_certificate_key}")"
+                value="$(trim "${value%%;*}")"
+                value="$(trim "${value//\"/}")"
+                if [ -n "$cert" ] && [ -n "$value" ] && [ "$value" != "none" ]; then
+                    printf '%s\t%s\n' "$cert" "$value"
+                    cert=""
+                fi
+                ;;
+            *"ssl_certificate"*)
+                value="$(trim "${line#*ssl_certificate}")"
+                value="$(trim "${value%%;*}")"
+                value="$(trim "${value//\"/}")"
+                if [ -n "$value" ] && [ "$value" != "none" ]; then
+                    cert="$value"
+                fi
+                ;;
+        esac
+    done <"$conf"
+    rm -f "$conf"
+
     # (b) Let's Encrypt 常规目录
+    local d
     for d in /etc/letsencrypt/live/*/; do
         if [ -f "${d}fullchain.pem" ]; then
             printf '%s\t%s\n' "${d}fullchain.pem" "${d}privkey.pem"
@@ -156,9 +185,10 @@ find_server_certs() {
     done
 
     # (c) acme.sh
-    for f in /root/.acme.sh/*/*.fullchain.cer; do
-        [ -f "$f" ] || continue
-        printf '%s\t%s\n' "$f" "${f%.fullchain.cer}.key"
+    local f2
+    for f2 in /root/.acme.sh/*/*.fullchain.cer; do
+        [ -f "$f2" ] || continue
+        printf '%s\t%s\n' "$f2" "${f2%.fullchain.cer}.key"
     done
 }
 
@@ -169,8 +199,8 @@ ensure_cert() {
         return 0
     fi
 
-    # 优先复用服务器上已有的证书（如 *.ccxcc.cn 泛域名），
-    # 确认服务器上没有可用证书后，才走签发新证书的流程。
+    # 复用服务器上已有的证书（如 *.ccxcc.cn 泛域名）。
+    # 本项目不负责签发证书：服务器上的证书由运维侧维护。
     local cert key
     while IFS=$'\t' read -r cert key; do
         [ -n "$cert" ] || continue
@@ -214,33 +244,7 @@ ensure_cert() {
         fi
     done
 
-    # 没有可用证书 → 先装只监听 80 的 ACME 校验站点，再由 certbot 签发
-    log "未找到覆盖 ${DOMAIN} 的证书，签发新证书"
-    command -v certbot >/dev/null 2>&1 || {
-        log "安装 certbot"
-        apt-get update -qq && apt-get install -y -qq certbot
-    }
-    mkdir -p "${ACME_WEBROOT}/.well-known/acme-challenge"
-    # 校验目录必须对 nginx worker 可遍历可读，否则 Let's Encrypt 拉取挑战文件会得到 403。
-    # 目录若已存在且权限更严（如 0700），这里主动放开。
-    chmod 755 "${ACME_WEBROOT}/.well-known" 2>/dev/null || true
-    chmod 755 "${ACME_WEBROOT}/.well-known/acme-challenge" 2>/dev/null || true
-
-    # 仅 80 端口的临时校验站点，避免 443 引用不存在的证书导致 nginx -t 失败
-    rm -f "${NGINX_DIR}/loom-relay.conf"
-    install_vhost nginx/loom-relay-acme.conf loom-relay-acme.conf
-    reload_nginx
-
-    if [ -n "$ACME_EMAIL" ]; then
-        certbot certonly --webroot -w "$ACME_WEBROOT" --cert-name "$DOMAIN" \
-            -d "$DOMAIN" --non-interactive --agree-tos -m "$ACME_EMAIL"
-    else
-        certbot certonly --webroot -w "$ACME_WEBROOT" --cert-name "$DOMAIN" \
-            -d "$DOMAIN" --non-interactive --agree-tos --register-unsafely-without-email
-    fi
-
-    # 续期定时器（Ubuntu 官方 certbot 包自带，确保其处于启用状态）
-    systemctl enable --now certbot.timer >/dev/null 2>&1 || true
+    fail "未找到覆盖 ${DOMAIN} 的现有证书。本项目不签发证书，请确认服务器上 nginx 已为该域名配置 ssl_certificate / ssl_certificate_key（覆盖 ${DOMAIN} 的 *.ccxcc.cn 泛域名证书即可）。"
 }
 
 ensure_cert
