@@ -1879,6 +1879,7 @@ mod agent_monitor;
 mod notification;
 mod crash_shield;
 mod whats_new;
+mod app_server;
 
 fn get_window_state_path() -> std::path::PathBuf {
     let mut path = cstore::get_config_path();
@@ -2593,7 +2594,11 @@ fn main() {
             get_agent_notification_enabled,
             set_agent_notification_enabled,
             get_git_status,
-            pull_git_project
+            pull_git_project,
+            app_server::get_mcode_auth_status,
+            app_server::get_app_server_status,
+            app_server::start_app_server,
+            app_server::stop_app_server
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -619,7 +619,7 @@ export const setAgentNotificationEnabled = (enabled: boolean): Promise<void> =>
 	invoke("set_agent_notification_enabled", { enabled });
 
 // ─── Git Project Sync ──────────────────────────────────────
-import type { GitProjectStatus, GitPullResult } from "./types";
+import type { GitProjectStatus, GitPullResult, McodeAuthInfo, AppServerSessionInfo } from "./types";
 
 export const getGitStatus = (
 	projectPath: string,
@@ -631,5 +631,24 @@ export const pullGitProject = (
 	projectPath: string,
 ): Promise<GitPullResult> =>
 	invoke("pull_git_project", { projectPath });
+
+// ─── MCode App Server & Remote Control ─────────────────────────
+export const getMcodeAuthStatus = (): Promise<McodeAuthInfo> =>
+	invoke("get_mcode_auth_status");
+
+export const getAppServerStatus = (
+	workspaceDir: string,
+): Promise<AppServerSessionInfo> =>
+	invoke("get_app_server_status", { workspaceDir });
+
+export const startAppServer = (
+	workspaceDir: string,
+): Promise<AppServerSessionInfo> =>
+	invoke("start_app_server", { workspaceDir });
+
+export const stopAppServer = (
+	workspaceDir: string,
+): Promise<AppServerSessionInfo> =>
+	invoke("stop_app_server", { workspaceDir });
 
 

@@ -218,4 +218,23 @@ export interface GitPullResult {
   status: GitProjectStatus | null;
 }
 
+export interface McodeAuthInfo {
+  isLoggedIn: boolean;
+  region: string | null;
+  status: string;
+  expiresAtMs: number | null;
+}
+
+export interface AppServerSessionInfo {
+  status: 'stopped' | 'starting' | 'waiting_pairing' | 'connected';
+  pairingCode: string | null;
+  region: string | null;
+  workspaceDir: string;
+  startedAtMs: number | null;
+  expiresAtMs: number | null;
+  pid: number | null;
+  mobileDeviceName: string | null;
+  message: string | null;
+}
+
 

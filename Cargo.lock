@@ -2551,6 +2551,7 @@ dependencies = [
  "loom-core",
  "notify",
  "raw-window-handle",
+ "reqwest 0.12.28",
  "rfd",
  "rusqlite",
  "serde",
