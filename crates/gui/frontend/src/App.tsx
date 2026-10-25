@@ -646,7 +646,7 @@ function App() {
 							/>
 						</div>
 						<div style={{ display: page === "agents" ? "flex" : "none", flexDirection: "column", flex: 1, minHeight: 0, overflow: "hidden" }}>
-							<AgentManagementPage active={page === "agents"} onOpenTerminal={(cmd) => {
+							<AgentManagementPage active={page === "agents"} isSidebarCollapsed={actualCollapsed} onToggleSidebar={leftPanelEnabled ? () => setIsCollapsed(!isCollapsed) : undefined} onOpenTerminal={(cmd) => {
 								if (p.selectedProjectId) {
 									setPage("workspace");
 									setTimeout(() => {
@@ -658,7 +658,7 @@ function App() {
 							}} />
 						</div>
 						<div style={{ display: page === "remote" ? "flex" : "none", flexDirection: "column", flex: 1, minHeight: 0, overflow: "hidden" }}>
-							<RemoteConnectionPage projects={p.projects} active={page === "remote"} defaultProjectId={p.selectedProjectId} />
+							<RemoteConnectionPage projects={p.projects} active={page === "remote"} defaultProjectId={p.selectedProjectId} isSidebarCollapsed={actualCollapsed} onToggleSidebar={leftPanelEnabled ? () => setIsCollapsed(!isCollapsed) : undefined} />
 						</div>
 					</>
 				}

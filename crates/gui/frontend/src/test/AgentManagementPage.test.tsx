@@ -1,5 +1,5 @@
 import React from "react";
-import { render, waitFor } from "@testing-library/react";
+import { render, waitFor, fireEvent } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { I18nProvider } from "../I18nContext";
 import { ToastProvider } from "../ToastContext";
@@ -83,6 +83,44 @@ describe("AgentManagementPage", () => {
 
     const winCtrlBtns = container.querySelectorAll(".window-ctrl-btn");
     expect(winCtrlBtns.length).toBe(3);
+  });
+
+  it("左上角提供侧边栏折叠/展开按钮，行为与项目区一致", () => {
+    const onToggleSidebar = vi.fn();
+    const { container, rerender } = render(
+      <TestWrapper>
+        <AgentManagementPage active={true} isSidebarCollapsed={false} onToggleSidebar={onToggleSidebar} />
+      </TestWrapper>
+    );
+
+    const btn = container.querySelector(".sidebar-toggle-mini-btn") as HTMLButtonElement;
+    expect(btn).toBeTruthy();
+    // 侧边栏展开时显示折叠箭头
+    expect(btn.textContent).toBe("◀");
+    expect(btn.getAttribute("title")).toBe("折叠侧边栏");
+
+    fireEvent.click(btn);
+    expect(onToggleSidebar).toHaveBeenCalledTimes(1);
+
+    // 侧边栏折叠时显示展开箭头
+    rerender(
+      <TestWrapper>
+        <AgentManagementPage active={true} isSidebarCollapsed={true} onToggleSidebar={onToggleSidebar} />
+      </TestWrapper>
+    );
+    const collapsedBtn = container.querySelector(".sidebar-toggle-mini-btn") as HTMLButtonElement;
+    expect(collapsedBtn.textContent).toBe("▶");
+    expect(collapsedBtn.getAttribute("title")).toBe("展开侧边栏");
+  });
+
+  it("未启用侧边栏折叠时不渲染切换按钮", () => {
+    const { container } = render(
+      <TestWrapper>
+        <AgentManagementPage active={true} />
+      </TestWrapper>
+    );
+
+    expect(container.querySelector(".sidebar-toggle-mini-btn")).toBeNull();
   });
 
   it("当 active 为 true 时展示当前版本、检测最新版本并显示版本状态", async () => {

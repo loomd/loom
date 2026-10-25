@@ -4,11 +4,16 @@ import WindowControlButtons from '../components/WindowControlButtons';
 import { getAgentDiscoveryStatus, checkAgentLatestVersion, fetchProviderModels, configureOpencodeProvider, configureMcodeProvider, triggerInjectLoomSkills, getInjectedSkillPaths, getLoomSkillVersion, installLoomCli, getLoomCliStatus, getTemplates, createTemplate, importCliTool, getCliTools, openUrl } from '../api';
 import type { AgentDiscoveryStatus, CliInstallStatus, FetchedModel } from '../types';
 import { useToast } from '../ToastContext';
+import { useI18n } from '../I18nContext';
 
 interface AgentManagementPageProps {
   onOpenTerminal?: (cmd: string) => void;
   /** 页面是否处于激活状态（用于切回页面时重新检测环境与最新版本） */
   active?: boolean;
+  /** 左侧固定面板是否处于折叠状态（与项目区共用同一状态） */
+  isSidebarCollapsed?: boolean;
+  /** 点击左上角按钮切换左侧固定面板的折叠 / 展开 */
+  onToggleSidebar?: () => void;
 }
 
 interface LatestVersionState {
@@ -37,8 +42,9 @@ const STORAGE_KEY_PROTOCOL = 'loom_opencode_protocol';
 const STORAGE_KEY_BASE_URL = 'loom_opencode_base_url';
 const STORAGE_KEY_API_KEY = 'loom_opencode_api_key';
 
-export const AgentManagementPage: React.FC<AgentManagementPageProps> = ({ onOpenTerminal, active }) => {
+export const AgentManagementPage: React.FC<AgentManagementPageProps> = ({ onOpenTerminal, active, isSidebarCollapsed, onToggleSidebar }) => {
   const toast = useToast();
+  const { t } = useI18n();
 
   const [discovery, setDiscovery] = useState<AgentDiscoveryStatus | null>(null);
   const [refreshing, setRefreshing] = useState<boolean>(false);
@@ -400,17 +406,26 @@ export const AgentManagementPage: React.FC<AgentManagementPageProps> = ({ onOpen
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
-      {/* 顶部窗口拖拽栏，右侧放置窗口控制按钮 */}
+      {/* 顶部窗口拖拽栏，左上角为侧边栏折叠开关，右侧放置窗口控制按钮 */}
       <div
         data-tauri-drag-region
         style={{
           display: 'flex',
           alignItems: 'stretch',
-          justifyContent: 'flex-end',
+          justifyContent: 'space-between',
           height: '38px',
           flexShrink: 0,
         }}
       >
+        <div style={{ display: 'flex', gap: '2px', alignItems: 'center', alignSelf: 'stretch', paddingLeft: '4px' }}>
+          {onToggleSidebar && (
+            <button onClick={onToggleSidebar} className="sidebar-toggle-mini-btn"
+              title={isSidebarCollapsed ? t('proj.sidebar.expand') : t('proj.sidebar.collapse')}
+              style={{ marginLeft: '0px', marginRight: '0px' }}>
+              {isSidebarCollapsed ? "▶" : "◀"}
+            </button>
+          )}
+        </div>
         <div style={{ display: 'flex', gap: '2px', alignItems: 'stretch', alignSelf: 'stretch' }}>
           <WindowControlButtons />
         </div>

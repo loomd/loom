@@ -108,4 +108,54 @@ describe("RemoteConnectionPage", () => {
     expect(screen.getByText(/有效时间剩余/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "断开连接并停止服务" })).toBeInTheDocument();
   });
+
+  it("左上角提供侧边栏折叠/展开按钮，行为与项目区一致", () => {
+    const onToggleSidebar = vi.fn();
+    const { container, rerender } = render(
+      <TestWrapper>
+        <RemoteConnectionPage
+          projects={projects}
+          active
+          defaultProjectId="p1"
+          isSidebarCollapsed={false}
+          onToggleSidebar={onToggleSidebar}
+        />
+      </TestWrapper>
+    );
+
+    const btn = container.querySelector(".sidebar-toggle-mini-btn") as HTMLButtonElement;
+    expect(btn).toBeTruthy();
+    // 侧边栏展开时显示折叠箭头
+    expect(btn.textContent).toBe("◀");
+    expect(btn.getAttribute("title")).toBe("折叠侧边栏");
+
+    fireEvent.click(btn);
+    expect(onToggleSidebar).toHaveBeenCalledTimes(1);
+
+    // 侧边栏折叠时显示展开箭头
+    rerender(
+      <TestWrapper>
+        <RemoteConnectionPage
+          projects={projects}
+          active
+          defaultProjectId="p1"
+          isSidebarCollapsed={true}
+          onToggleSidebar={onToggleSidebar}
+        />
+      </TestWrapper>
+    );
+    const collapsedBtn = container.querySelector(".sidebar-toggle-mini-btn") as HTMLButtonElement;
+    expect(collapsedBtn.textContent).toBe("▶");
+    expect(collapsedBtn.getAttribute("title")).toBe("展开侧边栏");
+  });
+
+  it("未启用侧边栏折叠时不渲染切换按钮", () => {
+    const { container } = render(
+      <TestWrapper>
+        <RemoteConnectionPage projects={projects} active defaultProjectId="p1" />
+      </TestWrapper>
+    );
+
+    expect(container.querySelector(".sidebar-toggle-mini-btn")).toBeNull();
+  });
 });

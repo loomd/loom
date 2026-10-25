@@ -1900,15 +1900,48 @@ body.theme-day select.input option {
   overflow: hidden;
 }
 
-.remote-header {
+/* 顶部窗口拖拽栏（与「配置引导」页保持一致：38px，左折叠开关 / 右窗口控制按钮） */
+.remote-topbar {
   display: flex;
-  align-items: center;
-  gap: 16px;
-  padding: 12px 20px 12px 24px;
-  border-bottom: 1px solid var(--border-subtle);
-  background: var(--bg-sidebar);
+  align-items: stretch;
+  justify-content: space-between;
+  height: 38px;
   flex-shrink: 0;
+}
+.remote-topbar-left {
+  display: flex;
+  gap: 2px;
+  align-items: center;
+  align-self: stretch;
+  padding-left: 4px;
+}
+.remote-topbar-right {
+  display: flex;
+  gap: 2px;
+  align-items: stretch;
+  align-self: stretch;
+}
+
+/* 标题区（与「配置引导」页同构：左标题块 + 右状态区，跨满主体两列） */
+.remote-title-row {
+  grid-column: 1 / -1;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
   user-select: none;
+}
+.remote-title {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 600;
+  color: var(--text-primary);
+  cursor: default;
+}
+.remote-subtitle {
+  margin: 4px 0 0;
+  color: var(--text-secondary);
+  font-size: 14px;
 }
 .remote-header-text {
   display: flex;
@@ -1923,17 +1956,11 @@ body.theme-day select.input option {
   flex-wrap: wrap;
   justify-content: flex-end;
 }
-.remote-window-controls {
-  display: flex;
-  gap: 2px;
-  align-items: stretch;
-  align-self: stretch;
-}
 
 .remote-body {
   flex: 1;
   overflow-y: auto;
-  padding: 20px 24px 28px;
+  padding: 24px 24px 28px;
   display: grid;
   grid-template-columns: minmax(0, 1fr) 300px;
   gap: 20px;
@@ -2210,7 +2237,7 @@ body.theme-day select.input option {
   .remote-form-grid {
     grid-template-columns: 1fr;
   }
-  .remote-header {
+  .remote-title-row {
     flex-wrap: wrap;
   }
 }

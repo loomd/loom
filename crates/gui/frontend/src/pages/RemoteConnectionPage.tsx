@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import WindowControlButtons from '../components/WindowControlButtons';
 import WorkspaceSelect from '../components/WorkspaceSelect';
 import {
@@ -12,12 +13,17 @@ import {
 } from '../api';
 import type { AppServerSessionInfo, Project } from '../types';
 import { useToast } from '../ToastContext';
+import { useI18n } from '../I18nContext';
 
 interface RemoteConnectionPageProps {
   projects: Project[];
   active?: boolean;
   /** 当前工作区项目，作为远程会话工作区的默认选项 */
   defaultProjectId?: string;
+  /** 左侧固定面板是否处于折叠状态（与项目区共用同一状态） */
+  isSidebarCollapsed?: boolean;
+  /** 点击左上角按钮切换左侧固定面板的折叠 / 展开 */
+  onToggleSidebar?: () => void;
 }
 
 type StatusTone = 'green' | 'blue' | 'amber' | 'gray';
@@ -41,8 +47,11 @@ export const RemoteConnectionPage: React.FC<RemoteConnectionPageProps> = ({
   projects,
   active = true,
   defaultProjectId,
+  isSidebarCollapsed,
+  onToggleSidebar,
 }) => {
   const toast = useToast();
+  const { t } = useI18n();
   const isMountedRef = useRef<boolean>(true);
 
   // Relay 配置与认证状态
@@ -284,29 +293,49 @@ export const RemoteConnectionPage: React.FC<RemoteConnectionPageProps> = ({
 
   return (
     <div className="remote-page">
-      {/* 顶部标题栏 */}
-      <header className="remote-header" data-tauri-drag-region>
-        <div className="remote-header-text">
-          <h1 className="page-title">远程连接</h1>
-          <div className="page-subtitle">自建中继手机端远程控制与配对管理</div>
+      {/* 顶部窗口拖拽栏：左侧为侧边栏折叠开关，右侧为窗口控制按钮（与「配置引导」页一致） */}
+      <div className="remote-topbar" data-tauri-drag-region>
+        <div className="remote-topbar-left">
+          {onToggleSidebar && (
+            <button onClick={onToggleSidebar} className="sidebar-toggle-mini-btn"
+              title={isSidebarCollapsed ? t('proj.sidebar.expand') : t('proj.sidebar.collapse')}
+              style={{ marginLeft: '0px', marginRight: '0px' }}>
+              {isSidebarCollapsed ? "▶" : "◀"}
+            </button>
+          )}
         </div>
-        <div className="remote-header-badges">
-          <span className={`badge ${loggedIn ? 'badge-emerald' : 'badge-gray'}`}>
-            <span className={`dot ${loggedIn ? 'dot-green' : 'dot-gray'}`} />
-            {loggedIn ? `已登录 ${session?.username ?? ''}`.trim() : '未登录'}
-          </span>
-          <span className={`badge ${statusMeta.badge}`}>
-            <span className={`dot ${statusMeta.dot}`} />
-            {statusMeta.label}
-          </span>
-        </div>
-        <div className="remote-window-controls">
+        <div className="remote-topbar-right">
           <WindowControlButtons />
         </div>
-      </header>
+      </div>
 
       {/* 主体 */}
       <div className="remote-body">
+        {/* 标题区：左侧标题块 + 右侧状态徽章（与「配置引导」页同构） */}
+        <div className="remote-title-row" data-tauri-drag-region>
+          <div className="remote-header-text">
+            <h1
+              className="remote-title"
+              data-tauri-drag-region
+              onMouseDown={(e) => {
+                if (e.button === 0) {
+                  getCurrentWindow().startDragging();
+                }
+              }}
+            >远程连接</h1>
+            <p className="remote-subtitle" data-tauri-drag-region>自建中继手机端远程控制与配对管理</p>
+          </div>
+          <div className="remote-header-badges">
+            <span className={`badge ${loggedIn ? 'badge-emerald' : 'badge-gray'}`}>
+              <span className={`dot ${loggedIn ? 'dot-green' : 'dot-gray'}`} />
+              {loggedIn ? `已登录 ${session?.username ?? ''}`.trim() : '未登录'}
+            </span>
+            <span className={`badge ${statusMeta.badge}`}>
+              <span className={`dot ${statusMeta.dot}`} />
+              {statusMeta.label}
+            </span>
+          </div>
+        </div>
         <div className="remote-main">
           {/* 卡片 1: 自建 Relay 服务器地址配置 */}
           <section className="card remote-card">
