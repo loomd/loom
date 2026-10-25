@@ -2,7 +2,9 @@
  * 生成自建 Relay Server 的管理面板单文件 HTML
  */
 export function renderDashboardHtml(): string {
-  return `<!DOCTYPE html>
+  // 使用 String.raw 原样输出，避免模板字符串吞掉内嵌 JS 中的转义符（如 \'）。
+  // 一旦转义符被吃掉，内联脚本会整体语法错误，导致所有按钮失效且无任何提示。
+  return String.raw`<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8">
