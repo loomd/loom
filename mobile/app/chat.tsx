@@ -81,6 +81,27 @@ export default function ChatScreen() {
     ]);
   }, []);
 
+  // 思考过程增量：正文气泡还没开时先缓存；已经开了则并入该气泡的 <thinking> 块
+  const appendThinking = useCallback((text: string) => {
+    if (!text) return;
+    const activeId = activeAgentIdRef.current;
+    if (!activeId) {
+      thinkingRef.current += text;
+      return;
+    }
+    setMessages((prev) =>
+      prev.map((m) => {
+        if (m.id !== activeId) return m;
+        const matched = m.content.match(/<thinking>([\s\S]*?)<\/thinking>/);
+        if (matched) {
+          const head = `<thinking>${matched[1]}${text}</thinking>`;
+          return { ...m, content: head + m.content.slice(matched[0].length) };
+        }
+        return { ...m, content: `<thinking>${text}</thinking>\n${m.content}` };
+      }),
+    );
+  }, []);
+
   // 工具调用：同一个 toolCallId 的状态更新合并到同一条
   const appendToolCall = useCallback((payload: string) => {
     let toolCallId = "";
@@ -157,7 +178,7 @@ export default function ChatScreen() {
           return;
         }
         case "thinking": {
-          thinkingRef.current += relayMsg.payload;
+          appendThinking(relayMsg.payload);
           return;
         }
         case "tool_call": {
@@ -188,7 +209,7 @@ export default function ChatScreen() {
       unsubStatus();
       unsubMessage();
     };
-  }, [appendAgentText, appendToolCall, appendError]);
+  }, [appendAgentText, appendThinking, appendToolCall, appendError]);
 
   useEffect(() => {
     if (messages.length > 0) {

@@ -1,7 +1,10 @@
 import { useEffect } from "react";
 import { View, Text, StyleSheet, ActivityIndicator } from "react-native";
 import { useRouter } from "expo-router";
+import Constants from "expo-constants";
 import { getToken } from "@/services/storage";
+
+const APP_VERSION = Constants.expoConfig?.version ?? "0.0.0";
 
 export default function IndexScreen() {
   const router = useRouter();
@@ -35,7 +38,7 @@ export default function IndexScreen() {
   return (
     <View style={styles.container}>
       <Text style={styles.title}>Loom Remote</Text>
-      <Text style={styles.version}>v0.1.0</Text>
+      <Text style={styles.version}>v{APP_VERSION}</Text>
       <ActivityIndicator
         style={styles.spinner}
         size="small"
