@@ -54,7 +54,10 @@ mobile/
 ### 2.3 桌面端 → 手机端帧协议
 
 中继层是无状态字节管道（只拦截 `type === "control"`），协议翻译在
-`crates/gui/src-tauri/src/acp.rs`。手机端收到的帧类型：
+`crates/gui/src-tauri/src/acp.rs`；桌面端与中继的连接、账号配对、
+拉起并守护 `mcode acp` 子进程在 `crates/gui/src-tauri/src/relay_adapter.rs`
+（原名 `app_server.rs`，已按真实用途改名——**不要**按旧名去找）。
+手机端收到的帧类型：
 
 | type | 含义 | 手机端处理 |
 |---|---|---|

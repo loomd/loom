@@ -8,11 +8,11 @@ import {
   relayLogin,
   relayRegister,
   relayLogout,
-  startAppServer,
-  stopAppServer,
+  startRemoteSession,
+  stopRemoteSession,
   unbindMobile,
 } from '../api';
-import type { AppServerSessionInfo, Project } from '../types';
+import type { RemoteSessionInfo, Project } from '../types';
 import { useToast } from '../ToastContext';
 import { useI18n } from '../I18nContext';
 
@@ -68,7 +68,7 @@ export const RemoteConnectionPage: React.FC<RemoteConnectionPageProps> = ({
   const [authLoading, setAuthLoading] = useState<boolean>(false);
 
   // 会话状态
-  const [session, setSession] = useState<AppServerSessionInfo | null>(null);
+  const [session, setSession] = useState<RemoteSessionInfo | null>(null);
   const [selectedWorkspace, setSelectedWorkspace] = useState<string>('');
   const [actionLoading, setActionLoading] = useState<boolean>(false);
   const [copied, setCopied] = useState<boolean>(false);
@@ -254,7 +254,7 @@ export const RemoteConnectionPage: React.FC<RemoteConnectionPageProps> = ({
     }
     setActionLoading(true);
     try {
-      const res = await startAppServer(activeWorkspace);
+      const res = await startRemoteSession(activeWorkspace);
       setSession(res);
       toast.success(
         res.pairingCode
@@ -290,7 +290,7 @@ export const RemoteConnectionPage: React.FC<RemoteConnectionPageProps> = ({
     if (!target) return;
     setActionLoading(true);
     try {
-      const res = await stopAppServer(target);
+      const res = await stopRemoteSession(target);
       setSession(res);
       toast.success('远程会话已安全终止');
     } catch (e: unknown) {

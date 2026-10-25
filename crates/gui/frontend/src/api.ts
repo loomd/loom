@@ -619,7 +619,7 @@ export const setAgentNotificationEnabled = (enabled: boolean): Promise<void> =>
 	invoke("set_agent_notification_enabled", { enabled });
 
 // ─── Git Project Sync ──────────────────────────────────────
-import type { GitProjectStatus, GitPullResult, AppServerSessionInfo, RelayAuthData } from "./types";
+import type { GitProjectStatus, GitPullResult, RemoteSessionInfo, RelayAuthData } from "./types";
 
 export const getGitStatus = (
 	projectPath: string,
@@ -633,7 +633,7 @@ export const pullGitProject = (
 	invoke("pull_git_project", { projectPath });
 
 // ─── Self-hosted Relay & Remote Control ─────────────────────────
-export const getRelayStatus = (): Promise<AppServerSessionInfo> =>
+export const getRelayStatus = (): Promise<RemoteSessionInfo> =>
 	invoke("get_relay_status");
 
 export const setRelayUrl = (url: string): Promise<void> =>
@@ -656,20 +656,20 @@ export const relayRegister = (
 export const relayLogout = (): Promise<void> =>
 	invoke("relay_logout");
 
-export const getAppServerStatus = (
+export const getRemoteSessionStatus = (
 	workspaceDir: string,
-): Promise<AppServerSessionInfo> =>
-	invoke("get_app_server_status", { workspaceDir });
+): Promise<RemoteSessionInfo> =>
+	invoke("get_remote_session_status", { workspaceDir });
 
-export const startAppServer = (
+export const startRemoteSession = (
 	workspaceDir: string,
-): Promise<AppServerSessionInfo> =>
-	invoke("start_app_server", { workspaceDir });
+): Promise<RemoteSessionInfo> =>
+	invoke("start_remote_session", { workspaceDir });
 
-export const stopAppServer = (
+export const stopRemoteSession = (
 	workspaceDir: string,
-): Promise<AppServerSessionInfo> =>
-	invoke("stop_app_server", { workspaceDir });
+): Promise<RemoteSessionInfo> =>
+	invoke("stop_remote_session", { workspaceDir });
 
 /** 强制解绑手机端：解绑后手机端重连需要重新输入配对码 */
 export const unbindMobile = (): Promise<void> =>

@@ -225,7 +225,7 @@ export interface McodeAuthInfo {
   expiresAtMs: number | null;
 }
 
-export interface AppServerSessionInfo {
+export interface RemoteSessionInfo {
   status: 'stopped' | 'starting' | 'waiting_pairing' | 'waiting_mobile' | 'connecting' | 'connected';
   pairingCode: string | null;
   workspaceDir: string | null;

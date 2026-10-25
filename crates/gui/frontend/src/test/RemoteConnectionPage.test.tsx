@@ -6,7 +6,7 @@ import { ToastProvider } from "../ToastContext";
 import { DialogProvider } from "../DialogContext";
 import RemoteConnectionPage from "../pages/RemoteConnectionPage";
 import { invoke } from "@tauri-apps/api/core";
-import type { AppServerSessionInfo, Project } from "../types";
+import type { RemoteSessionInfo, Project } from "../types";
 
 const projects: Project[] = [
   {
@@ -25,7 +25,7 @@ const projects: Project[] = [
   },
 ];
 
-const stoppedSession: AppServerSessionInfo = {
+const stoppedSession: RemoteSessionInfo = {
   status: "stopped",
   pairingCode: null,
   workspaceDir: null,
@@ -50,7 +50,7 @@ function TestWrapper({ children }: { children: React.ReactNode }) {
   );
 }
 
-function renderPage(session: AppServerSessionInfo = stoppedSession) {
+function renderPage(session: RemoteSessionInfo = stoppedSession) {
   vi.mocked(invoke).mockImplementation(async (cmd: string) => {
     if (cmd === "get_relay_status") return session;
     return undefined;

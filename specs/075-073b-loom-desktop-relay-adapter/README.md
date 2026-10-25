@@ -17,9 +17,11 @@ updated_at: 2026-10-25T06:30:00.000000000Z
 # 075-073b-loom-desktop-relay-adapter: Loom 电脑端自建中继适配器与 mcode acp 协议适配 (Desktop Adapter)
 
 ## Overview
-在 Loom Rust 后端与前端中，实现连接自建 Relay Server 的适配器。完全替换现有的 MiniMax 官方云端配对链路（删除 `app_server.rs` 中对 `agent.minimax.cn` 的 API 调用），改为连接自建 Relay Server。负责本地拉起并守护当前工作区的 `mcode acp` 实例（stdin/stdout 上的 ACP / JSON-RPC 2.0 服务），在手机端简单信封与 ACP 标准协议之间做双向翻译。
+在 Loom Rust 后端与前端中，实现连接自建 Relay Server 的适配器。完全替换现有的 MiniMax 官方云端配对链路（删除 `relay_adapter.rs`（原 `app_server.rs`）中对 `agent.minimax.cn` 的 API 调用），改为连接自建 Relay Server。负责本地拉起并守护当前工作区的 `mcode acp` 实例（stdin/stdout 上的 ACP / JSON-RPC 2.0 服务），在手机端简单信封与 ACP 标准协议之间做双向翻译。
 
 > 协议更正（2026-10-25）：`mcode app-server --stdio` **不是** Agent 协议服务，它只暴露 `account/*`、`server/prepareRestart`、`desktopService/transport` 等底层运行时方法，**不实现** `session/new` / `session/prompt`。真正的 Agent 协议服务是 `mcode acp`（`mcode acp --help`：Run MiniMax Code as an Agent Client Protocol server over stdio）。桌面端必须拉起 `mcode acp`。
+
+> 文件改名（2026-10-25）：原 `crates/gui/src-tauri/src/app_server.rs` 已更名为 `crates/gui/src-tauri/src/relay_adapter.rs`。旧名会让人误以为它对接的是 `mcode app-server`，但该模块实际负责的是**自建 Relay 适配**（登录/配对/解绑 + 拉起并守护 `mcode acp`），ACP 协议翻译则在 `crates/gui/src-tauri/src/acp.rs`。对应的 Tauri 命令同步更名为 `start_remote_session` / `stop_remote_session` / `get_remote_session_status`。
 
 在侧边栏新增独立的「远程连接」页面（位于「+ 注册项目」按钮与「配置引导」之间），提供账号登录、中继服务器配置、一键启停、状态与配对码展示。一台电脑只支持一个远程手机连接。
 
@@ -60,7 +62,7 @@ updated_at: 2026-10-25T06:30:00.000000000Z
 - [x] `mcode acp` 进程崩溃后自动重启（最多 3 次，之后提示用户）。
 
 ### 删除旧代码
-- [x] 删除 `app_server.rs` 中所有 `agent.minimax.cn` 官方云端 API 调用。
+- [x] 删除 `relay_adapter.rs`（原 `app_server.rs`）中所有 `agent.minimax.cn` 官方云端 API 调用。
 - [x] 删除 `request_official_pairing_code()` 和 `check_cloud_binding_status()` 函数。
 - [x] 更新 RemoteSessionCard 组件或替换为新的远程连接页面组件。
 

@@ -48,18 +48,41 @@ export interface RelayControlMessage {
   data?: unknown;
 }
 
-export interface RelayDataMessage {
-  type: "data";
+/**
+ * 业务帧类型：桌面端 ↔ 手机端之间的 Loom 远程聊天帧协议。
+ *
+ * 中继层不解析业务语义，只做字节转发（唯一例外：`type === "control"` 的帧不转发）。
+ * 实际出现的帧类型没有 "data" 这种通用容器帧，全部是下面这些具名帧。
+ */
+export type RelayFrameType =
+  | "chat"
+  | "chat_end"
+  | "thinking"
+  | "tool_call"
+  | "permission_request"
+  | "permission_response"
+  | "error"
+  | "control"
+  | "ping"
+  | "pong";
+
+export interface RelayFrameMessage {
+  type: RelayFrameType;
   payload: string;
+  timestamp?: number;
 }
 
-export type RelayMessage = RelayControlMessage | RelayDataMessage;
+export type RelayMessage = RelayControlMessage | RelayFrameMessage;
 
 // ---- App-level session status (used by desktop GUI) ----
 
-export type AppServerSessionStatus =
+/** 桌面端远程会话状态，与 crates/gui/src-tauri/src/relay_adapter.rs 的 RemoteSessionInfo 对齐 */
+export type RemoteSessionStatus =
   | "stopped"
+  | "starting"
   | "waiting_pairing"
+  | "waiting_mobile"
+  | "connecting"
   | "connected";
 
 // ---- HTTP response envelope ----

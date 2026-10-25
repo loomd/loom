@@ -50,11 +50,11 @@ import React, { useState, useEffect } from "react";
 1. **区分 `mcode app-server` 与 `mcode acp`**：前者是运行时服务，后者才是 Agent 协议服务。接入前先跑 `mcode <cmd> --help` 看它到底暴露哪些方法，别凭名字猜。
 2. **ACP 握手要点**（已实测）：`initialize` 的 `params.protocolVersion` 必须是**数字** `1`（传字符串报 -32602）；顺序是 `initialize` → 收到响应 → `notifications/initialized` → `session/new`；`session/new` 返回的 `sessionId`（形如 `mvs_xxx`）是 `session/prompt` 的必需参数；正文以 `session/update` 的 `agent_message_chunk` 增量推送。
 3. **静默失败最危险**：报文格式错时手机端表现为"没反应"，没有报错日志。接入新协议时一定要先做「发一条 → 看对端是否真的执行」的单向验证，再往上叠 UI。
-4. **子进程 stderr 必须回收**：不回收会填满管道缓冲并阻塞子进程（原先 `app_server.rs` 就漏了这块）。
+4. **子进程 stderr 必须回收**：不回收会填满管道缓冲并阻塞子进程（原先 `app_server.rs` 就漏了这块，该文件现已改名为 `relay_adapter.rs`）。
 5. **别让心跳进入业务协议流**：中继层的保活帧要在适配层就挡掉。
 
 ### 相关文件
 - `crates/gui/src-tauri/src/acp.rs`
-- `crates/gui/src-tauri/src/app_server.rs`
+- `crates/gui/src-tauri/src/relay_adapter.rs`（原名 `app_server.rs`，已按真实用途改名）
 - `mobile/services/websocket.ts`、`mobile/app/chat.tsx`
 - `specs/073-custom-relay-mobile-remote-control/README.md`

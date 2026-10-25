@@ -1,3 +1,16 @@
+//! 自建 Relay 适配层（桌面端）
+//!
+//! 职责：管理桌面端与自建 Relay Server 的连接（登录 / 注册 / 配对 / 解绑），
+//! 拉起并守护当前工作区的 `mcode acp` 子进程，并在中继 WebSocket 与
+//! ACP（Agent Client Protocol）之间做双向翻译。
+//!
+//! **注意命名**：本模块历史上叫 `app_server.rs`，是为了对接官方的
+//! `mcode app-server --stdio`。但 `mcode app-server` 是**运行时服务**，只暴露
+//! `account/*`、`server/prepareRestart`、`desktopService/transport`，
+//! **不实现** `session/new` / `session/prompt`，无法承载 Agent 对话。
+//! 真正的 Agent 协议服务是 `mcode acp`（stdin/stdout 上的 ACP / JSON-RPC 2.0），
+//! 协议翻译在同目录的 `acp.rs`。这里改成 `relay_adapter.rs` 以免再次误用。
+
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Write};
@@ -87,7 +100,7 @@ pub struct RelayPairBindingResponse {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct AppServerSessionInfo {
+pub struct RemoteSessionInfo {
     /// stopped | starting | waiting_pairing | waiting_mobile | connecting | connected
     pub status: String,
     pub pairing_code: Option<String>,
@@ -107,7 +120,7 @@ pub struct AppServerSessionInfo {
 // ── Internal state ─────────────────────────────────────────────────────────
 
 struct ManagedSession {
-    info: AppServerSessionInfo,
+    info: RemoteSessionInfo,
     child: Option<Child>,
     /// Flag set when WebSocket relay thread detects mobile connected
     ws_connected: Arc<Mutex<bool>>,
@@ -297,7 +310,7 @@ fn refresh_binding_cache_async(server_url: &str, token: &str) {
 /// 关键点：**已绑定但手机端离线**不再退化成「等待配对」，
 /// 而是「等待手机端自动重连」——双端绑定一次即可，后续直接建联。
 fn apply_runtime_status(
-    info: &mut AppServerSessionInfo,
+    info: &mut RemoteSessionInfo,
     desktop_online: Option<bool>,
     mobile_online: bool,
 ) {
@@ -328,7 +341,7 @@ fn apply_runtime_status(
 
 /// Get current relay configuration and login status
 #[tauri::command]
-pub fn get_relay_status() -> Result<AppServerSessionInfo, String> {
+pub fn get_relay_status() -> Result<RemoteSessionInfo, String> {
     let cfg = get_relay_config()
         .lock()
         .map_err(|e| format!("锁竞争异常: {}", e))?;
@@ -359,7 +372,7 @@ pub fn get_relay_status() -> Result<AppServerSessionInfo, String> {
         }
     }
 
-    Ok(AppServerSessionInfo {
+    Ok(RemoteSessionInfo {
         status: "stopped".to_string(),
         pairing_code: None,
         workspace_dir: None,
@@ -533,7 +546,7 @@ pub fn relay_logout() -> Result<(), String> {
 
 /// Start remote session: spawn mcode acp and connect to relay
 #[tauri::command]
-pub fn start_app_server(workspace_dir: String) -> Result<AppServerSessionInfo, String> {
+pub fn start_remote_session(workspace_dir: String) -> Result<RemoteSessionInfo, String> {
     let cfg = get_relay_config()
         .lock()
         .map_err(|e| format!("锁竞争异常: {}", e))?
@@ -628,7 +641,7 @@ pub fn start_app_server(workspace_dir: String) -> Result<AppServerSessionInfo, S
         ),
     };
 
-    let info = AppServerSessionInfo {
+    let info = RemoteSessionInfo {
         status,
         pairing_code,
         workspace_dir: Some(workspace_dir.clone()),
@@ -748,7 +761,7 @@ pub fn unbind_mobile() -> Result<(), String> {
 
 /// Stop the remote session
 #[tauri::command]
-pub fn stop_app_server(workspace_dir: String) -> Result<AppServerSessionInfo, String> {
+pub fn stop_remote_session(workspace_dir: String) -> Result<RemoteSessionInfo, String> {
     let mut map = get_sessions_map()
         .lock()
         .map_err(|e| format!("锁竞争异常: {}", e))?;
@@ -768,7 +781,7 @@ pub fn stop_app_server(workspace_dir: String) -> Result<AppServerSessionInfo, St
         .lock()
         .map_err(|e| format!("锁竞争异常: {}", e))?;
 
-    Ok(AppServerSessionInfo {
+    Ok(RemoteSessionInfo {
         status: "stopped".to_string(),
         pairing_code: None,
         workspace_dir: Some(workspace_dir),
@@ -786,7 +799,7 @@ pub fn stop_app_server(workspace_dir: String) -> Result<AppServerSessionInfo, St
 
 /// Get status of the current session
 #[tauri::command]
-pub fn get_app_server_status(workspace_dir: String) -> Result<AppServerSessionInfo, String> {
+pub fn get_remote_session_status(workspace_dir: String) -> Result<RemoteSessionInfo, String> {
     let cfg = get_relay_config()
         .lock()
         .map_err(|e| format!("锁竞争异常: {}", e))?;
@@ -807,7 +820,7 @@ pub fn get_app_server_status(workspace_dir: String) -> Result<AppServerSessionIn
         info.logged_in = cfg.token.is_some();
         Ok(info)
     } else {
-        Ok(AppServerSessionInfo {
+        Ok(RemoteSessionInfo {
             status: "stopped".to_string(),
             pairing_code: None,
             workspace_dir: Some(workspace_dir),
