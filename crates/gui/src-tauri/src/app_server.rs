@@ -16,6 +16,9 @@ pub struct RelayConfig {
     pub username: Option<String>,
     pub token: Option<String>,
     pub token_expires_at: Option<u64>,
+    /// 账号与手机端的绑定状态缓存（以中继服务端为准，本地仅作展示与按钮可见性判断）。
+    #[serde(default)]
+    pub mobile_paired: bool,
 }
 
 impl Default for RelayConfig {
@@ -25,6 +28,7 @@ impl Default for RelayConfig {
             username: None,
             token: None,
             token_expires_at: None,
+            mobile_paired: false,
         }
     }
 }
@@ -62,10 +66,30 @@ pub struct RelayPairData {
     pub expires_at: u64,
 }
 
+/// 账号与手机端的绑定状态。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RelayPairBindingData {
+    pub paired: bool,
+    #[serde(default)]
+    pub paired_at: Option<String>,
+    #[serde(default)]
+    pub device_name: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RelayPairBindingResponse {
+    pub ok: bool,
+    pub data: Option<RelayPairBindingData>,
+    pub error: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AppServerSessionInfo {
-    pub status: String, // "stopped" | "starting" | "waiting_pairing" | "connected"
+    /// stopped | starting | waiting_pairing | waiting_mobile | connecting | connected
+    pub status: String,
     pub pairing_code: Option<String>,
     pub workspace_dir: Option<String>,
     pub started_at_ms: Option<u64>,
@@ -76,6 +100,8 @@ pub struct AppServerSessionInfo {
     pub relay_url: Option<String>,
     pub username: Option<String>,
     pub logged_in: bool,
+    /// 账号是否已与手机端完成绑定。已绑定后重连不再需要配对码。
+    pub mobile_paired: bool,
 }
 
 // ── Internal state ─────────────────────────────────────────────────────────
@@ -85,6 +111,9 @@ struct ManagedSession {
     child: Option<Child>,
     /// Flag set when WebSocket relay thread detects mobile connected
     ws_connected: Arc<Mutex<bool>>,
+    /// Flag set when the desktop's own relay WebSocket is alive.
+    /// `None` = 尚未建立过连接；`Some(true)` = 在线；`Some(false)` = 曾在线后掉线（正在重连）
+    desktop_online: Arc<Mutex<Option<bool>>>,
     /// Stop signal for the relay thread
     stop_signal: Arc<Mutex<bool>>,
 }
@@ -178,6 +207,105 @@ fn api_url(base: &str, path: &str) -> String {
     format!("{}{}", http_base, path)
 }
 
+/// 向中继申请一次性配对码（仅在账号尚未绑定手机端时使用）。
+fn request_pairing_code(server_url: &str, token: &str) -> Result<RelayPairData, String> {
+    let client = http_client()?;
+    let pair_url = api_url(server_url, "/api/pair/create");
+
+    let res = client
+        .post(&pair_url)
+        .header("Content-Type", "application/json")
+        .header("Authorization", format!("Bearer {}", token))
+        .send()
+        .map_err(|e| format!("请求配对码失败: {}", e))?;
+
+    if !res.status().is_success() {
+        let status = res.status();
+        let err_text = res.text().unwrap_or_default();
+        return Err(format!("请求配对码失败 (HTTP {}): {}", status, err_text));
+    }
+
+    let parsed: RelayPairResponse = res
+        .json()
+        .map_err(|e| format!("解析配对码响应失败: {}", e))?;
+
+    if !parsed.ok {
+        return Err(parsed.error.unwrap_or_else(|| "请求配对码失败".to_string()));
+    }
+
+    parsed.data.ok_or_else(|| "响应中缺少配对码数据".to_string())
+}
+
+/// 查询中继侧的账号绑定状态：是否已与手机端完成绑定。
+fn fetch_pair_binding(server_url: &str, token: &str) -> Result<bool, String> {
+    let client = http_client()?;
+    let url = api_url(server_url, "/api/pair/binding");
+
+    let res = client
+        .get(&url)
+        .header("Authorization", format!("Bearer {}", token))
+        .send()
+        .map_err(|e| format!("查询绑定状态失败: {}", e))?;
+
+    if !res.status().is_success() {
+        let status = res.status();
+        let err_text = res.text().unwrap_or_default();
+        return Err(format!("查询绑定状态失败 (HTTP {}): {}", status, err_text));
+    }
+
+    let parsed: RelayPairBindingResponse = res
+        .json()
+        .map_err(|e| format!("解析绑定状态响应失败: {}", e))?;
+
+    if !parsed.ok {
+        return Err(parsed.error.unwrap_or_else(|| "查询绑定状态失败".to_string()));
+    }
+
+    Ok(parsed.data.map(|d| d.paired).unwrap_or(false))
+}
+
+/// 查询绑定状态并写入本地缓存，供界面展示与按钮可见性判断。
+fn refresh_pair_binding_cache(server_url: &str, token: &str) -> bool {
+    let paired = fetch_pair_binding(server_url, token).unwrap_or(false);
+    if let Ok(mut cfg) = get_relay_config().lock() {
+        cfg.mobile_paired = paired;
+        save_relay_config(&cfg);
+    }
+    paired
+}
+
+/// 根据「桌面端在线状态」「手机端在线状态」「是否已绑定」推导会话状态。
+///
+/// 关键点：**已绑定但手机端离线**不再退化成「等待配对」，
+/// 而是「等待手机端自动重连」——双端绑定一次即可，后续直接建联。
+fn apply_runtime_status(
+    info: &mut AppServerSessionInfo,
+    desktop_online: Option<bool>,
+    mobile_online: bool,
+) {
+    if info.status == "stopped" || info.status == "starting" {
+        return;
+    }
+
+    if mobile_online {
+        info.status = "connected".to_string();
+        info.message = Some("手机端已成功连接".to_string());
+    } else if desktop_online == Some(false) {
+        // 桌面端曾连上过中继又掉线 → 正在重连（配对码不因重连而消失）
+        info.status = "connecting".to_string();
+        info.message = Some("桌面端正在重新连接中继服务器".to_string());
+    } else if info.mobile_paired {
+        info.status = "waiting_mobile".to_string();
+        info.message =
+            Some("手机端当前离线，等待其自动重连（已绑定，无需重新输入配对码）".to_string());
+    } else {
+        info.status = "waiting_pairing".to_string();
+        if info.pairing_code.is_some() {
+            info.message = Some("配对码已生成，请在手机端输入配对码".to_string());
+        }
+    }
+}
+
 // ── Tauri commands ─────────────────────────────────────────────────────────
 
 /// Get current relay configuration and login status
@@ -196,16 +324,17 @@ pub fn get_relay_status() -> Result<AppServerSessionInfo, String> {
     for sess in map.values() {
         if sess.info.status != "stopped" {
             let mut info = sess.info.clone();
-            // Check ws_connected flag from relay thread
-            if let Ok(connected) = sess.ws_connected.lock() {
-                if *connected && info.status == "waiting_pairing" {
-                    info.status = "connected".to_string();
-                    info.message = Some("手机端已成功连接".to_string());
-                }
-            }
+            let mobile_online = sess
+                .ws_connected
+                .lock()
+                .map(|c| *c)
+                .unwrap_or(false);
+            let desktop_online = sess.desktop_online.lock().map(|c| *c).unwrap_or(None);
+            apply_runtime_status(&mut info, desktop_online, mobile_online);
             info.relay_url = Some(cfg.server_url.clone());
             info.username = cfg.username.clone();
             info.logged_in = cfg.token.is_some();
+            info.mobile_paired = cfg.mobile_paired;
             return Ok(info);
         }
     }
@@ -222,6 +351,7 @@ pub fn get_relay_status() -> Result<AppServerSessionInfo, String> {
         relay_url: Some(cfg.server_url.clone()),
         username: cfg.username.clone(),
         logged_in: cfg.token.is_some(),
+        mobile_paired: cfg.mobile_paired,
     })
 }
 
@@ -277,11 +407,15 @@ pub fn relay_login(server_url: String, username: String, password: String) -> Re
     let mut cfg = get_relay_config()
         .lock()
         .map_err(|e| format!("锁竞争异常: {}", e))?;
-    cfg.server_url = server_url;
+    cfg.server_url = server_url.clone();
     cfg.username = Some(data.username.clone());
     cfg.token = Some(data.token.clone());
     cfg.token_expires_at = Some(data.expires_at);
     save_relay_config(&cfg);
+    drop(cfg);
+
+    // 登录后同步一次绑定状态：已绑定的账号开启会话时不再生成配对码
+    refresh_pair_binding_cache(&server_url, &data.token);
 
     Ok(data)
 }
@@ -327,11 +461,15 @@ pub fn relay_register(server_url: String, username: String, password: String) ->
     let mut cfg = get_relay_config()
         .lock()
         .map_err(|e| format!("锁竞争异常: {}", e))?;
-    cfg.server_url = server_url;
+    cfg.server_url = server_url.clone();
     cfg.username = Some(data.username.clone());
     cfg.token = Some(data.token.clone());
     cfg.token_expires_at = Some(data.expires_at);
     save_relay_config(&cfg);
+    drop(cfg);
+
+    // 注册后同步一次绑定状态（新账号必然是未绑定）
+    refresh_pair_binding_cache(&server_url, &data.token);
 
     Ok(data)
 }
@@ -367,6 +505,7 @@ pub fn relay_logout() -> Result<(), String> {
     cfg.username = None;
     cfg.token = None;
     cfg.token_expires_at = None;
+    cfg.mobile_paired = false;
     save_relay_config(&cfg);
 
     Ok(())
@@ -386,32 +525,15 @@ pub fn start_app_server(workspace_dir: String) -> Result<AppServerSessionInfo, S
 
     let server_url = cfg.server_url.clone();
 
-    // Request pairing code from relay server
-    let client = http_client()?;
-    let pair_url = api_url(&server_url, "/api/pair/create");
+    // 查询账号绑定状态：已绑定的手机端重连不需要配对码，
+    // 只有未绑定时才生成一次性配对码。
+    let mobile_paired = refresh_pair_binding_cache(&server_url, &token);
 
-    let res = client
-        .post(&pair_url)
-        .header("Content-Type", "application/json")
-        .header("Authorization", format!("Bearer {}", token))
-        .send()
-        .map_err(|e| format!("请求配对码失败: {}", e))?;
-
-    if !res.status().is_success() {
-        let status = res.status();
-        let err_text = res.text().unwrap_or_default();
-        return Err(format!("请求配对码失败 (HTTP {}): {}", status, err_text));
+    let mut pair_data: Option<RelayPairData> = None;
+    if !mobile_paired {
+        // Request pairing code from relay server
+        pair_data = Some(request_pairing_code(&server_url, &token)?);
     }
-
-    let parsed: RelayPairResponse = res
-        .json()
-        .map_err(|e| format!("解析配对码响应失败: {}", e))?;
-
-    if !parsed.ok {
-        return Err(parsed.error.unwrap_or_else(|| "请求配对码失败".to_string()));
-    }
-
-    let pair_data = parsed.data.ok_or("响应中缺少配对码数据")?;
 
     // Stop existing session if any
     let mut map = get_sessions_map()
@@ -468,24 +590,40 @@ pub fn start_app_server(workspace_dir: String) -> Result<AppServerSessionInfo, S
         .ok_or("无法获取 mcode acp stderr")?;
 
     let ws_connected = Arc::new(Mutex::new(false));
+    let desktop_online = Arc::new(Mutex::new(None));
     let stop_signal = Arc::new(Mutex::new(false));
 
+    let (status, pairing_code, expires_at_ms, message) = match &pair_data {
+        Some(data) => (
+            "waiting_pairing".to_string(),
+            Some(data.code.clone()),
+            Some(data.expires_at),
+            "配对码已生成，请在手机端输入配对码".to_string(),
+        ),
+        None => (
+            "waiting_mobile".to_string(),
+            None,
+            None,
+            "手机端已绑定，等待手机端自动连接（无需重新输入配对码）".to_string(),
+        ),
+    };
+
     let info = AppServerSessionInfo {
-        status: "waiting_pairing".to_string(),
-        pairing_code: Some(pair_data.code.clone()),
+        status,
+        pairing_code,
         workspace_dir: Some(workspace_dir.clone()),
         started_at_ms: Some(now_ms()),
-        expires_at_ms: Some(pair_data.expires_at),
+        expires_at_ms,
         pid: Some(pid),
         mobile_device_name: None,
-        message: Some("配对码已生成，请在手机端输入配对码".to_string()),
+        message: Some(message),
         relay_url: Some(server_url.clone()),
         username: cfg.username.clone(),
         logged_in: true,
+        mobile_paired,
     };
 
     // Spawn relay bridge thread
-    let ws_connected_clone = ws_connected.clone();
     let stop_signal_clone = stop_signal.clone();
     let ws_url = format!(
         "{}/ws/desktop?token={}",
@@ -494,6 +632,11 @@ pub fn start_app_server(workspace_dir: String) -> Result<AppServerSessionInfo, S
     );
 
     let workspace_dir_clone = workspace_dir.clone();
+    let bridge_flags = BridgeFlags {
+        ws_connected: ws_connected.clone(),
+        desktop_online: desktop_online.clone(),
+        stop_signal: stop_signal_clone,
+    };
     std::thread::spawn(move || {
         relay_bridge_thread(
             ws_url,
@@ -501,8 +644,7 @@ pub fn start_app_server(workspace_dir: String) -> Result<AppServerSessionInfo, S
             child_stdout,
             child_stderr,
             workspace_dir_clone,
-            ws_connected_clone,
-            stop_signal_clone,
+            bridge_flags,
         );
     });
 
@@ -512,11 +654,72 @@ pub fn start_app_server(workspace_dir: String) -> Result<AppServerSessionInfo, S
             info: info.clone(),
             child: Some(child),
             ws_connected,
+            desktop_online,
             stop_signal,
         },
     );
 
     Ok(info)
+}
+
+/// 强制解绑手机端。
+///
+/// 解绑后手机端重连必须重新输入配对码；同时立刻为运行中的会话申请一枚新的
+/// 配对码，用户可以在桌面端直接看到新的配对码并重新绑定。
+#[tauri::command]
+pub fn unbind_mobile() -> Result<(), String> {
+    let cfg = get_relay_config()
+        .lock()
+        .map_err(|e| format!("锁竞争异常: {}", e))?
+        .clone();
+
+    let token = cfg
+        .token
+        .as_ref()
+        .ok_or("未登录，无法解除绑定")?
+        .clone();
+
+    let client = http_client()?;
+    let url = api_url(&cfg.server_url, "/api/pair/unbind");
+
+    let res = client
+        .post(&url)
+        .header("Content-Type", "application/json")
+        .header("Authorization", format!("Bearer {}", token))
+        .send()
+        .map_err(|e| format!("解除绑定失败: {}", e))?;
+
+    if !res.status().is_success() {
+        let status = res.status();
+        let err_text = res.text().unwrap_or_default();
+        return Err(format!("解除绑定失败 (HTTP {}): {}", status, err_text));
+    }
+
+    // 本地会话状态同步为「未绑定」，界面回到配对码流程
+    let mut map = get_sessions_map()
+        .lock()
+        .map_err(|e| format!("锁竞争异常: {}", e))?;
+    for sess in map.values_mut() {
+        sess.info.mobile_paired = false;
+        if sess.info.status == "stopped" {
+            continue;
+        }
+        if let Ok(data) = request_pairing_code(&cfg.server_url, &token) {
+            sess.info.pairing_code = Some(data.code.clone());
+            sess.info.expires_at_ms = Some(data.expires_at);
+        }
+        sess.info.status = "waiting_pairing".to_string();
+        sess.info.message = Some("绑定已解除，请重新输入配对码".to_string());
+    }
+    drop(map);
+
+    // 同步本地绑定状态缓存
+    if let Ok(mut cfg) = get_relay_config().lock() {
+        cfg.mobile_paired = false;
+        save_relay_config(&cfg);
+    }
+
+    Ok(())
 }
 
 /// Stop the remote session
@@ -553,6 +756,7 @@ pub fn stop_app_server(workspace_dir: String) -> Result<AppServerSessionInfo, St
         relay_url: Some(cfg.server_url.clone()),
         username: cfg.username.clone(),
         logged_in: cfg.token.is_some(),
+        mobile_paired: false,
     })
 }
 
@@ -569,16 +773,13 @@ pub fn get_app_server_status(workspace_dir: String) -> Result<AppServerSessionIn
 
     if let Some(sess) = map.get(&workspace_dir) {
         let mut info = sess.info.clone();
-        // Check ws_connected flag from relay thread
-        if let Ok(connected) = sess.ws_connected.lock() {
-            if *connected && info.status == "waiting_pairing" {
-                info.status = "connected".to_string();
-                info.message = Some("手机端已成功连接".to_string());
-            }
-        }
+        let mobile_online = sess.ws_connected.lock().map(|c| *c).unwrap_or(false);
+        let desktop_online = sess.desktop_online.lock().map(|c| *c).unwrap_or(None);
+        apply_runtime_status(&mut info, desktop_online, mobile_online);
         info.relay_url = Some(cfg.server_url.clone());
         info.username = cfg.username.clone();
         info.logged_in = cfg.token.is_some();
+        info.mobile_paired = cfg.mobile_paired;
         Ok(info)
     } else {
         Ok(AppServerSessionInfo {
@@ -593,6 +794,7 @@ pub fn get_app_server_status(workspace_dir: String) -> Result<AppServerSessionIn
             relay_url: Some(cfg.server_url.clone()),
             username: cfg.username.clone(),
             logged_in: cfg.token.is_some(),
+            mobile_paired: cfg.mobile_paired,
         })
     }
 }
@@ -629,18 +831,33 @@ fn write_to_agent(stdin: &mut std::process::ChildStdin, lines: &[String]) -> boo
 /// Uses `tungstenite` for synchronous WebSocket communication paired with
 /// standard threads, matching the project-wide convention of avoiding
 /// async runtimes.
+/// Relay 桥接线程共享的运行期标志。
+struct BridgeFlags {
+    /// 手机端是否已接入中继管道
+    ws_connected: Arc<Mutex<bool>>,
+    /// 桌面端自身的中继 WebSocket 状态：None=未连接过 / Some(true)=在线 / Some(false)=掉线重连中
+    desktop_online: Arc<Mutex<Option<bool>>>,
+    /// 停止信号
+    stop_signal: Arc<Mutex<bool>>,
+}
+
 fn relay_bridge_thread(
     ws_url: String,
     mut stdin: std::process::ChildStdin,
     stdout: std::process::ChildStdout,
     stderr: std::process::ChildStderr,
     workspace_dir: String,
-    ws_connected: Arc<Mutex<bool>>,
-    stop_signal: Arc<Mutex<bool>>,
+    flags: BridgeFlags,
 ) {
     use std::sync::mpsc;
     use std::time::Duration;
     use tungstenite::{connect, Message};
+
+    let BridgeFlags {
+        ws_connected,
+        desktop_online,
+        stop_signal,
+    } = flags;
 
     let (tx_out, rx_out) = mpsc::channel::<String>();
 
@@ -707,6 +924,9 @@ fn relay_bridge_thread(
             Ok((mut socket, _response)) => {
                 eprintln!("[RELAY-BRIDGE] WebSocket 连接成功");
                 retry_delay_ms = 1000;
+                if let Ok(mut online) = desktop_online.lock() {
+                    *online = Some(true);
+                }
 
                 // Set read timeout on the underlying stream
                 match socket.get_ref() {
@@ -813,6 +1033,9 @@ fn relay_bridge_thread(
 
                 if let Ok(mut c) = ws_connected.lock() {
                     *c = false;
+                }
+                if let Ok(mut online) = desktop_online.lock() {
+                    *online = Some(false);
                 }
             }
             Err(e) => {

@@ -37,6 +37,7 @@ const stoppedSession: AppServerSessionInfo = {
   relayUrl: "wss://agent.ccxcc.cn",
   username: "tester",
   loggedIn: true,
+  mobilePaired: false,
 };
 
 function TestWrapper({ children }: { children: React.ReactNode }) {
@@ -107,6 +108,30 @@ describe("RemoteConnectionPage", () => {
     expect(await screen.findByText("8421")).toBeInTheDocument();
     expect(screen.getByText(/有效时间剩余/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "断开连接并停止服务" })).toBeInTheDocument();
+  });
+
+  it("已绑定但手机端离线时不再索要配对码", async () => {
+    renderPage({
+      ...stoppedSession,
+      status: "waiting_mobile",
+      pairingCode: null,
+      workspaceDir: "D:\\Develop\\loom",
+      mobilePaired: true,
+    });
+    expect(await screen.findAllByText(/手机端已绑定，等待其自动重连/)).not.toHaveLength(0);
+    expect(screen.queryByText(/有效时间剩余/)).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "解绑手机端" })).toBeInTheDocument();
+  });
+
+  it("未绑定时不展示解绑按钮", async () => {
+    renderPage({
+      ...stoppedSession,
+      status: "waiting_pairing",
+      pairingCode: "8421",
+      workspaceDir: "D:\\Develop\\loom",
+    });
+    expect(await screen.findByText("8421")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "解绑手机端" })).not.toBeInTheDocument();
   });
 
   it("左上角提供侧边栏折叠/展开按钮，行为与项目区一致", () => {

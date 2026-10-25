@@ -2606,7 +2606,8 @@ fn main() {
             app_server::relay_logout,
             app_server::get_app_server_status,
             app_server::start_app_server,
-            app_server::stop_app_server
+            app_server::stop_app_server,
+            app_server::unbind_mobile
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

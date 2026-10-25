@@ -226,7 +226,7 @@ export interface McodeAuthInfo {
 }
 
 export interface AppServerSessionInfo {
-  status: 'stopped' | 'starting' | 'waiting_pairing' | 'connected';
+  status: 'stopped' | 'starting' | 'waiting_pairing' | 'waiting_mobile' | 'connecting' | 'connected';
   pairingCode: string | null;
   workspaceDir: string | null;
   startedAtMs: number | null;
@@ -237,6 +237,8 @@ export interface AppServerSessionInfo {
   relayUrl: string | null;
   username: string | null;
   loggedIn: boolean;
+  /** 账号是否已与手机端完成绑定：已绑定后重连不再需要配对码 */
+  mobilePaired: boolean;
 }
 
 export interface RelayAuthData {

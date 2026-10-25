@@ -671,4 +671,8 @@ export const stopAppServer = (
 ): Promise<AppServerSessionInfo> =>
 	invoke("stop_app_server", { workspaceDir });
 
+/** 强制解绑手机端：解绑后手机端重连需要重新输入配对码 */
+export const unbindMobile = (): Promise<void> =>
+	invoke("unbind_mobile");
+
 

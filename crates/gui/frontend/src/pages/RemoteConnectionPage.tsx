@@ -10,6 +10,7 @@ import {
   relayLogout,
   startAppServer,
   stopAppServer,
+  unbindMobile,
 } from '../api';
 import type { AppServerSessionInfo, Project } from '../types';
 import { useToast } from '../ToastContext';
@@ -31,6 +32,8 @@ type StatusTone = 'green' | 'blue' | 'amber' | 'gray';
 const SESSION_STATUS: Record<string, { label: string; dot: string; badge: string; tone: StatusTone }> = {
   connected: { label: '手机端已连接', dot: 'dot-green', badge: 'badge-emerald', tone: 'green' },
   waiting_pairing: { label: '配对中', dot: 'dot-blue', badge: 'badge-blue', tone: 'blue' },
+  waiting_mobile: { label: '等待手机端', dot: 'dot-amber', badge: 'badge-amber', tone: 'amber' },
+  connecting: { label: '重连中', dot: 'dot-amber', badge: 'badge-amber', tone: 'amber' },
   starting: { label: '正在启动', dot: 'dot-amber', badge: 'badge-amber', tone: 'amber' },
   stopped: { label: '已停止', dot: 'dot-gray', badge: 'badge-gray', tone: 'gray' },
 };
@@ -253,9 +256,28 @@ export const RemoteConnectionPage: React.FC<RemoteConnectionPageProps> = ({
     try {
       const res = await startAppServer(activeWorkspace);
       setSession(res);
-      toast.success('远程会话已启动，配对码已就绪');
+      toast.success(
+        res.pairingCode
+          ? '远程会话已启动，配对码已就绪'
+          : '远程会话已启动，等待已绑定的手机端连接',
+      );
     } catch (e: unknown) {
       const msg = typeof e === 'string' ? e : (e instanceof Error ? e.message : '启动会话失败');
+      toast.error(msg);
+    } finally {
+      if (isMountedRef.current) setActionLoading(false);
+    }
+  };
+
+  // 强制解绑手机端：解绑后手机端需要重新输入配对码
+  const handleUnbindMobile = async () => {
+    setActionLoading(true);
+    try {
+      await unbindMobile();
+      toast.success('已解除手机端绑定，手机端需重新输入配对码');
+      await refreshStatus();
+    } catch (e: unknown) {
+      const msg = typeof e === 'string' ? e : (e instanceof Error ? e.message : '解除绑定失败');
       toast.error(msg);
     } finally {
       if (isMountedRef.current) setActionLoading(false);
@@ -489,10 +511,21 @@ export const RemoteConnectionPage: React.FC<RemoteConnectionPageProps> = ({
             <div className="remote-actions">
               <span className="remote-hint">
                 {isSessionRunning
-                  ? `会话工作区：${runningWorkspace || '未知'}`
+                  ? `会话工作区：${runningWorkspace || '未知'}${session?.mobilePaired ? ' · 手机端已绑定，等待其自动重连' : ''}`
                   : '开启后会在下方生成 4 位配对码，有效期内可重复配对。'}
               </span>
               <div className="remote-actions-buttons">
+                {session?.mobilePaired && (
+                  <button
+                    type="button"
+                    className="btn btn-ghost"
+                    onClick={handleUnbindMobile}
+                    disabled={actionLoading}
+                    title="解除账号与手机端的绑定关系，解绑后手机端需要重新输入配对码"
+                  >
+                    {actionLoading ? '处理中...' : '解绑手机端'}
+                  </button>
+                )}
                 {!isSessionRunning ? (
                   <button
                     type="button"
@@ -546,6 +579,25 @@ export const RemoteConnectionPage: React.FC<RemoteConnectionPageProps> = ({
               </div>
             )}
 
+            {/* 已绑定但手机端离线：绑定关系已持久化，等待手机端自动重连 */}
+            {(session?.status === 'waiting_mobile' || session?.status === 'connecting') && (
+              <div className="remote-connected">
+                <div className="remote-connected-info">
+                  <div className="remote-connected-title">
+                    {session.status === 'connecting'
+                      ? '桌面端正在重新连接中继服务器'
+                      : '手机端已绑定，等待其自动重连'}
+                  </div>
+                  <div className="remote-connected-meta">
+                    {session.status === 'connecting'
+                      ? '网络恢复后会自动重连，无需重新输入配对码。'
+                      : '绑定关系已保存在中继账号中，手机端离线或切换网络后会自动重新连接，无需再次输入配对码。'}
+                  </div>
+                </div>
+                <span className="badge badge-amber">等待中</span>
+              </div>
+            )}
+
             {/* 已连接状态说明 */}
             {session?.status === 'connected' && (
               <div className="remote-connected">
@@ -594,10 +646,14 @@ export const RemoteConnectionPage: React.FC<RemoteConnectionPageProps> = ({
                 <span className="remote-status-value">{statusMeta.label}</span>
               </li>
               <li>
-                <span className={`dot ${session?.status === 'connected' ? 'dot-green' : 'dot-gray'}`} />
+                <span className={`dot ${session?.status === 'connected' ? 'dot-green' : session?.mobilePaired ? 'dot-amber' : 'dot-gray'}`} />
                 <span className="remote-status-label">手机端</span>
                 <span className="remote-status-value">
-                  {session?.status === 'connected' ? session.mobileDeviceName || '已配对' : '未连接'}
+                  {session?.status === 'connected'
+                    ? session.mobileDeviceName || '已配对'
+                    : session?.mobilePaired
+                      ? '已绑定（离线）'
+                      : '未连接'}
                 </span>
               </li>
               <li>
@@ -621,7 +677,9 @@ export const RemoteConnectionPage: React.FC<RemoteConnectionPageProps> = ({
             <ol className="remote-guide">
               <li>确保公网或本地自建 Relay 中继服务正在正常运行。</li>
               <li>电脑端与手机端登录同一 Relay 账号。</li>
-              <li>点击「开启远程会话」，将生成的 4 位配对码输入手机端 App 即可建立端到端通信。</li>
+              <li>首次配对：点击「开启远程会话」，将生成的 4 位配对码输入手机端 App。</li>
+              <li>绑定只做一次：此后手机端启动或断线重连都会自动建联，不再需要配对码。</li>
+              <li>需要换手机时点击「解绑手机端」，再重新输入新的配对码即可。</li>
               <li>通信全程由中继透明转发，本地代码不落盘中继服务器，安全高效。</li>
             </ol>
           </section>
