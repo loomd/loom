@@ -170,8 +170,9 @@ export function handleMobileConnection(
   code: string,
 ): void {
   // 验证配对码
-  if (!verifyPairingCode(userId, code)) {
-    sendControl(ws, "error", "配对码无效或已过期");
+  const verifyResult = verifyPairingCode(userId, code);
+  if (!verifyResult.valid) {
+    sendControl(ws, "error", verifyResult.error || "配对码无效或已过期");
     ws.close(4001, "invalid pairing code");
     return;
   }

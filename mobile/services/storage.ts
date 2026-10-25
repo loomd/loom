@@ -5,7 +5,7 @@ const TOKEN_KEY = "loom_jwt_token";
 const SERVER_URL_KEY = "loom_server_url";
 const PAIR_INFO_KEY = "loom_pair_info";
 
-const DEFAULT_SERVER_URL = "wss://agent.ccxcc.cn";
+const DEFAULT_SERVER_URL = "https://agent.ccxcc.cn";
 
 export interface PairInfo {
   code: string;
@@ -31,7 +31,16 @@ export async function saveServerUrl(url: string): Promise<void> {
 
 export async function getServerUrl(): Promise<string> {
   const url = await AsyncStorage.getItem(SERVER_URL_KEY);
-  return url ?? DEFAULT_SERVER_URL;
+  if (!url) {
+    return DEFAULT_SERVER_URL;
+  }
+  // 自动修复迁移历史存储中的 ws:// 或 wss:// 协议
+  if (url.startsWith("wss://") || url.startsWith("ws://")) {
+    const fixed = url.replace(/^ws/, "http");
+    await AsyncStorage.setItem(SERVER_URL_KEY, fixed);
+    return fixed;
+  }
+  return url;
 }
 
 export async function saveLastPairInfo(info: PairInfo): Promise<void> {

@@ -45,3 +45,4 @@ e2e/active_instances.json
 /logs/
 
 jaccess*.log
+/.jdks/

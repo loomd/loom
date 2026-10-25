@@ -33,6 +33,9 @@ export interface PairVerifyRequest {
 
 export interface PairVerifyResponse {
   valid: boolean;
+  success: boolean;
+  workspaceId?: string;
+  workspaceName?: string;
 }
 
 // ---- WebSocket relay ----

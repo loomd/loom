@@ -4,10 +4,19 @@ import type {
   PairVerifyResponse,
 } from "@/types";
 
-let baseUrl = "https://localhost:8443";
+let baseUrl = "https://agent.ccxcc.cn";
 
 export function setBaseUrl(url: string): void {
-  baseUrl = url.replace(/\/+$/, "");
+  if (!url) return;
+  let clean = url.trim().replace(/\/+$/, "");
+  if (clean.startsWith("wss://")) {
+    clean = "https://" + clean.slice(6);
+  } else if (clean.startsWith("ws://")) {
+    clean = "http://" + clean.slice(5);
+  } else if (!clean.startsWith("http://") && !clean.startsWith("https://")) {
+    clean = "https://" + clean;
+  }
+  baseUrl = clean;
 }
 
 export function getBaseUrl(): string {
@@ -29,26 +38,44 @@ async function request<T>(
     headers["Authorization"] = `Bearer ${options.token}`;
   }
 
-  const response = await fetch(`${baseUrl}${path}`, {
-    method: options.method,
-    headers,
-    body: options.body ? JSON.stringify(options.body) : undefined,
-  });
-
-  if (!response.ok) {
-    let message = `请求失败 (${response.status})`;
-    try {
-      const errorData = (await response.json()) as { message?: string };
-      if (errorData.message) {
-        message = errorData.message;
-      }
-    } catch {
-      // 无法解析错误体，使用默认消息
-    }
-    throw new Error(message);
+  const url = `${baseUrl}${path}`;
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      method: options.method,
+      headers,
+      body: options.body ? JSON.stringify(options.body) : undefined,
+    });
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err);
+    throw new Error(`网络连接失败 (${url}): ${detail}`);
   }
 
-  return (await response.json()) as T;
+  let body: unknown;
+  try {
+    body = await response.json();
+  } catch {
+    if (!response.ok) {
+      throw new Error(`请求失败 (HTTP ${response.status})`);
+    }
+    throw new Error(`解析响应 JSON 失败 (HTTP ${response.status})`);
+  }
+
+  if (body && typeof body === "object") {
+    const envelope = body as { ok?: boolean; data?: unknown; error?: string };
+    if (envelope.ok === false) {
+      throw new Error(envelope.error || `请求失败 (HTTP ${response.status})`);
+    }
+    if (envelope.ok === true && "data" in envelope) {
+      return envelope.data as T;
+    }
+  }
+
+  if (!response.ok) {
+    throw new Error(`请求失败 (HTTP ${response.status})`);
+  }
+
+  return body as T;
 }
 
 export async function register(

@@ -214,8 +214,23 @@ async function handleHttpRequest(
       }
       const user = verifyToken(token);
       const body = parseJson<PairVerifyRequest>(await readBody(req));
-      const valid = verifyPairingCode(user.userId, body.code);
-      jsonResponse(res, 200, { ok: true, data: { valid } });
+      const verifyResult = verifyPairingCode(user.userId, body.code);
+      if (!verifyResult.valid) {
+        jsonResponse(res, 200, {
+          ok: false,
+          error: verifyResult.error || "配对码无效或已过期",
+        });
+        return;
+      }
+      jsonResponse(res, 200, {
+        ok: true,
+        data: {
+          valid: true,
+          success: true,
+          workspaceId: "default",
+          workspaceName: "Loom Workspace",
+        },
+      });
       return;
     }
 

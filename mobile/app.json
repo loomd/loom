@@ -2,7 +2,7 @@
   "expo": {
     "name": "Loom Remote",
     "slug": "loom-remote",
-    "version": "0.1.0",
+    "version": "0.2.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
@@ -15,11 +15,14 @@
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#0a0a0f"
       },
-      "package": "com.loom.remote"
+      "package": "com.loom.remote",
+      "versionCode": 2,
+      "usesCleartextTraffic": true
     },
     "plugins": [
       "expo-router",
-      "expo-secure-store"
+      "expo-secure-store",
+      "expo-asset"
     ],
     "updates": {
       "url": "https://u.expo.dev/placeholder"

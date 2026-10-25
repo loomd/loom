@@ -85,16 +85,18 @@ export default function PairScreen() {
       setBaseUrl(serverUrl);
 
       const result = await verifyPairCode(token, code);
-      if (result.success) {
+      const isSuccess = Boolean(result.success ?? result.valid);
+      if (isSuccess) {
         await saveLastPairInfo({
           code,
-          workspaceId: result.workspaceId,
-          workspaceName: result.workspaceName,
+          workspaceId: result.workspaceId || "default",
+          workspaceName: result.workspaceName || "Loom Workspace",
         });
         connectToRelay(serverUrl, token, code);
         router.replace("/chat");
       } else {
-        Alert.alert("配对失败", "验证码无效或已过期");
+        const errorText = (result as { error?: string }).error || "验证码无效或已过期";
+        Alert.alert("配对失败", errorText);
         resetDigits();
       }
     } catch (err) {

@@ -48,7 +48,7 @@ export default function LoginScreen() {
       router.replace("/pair");
     } catch (err) {
       const message = err instanceof Error ? err.message : "登录失败";
-      Alert.alert("登录失败", message);
+      Alert.alert("登录失败", `${message}\n(目标地址: ${serverUrl || "默认"})`);
     } finally {
       setLoading(false);
     }
@@ -64,6 +64,7 @@ export default function LoginScreen() {
         keyboardShouldPersistTaps="handled"
       >
         <Text style={styles.heading}>登录到 Loom Remote</Text>
+        <Text style={{ color: "#a1a1aa", fontSize: 13, marginBottom: 16 }}>版本: v0.2.0 (Build 20261025)</Text>
 
         <TouchableOpacity
           style={styles.serverRow}

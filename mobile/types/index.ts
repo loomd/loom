@@ -23,9 +23,10 @@ export interface PairVerifyRequest {
 }
 
 export interface PairVerifyResponse {
-  success: boolean;
-  workspaceId: string;
-  workspaceName: string;
+  success?: boolean;
+  valid?: boolean;
+  workspaceId?: string;
+  workspaceName?: string;
 }
 
 export interface RelayMessage {

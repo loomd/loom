@@ -48,14 +48,14 @@ export default function SettingsScreen() {
             setServerUrlState(text);
             setSaved(false);
           }}
-          placeholder="wss://localhost:8443"
+          placeholder="https://agent.ccxcc.cn"
           placeholderTextColor="#71717a"
           autoCapitalize="none"
           autoCorrect={false}
           keyboardType="url"
         />
         <Text style={styles.hint}>
-          WebSocket 连接地址，格式为 wss://host:port 或 ws://host:port
+          Relay 服务器地址，格式为 https://domain 或 http://ip:port
         </Text>
       </View>
 

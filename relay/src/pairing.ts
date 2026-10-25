@@ -49,25 +49,37 @@ export function createPairingCode(userId: number): {
   return { code, expiresAt: Math.floor(expiresAt / 1000) };
 }
 
+export interface VerifyPairingResult {
+  valid: boolean;
+  error?: string;
+}
+
 /**
  * 验证配对码。码必须存在、未过期、且属于同一用户。
  */
 export function verifyPairingCode(
   userId: number,
   code: string,
-): boolean {
+): VerifyPairingResult {
   const entry = pairings.get(code);
-  if (!entry) return false;
-  if (entry.userId !== userId) return false;
+  if (!entry) {
+    return { valid: false, error: "配对码不存在或已失效，请在桌面端重新生成" };
+  }
+  if (entry.userId !== userId) {
+    return {
+      valid: false,
+      error: `配对码由桌面端账号生成，与当前手机登录账号不一致，请在手机端登录相同账号`,
+    };
+  }
   if (Date.now() > entry.expiresAt) {
     // 过期，清理
     pairings.delete(code);
     if (userToCode.get(userId) === code) {
       userToCode.delete(userId);
     }
-    return false;
+    return { valid: false, error: "配对码已超时过期，请在桌面端刷新生成新码" };
   }
-  return true;
+  return { valid: true };
 }
 
 /**
