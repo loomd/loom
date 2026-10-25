@@ -266,12 +266,30 @@ fn fetch_pair_binding(server_url: &str, token: &str) -> Result<bool, String> {
 
 /// 查询绑定状态并写入本地缓存，供界面展示与按钮可见性判断。
 fn refresh_pair_binding_cache(server_url: &str, token: &str) -> bool {
-    let paired = fetch_pair_binding(server_url, token).unwrap_or(false);
+    // 查询失败时保留原缓存：一次网络抖动不应把「已绑定」误判成「未绑定」
+    let paired = match fetch_pair_binding(server_url, token) {
+        Ok(paired) => paired,
+        Err(_) => {
+            return get_relay_config()
+                .lock()
+                .map(|cfg| cfg.mobile_paired)
+                .unwrap_or(false);
+        }
+    };
     if let Ok(mut cfg) = get_relay_config().lock() {
         cfg.mobile_paired = paired;
         save_relay_config(&cfg);
     }
     paired
+}
+
+/// 异步刷新绑定缓存：绑定查询是一次网络请求，不应阻塞中继桥接线程的消息处理。
+fn refresh_binding_cache_async(server_url: &str, token: &str) {
+    let server_url = server_url.to_string();
+    let token = token.to_string();
+    std::thread::spawn(move || {
+        refresh_pair_binding_cache(&server_url, &token);
+    });
 }
 
 /// 根据「桌面端在线状态」「手机端在线状态」「是否已绑定」推导会话状态。
@@ -330,11 +348,13 @@ pub fn get_relay_status() -> Result<AppServerSessionInfo, String> {
                 .map(|c| *c)
                 .unwrap_or(false);
             let desktop_online = sess.desktop_online.lock().map(|c| *c).unwrap_or(None);
+            // 绑定状态以本地缓存的最新值为准：手机端配对成功后缓存会被刷新，
+            // 若沿用会话启动时的快照，手机端一断连就会退回「等待配对」并重新弹配对码
+            info.mobile_paired = cfg.mobile_paired;
             apply_runtime_status(&mut info, desktop_online, mobile_online);
             info.relay_url = Some(cfg.server_url.clone());
             info.username = cfg.username.clone();
             info.logged_in = cfg.token.is_some();
-            info.mobile_paired = cfg.mobile_paired;
             return Ok(info);
         }
     }
@@ -640,6 +660,10 @@ pub fn start_app_server(workspace_dir: String) -> Result<AppServerSessionInfo, S
     std::thread::spawn(move || {
         relay_bridge_thread(
             ws_url,
+            RelayEndpoint {
+                server_url: server_url.clone(),
+                token: token.clone(),
+            },
             child_stdin,
             child_stdout,
             child_stderr,
@@ -775,11 +799,12 @@ pub fn get_app_server_status(workspace_dir: String) -> Result<AppServerSessionIn
         let mut info = sess.info.clone();
         let mobile_online = sess.ws_connected.lock().map(|c| *c).unwrap_or(false);
         let desktop_online = sess.desktop_online.lock().map(|c| *c).unwrap_or(None);
+        // 同上：状态推导必须使用最新的绑定缓存
+        info.mobile_paired = cfg.mobile_paired;
         apply_runtime_status(&mut info, desktop_online, mobile_online);
         info.relay_url = Some(cfg.server_url.clone());
         info.username = cfg.username.clone();
         info.logged_in = cfg.token.is_some();
-        info.mobile_paired = cfg.mobile_paired;
         Ok(info)
     } else {
         Ok(AppServerSessionInfo {
@@ -821,6 +846,12 @@ fn write_to_agent(stdin: &mut std::process::ChildStdin, lines: &[String]) -> boo
     true
 }
 
+/// 中继服务端点信息：桥接线程在手机端连接状态变化时用它刷新绑定缓存。
+struct RelayEndpoint {
+    server_url: String,
+    token: String,
+}
+
 /// Background thread that connects to the relay WebSocket and bridges it to
 /// the `mcode acp` child process over the Agent Client Protocol.
 ///
@@ -843,6 +874,7 @@ struct BridgeFlags {
 
 fn relay_bridge_thread(
     ws_url: String,
+    endpoint: RelayEndpoint,
     mut stdin: std::process::ChildStdin,
     stdout: std::process::ChildStdout,
     stderr: std::process::ChildStderr,
@@ -984,11 +1016,23 @@ fn relay_bridge_thread(
                                                     *c = true;
                                                 }
                                                 eprintln!("[RELAY-BRIDGE] 手机端已连接");
+                                                // 手机端接入即代表账号已完成绑定：刷新本地绑定缓存，
+                                                // 否则手机端断开后桌面端会因缓存过期退回「等待配对」并重新展示配对码
+                                                refresh_binding_cache_async(
+                                                    &endpoint.server_url,
+                                                    &endpoint.token,
+                                                );
                                             } else if event == "peer_disconnected" {
                                                 if let Ok(mut c) = ws_connected.lock() {
                                                     *c = false;
                                                 }
                                                 eprintln!("[RELAY-BRIDGE] 手机端已断开");
+                                                // 断连时再确认一次绑定状态：绑定仍然有效时，
+                                                // 界面应显示「手机端已断连，等待其自动重连」
+                                                refresh_binding_cache_async(
+                                                    &endpoint.server_url,
+                                                    &endpoint.token,
+                                                );
                                             }
                                         }
                                         continue;
