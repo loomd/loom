@@ -252,6 +252,10 @@ ensure_cert
 # ── 6. 安装正式站点 (443 TLS) ───────────────────────────────────────────────
 log "安装 nginx TLS 站点"
 rm -f "${NGINX_DIR}/loom-relay-acme.conf"
+
+# WebSocket 升级映射：loom-relay.conf 里的 $connection_upgrade 依赖它，
+# 必须先于站点配置安装，否则 nginx -t 会报 unknown "connection_upgrade" variable
+install_vhost nginx/00-connection-upgrade-map.conf 00-connection-upgrade-map.conf
 install_vhost nginx/loom-relay.conf loom-relay.conf
 
 # 提示其它同样声明了该域名的站点配置（仅告警，不改动他人配置；
