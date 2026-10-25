@@ -250,3 +250,27 @@ export function getActiveSessionSummaries(): SessionSummary[] {
   }
   return list;
 }
+
+/**
+ * 强制断开指定用户的所有连接（桌面端与手机端）。
+ * 用于管理员封禁账号或删除账号时立即生效。
+ */
+export function terminateUserSessions(userId: number, reason: string = "账号状态已变更，连接已断开"): void {
+  const session = sessions.get(userId);
+  if (!session) return;
+  if (session.desktopWs) {
+    try {
+      sendControl(session.desktopWs, "error", { message: reason });
+      session.desktopWs.close(1008, reason);
+    } catch {}
+  }
+  if (session.mobileWs) {
+    try {
+      sendControl(session.mobileWs, "error", { message: reason });
+      session.mobileWs.close(1008, reason);
+    } catch {}
+  }
+  sessions.delete(userId);
+  console.log(`[RELAY] 用户连接已强制清理: userId=${userId}, 原因: ${reason}`);
+}
+

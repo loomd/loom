@@ -144,6 +144,15 @@ function cleanupExpired(): void {
 const cleanupTimer = setInterval(cleanupExpired, CLEANUP_INTERVAL_MS);
 cleanupTimer.unref(); // 不阻止进程退出
 
+/**
+ * 对 4 位配对码执行掩码脱敏（例如 "1234" -> "**34"）。
+ * 避免在公网状态接口和监控控制台中明文泄露未过期的配对凭据。
+ */
+export function maskPairingCode(code: string): string {
+  if (!code || code.length < 2) return "****";
+  return "**" + code.slice(-2);
+}
+
 export interface PairingSummary {
   userId: number;
   code: string;
@@ -151,14 +160,14 @@ export interface PairingSummary {
   createdAt: number;
 }
 
-export function getActivePairingSummaries(): PairingSummary[] {
+export function getActivePairingSummaries(mask: boolean = true): PairingSummary[] {
   const now = Date.now();
   const list: PairingSummary[] = [];
   for (const [code, entry] of pairings) {
     if (entry.expiresAt > now) {
       list.push({
         userId: entry.userId,
-        code,
+        code: mask ? maskPairingCode(code) : code,
         expiresInSeconds: Math.max(0, Math.floor((entry.expiresAt - now) / 1000)),
         createdAt: entry.createdAt,
       });
@@ -166,3 +175,4 @@ export function getActivePairingSummaries(): PairingSummary[] {
   }
   return list;
 }
+

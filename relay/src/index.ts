@@ -1,7 +1,14 @@
 import http from "node:http";
 import { URL } from "node:url";
 import { WebSocketServer } from "ws";
-import { register, login, refreshToken, verifyToken } from "./auth.js";
+import {
+  register,
+  login,
+  refreshToken,
+  verifyToken,
+  adminCreateUserAccount,
+  adminResetUserPassword,
+} from "./auth.js";
 import {
   createPairingCode,
   verifyPairingCode,
@@ -11,19 +18,31 @@ import {
   handleDesktopConnection,
   handleMobileConnection,
   getActiveSessionSummaries,
+  terminateUserSessions,
 } from "./relay.js";
 import {
   corsMiddleware,
   createRateLimiter,
   getClientIp,
 } from "./middleware.js";
-import { getDb, getUserCount, getUserMap } from "./db.js";
+import {
+  getDb,
+  getUserCount,
+  getUserMap,
+  getAllUsers,
+  getUserById,
+  updateUserStatus,
+  deleteUser,
+} from "./db.js";
 import { renderDashboardHtml } from "./dashboard.js";
 import type {
   ApiResponse,
   AuthRegisterRequest,
   AuthLoginRequest,
   PairVerifyRequest,
+  AdminCreateUserRequest,
+  AdminResetPasswordRequest,
+  AdminUpdateStatusRequest,
 } from "./types.js";
 
 // ---- 配置 ----
@@ -91,6 +110,40 @@ function extractBearerToken(
   if (!auth || !auth.startsWith("Bearer ")) return null;
   return auth.slice(7);
 }
+
+/**
+ * 校验当前请求是否具备管理员权限。
+ * 支持：
+ * 1. Header `x-admin-key` 匹配 process.env.ADMIN_KEY / process.env.JWT_SECRET
+ * 2. Header `Authorization: Bearer <admin-key>`
+ * 3. 携带管理员角色 (role=admin) 的有效 JWT Token
+ */
+function checkIsAdmin(req: http.IncomingMessage): boolean {
+  const configuredAdminKey = process.env.ADMIN_KEY || process.env.JWT_SECRET || "loom-admin-secret";
+  const customAdminKey = req.headers["x-admin-key"] as string | undefined;
+  if (customAdminKey && customAdminKey === configuredAdminKey) {
+    return true;
+  }
+
+  const token = extractBearerToken(req);
+  if (!token) return false;
+
+  if (token === configuredAdminKey) {
+    return true;
+  }
+
+  try {
+    const payload = verifyToken(token);
+    if (payload.role === "admin") return true;
+    const user = getUserById(payload.userId);
+    if (user && user.role === "admin" && user.status !== "disabled") {
+      return true;
+    }
+  } catch {}
+
+  return false;
+}
+
 
 // ---- HTTP 路由处理 ----
 
@@ -234,6 +287,130 @@ async function handleHttpRequest(
       return;
     }
 
+    // ---- Admin: Login / Authenticate ----
+    if (pathname === "/api/admin/login" && method === "POST") {
+      const body = parseJson<{ adminKey?: string; username?: string; password?: string }>(await readBody(req));
+      const configuredAdminKey = process.env.ADMIN_KEY || process.env.JWT_SECRET || "loom-admin-secret";
+
+      if (body.adminKey && body.adminKey === configuredAdminKey) {
+        jsonResponse(res, 200, {
+          ok: true,
+          data: {
+            adminToken: configuredAdminKey,
+            username: "root-admin",
+            role: "admin",
+          },
+        });
+        return;
+      }
+
+      if (body.username && body.password) {
+        const loginRes = await login(body.username, body.password);
+        const payload = verifyToken(loginRes.token);
+        if (payload.role !== "admin") {
+          jsonResponse(res, 403, { ok: false, error: "该账号没有管理员权限" });
+          return;
+        }
+        jsonResponse(res, 200, {
+          ok: true,
+          data: {
+            adminToken: loginRes.token,
+            username: loginRes.username,
+            role: "admin",
+          },
+        });
+        return;
+      }
+
+      jsonResponse(res, 401, { ok: false, error: "管理员密钥或账号密码错误" });
+      return;
+    }
+
+    // ---- Admin: Get User List ----
+    if (pathname === "/api/admin/users" && method === "GET") {
+      if (!checkIsAdmin(req)) {
+        jsonResponse(res, 403, { ok: false, error: "无权访问，需要管理员权限" });
+        return;
+      }
+      const users = getAllUsers();
+      jsonResponse(res, 200, { ok: true, data: users });
+      return;
+    }
+
+    // ---- Admin: Create User ----
+    if (pathname === "/api/admin/users" && method === "POST") {
+      if (!checkIsAdmin(req)) {
+        jsonResponse(res, 403, { ok: false, error: "无权访问，需要管理员权限" });
+        return;
+      }
+      const body = parseJson<AdminCreateUserRequest>(await readBody(req));
+      const user = await adminCreateUserAccount(body.username, body.password, body.role || "user");
+      jsonResponse(res, 201, { ok: true, data: user });
+      return;
+    }
+
+    // ---- Admin: Reset User Password ----
+    if (pathname === "/api/admin/users/password" && method === "POST") {
+      if (!checkIsAdmin(req)) {
+        jsonResponse(res, 403, { ok: false, error: "无权访问，需要管理员权限" });
+        return;
+      }
+      const body = parseJson<{ userId: number; password: string }>(await readBody(req));
+      if (!body.userId || !body.password) {
+        jsonResponse(res, 400, { ok: false, error: "缺少 userId 或 password" });
+        return;
+      }
+      await adminResetUserPassword(body.userId, body.password);
+      jsonResponse(res, 200, { ok: true, data: { message: "密码重置成功" } });
+      return;
+    }
+
+    // ---- Admin: Update User Status ----
+    if (pathname === "/api/admin/users/status" && method === "POST") {
+      if (!checkIsAdmin(req)) {
+        jsonResponse(res, 403, { ok: false, error: "无权访问，需要管理员权限" });
+        return;
+      }
+      const body = parseJson<{ userId: number; status: "active" | "disabled" }>(await readBody(req));
+      if (!body.userId || !body.status) {
+        jsonResponse(res, 400, { ok: false, error: "缺少 userId 或 status" });
+        return;
+      }
+      const success = updateUserStatus(body.userId, body.status);
+      if (!success) {
+        jsonResponse(res, 404, { ok: false, error: "未找到该用户" });
+        return;
+      }
+      if (body.status === "disabled") {
+        terminateUserSessions(body.userId, "账号已被管理员冻结禁用");
+      }
+      jsonResponse(res, 200, { ok: true, data: { status: body.status } });
+      return;
+    }
+
+    // ---- Admin: Delete User ----
+    if (pathname === "/api/admin/users" && method === "DELETE") {
+      if (!checkIsAdmin(req)) {
+        jsonResponse(res, 403, { ok: false, error: "无权访问，需要管理员权限" });
+        return;
+      }
+      const userIdParam = url.searchParams.get("userId");
+      const userId = userIdParam ? parseInt(userIdParam, 10) : undefined;
+      if (!userId || isNaN(userId)) {
+        jsonResponse(res, 400, { ok: false, error: "请提供有效的 userId 参数" });
+        return;
+      }
+      terminateUserSessions(userId, "用户已被管理员注销");
+      const success = deleteUser(userId);
+      if (!success) {
+        jsonResponse(res, 404, { ok: false, error: "未找到该用户" });
+        return;
+      }
+      jsonResponse(res, 200, { ok: true, data: { message: "用户已删除" } });
+      return;
+    }
+
+
     // ---- 404 ----
     jsonResponse(res, 404, { ok: false, error: "未找到该路由" });
   } catch (err) {
@@ -276,6 +453,12 @@ server.on("upgrade", (req, socket, head) => {
   let user: { userId: number; username: string };
   try {
     user = verifyToken(token);
+    const userInfo = getUserById(user.userId);
+    if (!userInfo || userInfo.status === "disabled") {
+      socket.write("HTTP/1.1 403 Forbidden\r\n\r\n");
+      socket.destroy();
+      return;
+    }
   } catch {
     socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
     socket.destroy();

@@ -30,9 +30,9 @@ type StatusTone = 'green' | 'blue' | 'amber' | 'gray';
 
 const SESSION_STATUS: Record<string, { label: string; dot: string; badge: string; tone: StatusTone }> = {
   connected: { label: '手机端已连接', dot: 'dot-green', badge: 'badge-emerald', tone: 'green' },
-  waiting_pairing: { label: '等待手机配对', dot: 'dot-blue', badge: 'badge-blue', tone: 'blue' },
+  waiting_pairing: { label: '配对中', dot: 'dot-blue', badge: 'badge-blue', tone: 'blue' },
   starting: { label: '正在启动', dot: 'dot-amber', badge: 'badge-amber', tone: 'amber' },
-  stopped: { label: '服务已停止', dot: 'dot-gray', badge: 'badge-gray', tone: 'gray' },
+  stopped: { label: '已停止', dot: 'dot-gray', badge: 'badge-gray', tone: 'gray' },
 };
 
 const getStatusMeta = (status?: string) => SESSION_STATUS[status ?? 'stopped'] ?? SESSION_STATUS.stopped;
@@ -192,13 +192,30 @@ export const RemoteConnectionPage: React.FC<RemoteConnectionPageProps> = ({
 
   // 注册
   const handleRegister = async () => {
-    if (!username.trim() || !password.trim()) {
+    const trimmed = username.trim();
+    if (!trimmed || !password) {
       toast.error('请输入用户名和密码');
+      return;
+    }
+    if (trimmed.length < 3 || trimmed.length > 24) {
+      toast.error('用户名长度必须在 3 到 24 个字符之间');
+      return;
+    }
+    if (!/^[a-zA-Z0-9_-]+$/.test(trimmed)) {
+      toast.error('用户名仅支持英文字母、数字、下划线和连字符');
+      return;
+    }
+    if (password.length < 6) {
+      toast.error('密码长度不能少于 6 位');
+      return;
+    }
+    if (password.length > 64) {
+      toast.error('密码长度不能超过 64 位');
       return;
     }
     setAuthLoading(true);
     try {
-      const res = await relayRegister(relayUrl, username.trim(), password.trim());
+      const res = await relayRegister(relayUrl, trimmed, password);
       toast.success(`注册成功并已自动登录: ${res.username}`);
       setPassword('');
       await refreshStatus();

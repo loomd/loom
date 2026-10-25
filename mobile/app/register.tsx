@@ -28,8 +28,24 @@ export default function RegisterScreen() {
       Alert.alert("提示", "请输入用户名");
       return;
     }
+    if (trimmedUser.length < 3 || trimmedUser.length > 24) {
+      Alert.alert("提示", "用户名长度需在 3 到 24 个字符之间");
+      return;
+    }
+    if (!/^[a-zA-Z0-9_-]+$/.test(trimmedUser)) {
+      Alert.alert("提示", "用户名仅支持英文字母、数字、下划线和连字符");
+      return;
+    }
     if (!password) {
       Alert.alert("提示", "请输入密码");
+      return;
+    }
+    if (password.length < 6) {
+      Alert.alert("提示", "密码长度不能少于 6 位");
+      return;
+    }
+    if (password.length > 64) {
+      Alert.alert("提示", "密码长度不能超过 64 位");
       return;
     }
     if (password !== confirmPassword) {

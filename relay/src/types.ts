@@ -79,4 +79,31 @@ export type ApiResponse<T = unknown> = ApiOk<T> | ApiErr;
 export interface JwtPayload {
   userId: number;
   username: string;
+  role?: "admin" | "user";
 }
+
+// ---- Admin User Management ----
+
+export interface UserSummary {
+  id: number;
+  username: string;
+  role: "admin" | "user";
+  status: "active" | "disabled";
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AdminCreateUserRequest {
+  username: string;
+  password: string;
+  role?: "admin" | "user";
+}
+
+export interface AdminResetPasswordRequest {
+  password: string;
+}
+
+export interface AdminUpdateStatusRequest {
+  status: "active" | "disabled";
+}
+

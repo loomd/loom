@@ -2011,6 +2011,11 @@ body.theme-day select.input option {
   line-height: 1.55;
   color: var(--text-tertiary);
 }
+/* 卡片标题右侧的状态徽标: 不参与压缩且始终单行显示，避免中文标签被挤成两行 */
+.remote-card-head > .badge:not(.remote-mono) {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
 .remote-mono {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-weight: 500;
