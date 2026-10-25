@@ -15,6 +15,7 @@ import {
   isAccountPaired,
   getAccountBinding,
   markAccountPaired,
+  ensureBindingDeviceId,
   unbindAccount,
 } from "./pairing.js";
 import {
@@ -255,17 +256,46 @@ async function handleHttpRequest(
       const user = verifyToken(token);
       const body = parseJson<PairVerifyRequest>(await readBody(req));
 
+      const pairSuccess = {
+        valid: true,
+        success: true,
+        workspaceId: "default",
+        workspaceName: "Loom Workspace",
+      };
+
       // 已绑定的账号无需再次校验配对码（重连场景）
       if (isAccountPaired(user.userId)) {
-        jsonResponse(res, 200, {
-          ok: true,
-          data: {
-            valid: true,
-            success: true,
-            workspaceId: "default",
-            workspaceName: "Loom Workspace",
-          },
-        });
+        const binding = getAccountBinding(user.userId);
+        const boundDeviceId = binding?.deviceId ?? null;
+        const requestDeviceId = body.deviceId ?? null;
+
+        // 同一台设备，或老版本客户端没带 deviceId：直接放行
+        if (!requestDeviceId || !boundDeviceId || boundDeviceId === requestDeviceId) {
+          // 老版本客户端配对时没带 deviceId：借这次请求补齐绑定标识
+          if (!boundDeviceId && requestDeviceId) {
+            ensureBindingDeviceId(user.userId, requestDeviceId);
+          }
+          jsonResponse(res, 200, { ok: true, data: pairSuccess });
+          return;
+        }
+
+        // 绑定到了别的设备：只有桌面端新生成的配对码才能把绑定改到本设备
+        const rebindResult = verifyPairingCode(user.userId, body.code);
+        if (!rebindResult.valid) {
+          jsonResponse(res, 200, {
+            ok: false,
+            error:
+              "此账号已绑定其他手机设备，请先在桌面端点击「解绑手机端」，或用桌面端新生成的配对码改绑到本设备",
+          });
+          return;
+        }
+
+        // 配对码校验通过 → 把绑定改到当前设备
+        console.log(
+          `[RELAY] 配对码校验通过，绑定改绑到新设备: userId=${user.userId}, deviceId=${requestDeviceId}`,
+        );
+        markAccountPaired(user.userId, requestDeviceId);
+        jsonResponse(res, 200, { ok: true, data: pairSuccess });
         return;
       }
 
@@ -273,22 +303,15 @@ async function handleHttpRequest(
       if (!verifyResult.valid) {
         jsonResponse(res, 200, {
           ok: false,
-          error: verifyResult.error || "配对码无效或已过期",
+          error:
+            `${verifyResult.error || "配对码无效或已过期"}。该账号当前未绑定手机端，请在桌面端点击「开启远程会话」生成新配对码后重新输入`,
         });
         return;
       }
 
       // 校验通过即建立账号级绑定：此后手机端重连只需 token
       markAccountPaired(user.userId, body.deviceId);
-      jsonResponse(res, 200, {
-        ok: true,
-        data: {
-          valid: true,
-          success: true,
-          workspaceId: "default",
-          workspaceName: "Loom Workspace",
-        },
-      });
+      jsonResponse(res, 200, { ok: true, data: pairSuccess });
       return;
     }
 
