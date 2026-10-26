@@ -137,20 +137,30 @@ if (fs.existsSync(manifestPath)) {
 // 保证 Kotlin 版本为 1.9.25（兼容 expo-modules-core Compose Compiler）
 const rootGradlePath = path.join(mobileRoot, "android", "build.gradle");
 if (fs.existsSync(rootGradlePath)) {
-  const rootGradle = fs.readFileSync(rootGradlePath, "utf8");
+  let rootGradle = fs.readFileSync(rootGradlePath, "utf8");
+  rootGradle = rootGradle.replace(
+    /classpath\(['"]org\.jetbrains\.kotlin:kotlin-gradle-plugin(?::[^'"]+)?['"]\)/g,
+    'classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:1.9.25")'
+  );
   if (rootGradle.includes("'1.9.24'")) {
-    fs.writeFileSync(rootGradlePath, rootGradle.replace(/'1.9.24'/g, "'1.9.25'"), "utf8");
-    console.log("[sync-version] 已将 root build.gradle 的 kotlinVersion 对齐至 1.9.25");
+    rootGradle = rootGradle.replace(/'1.9.24'/g, "'1.9.25'");
   }
+  fs.writeFileSync(rootGradlePath, rootGradle, "utf8");
+  console.log("[sync-version] 已将 root build.gradle 的 kotlin-gradle-plugin 锁定为 1.9.25");
 }
 
 const gradlePropsPath = path.join(mobileRoot, "android", "gradle.properties");
 if (fs.existsSync(gradlePropsPath)) {
-  const props = fs.readFileSync(gradlePropsPath, "utf8");
+  let props = fs.readFileSync(gradlePropsPath, "utf8");
   if (!props.includes("android.kotlinVersion")) {
-    fs.appendFileSync(gradlePropsPath, "\nandroid.kotlinVersion=1.9.25\n", "utf8");
-    console.log("[sync-version] 已在 gradle.properties 中配置 android.kotlinVersion=1.9.25");
+    props += "\nandroid.kotlinVersion=1.9.25\n";
   }
+  if (!props.includes("suppressKotlinVersionCompatibilityCheck")) {
+    props += "composeCompiler.suppressKotlinVersionCompatibilityCheck=true\n";
+    props += "suppressKotlinVersionCompatibilityCheck=true\n";
+  }
+  fs.writeFileSync(gradlePropsPath, props, "utf8");
+  console.log("[sync-version] 已在 gradle.properties 中配置 android.kotlinVersion=1.9.25 及 Compose 兼容检查忽略");
 }
 
 if (problems.length > 0) {
