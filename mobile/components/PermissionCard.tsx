@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { View, Text, TouchableOpacity, StyleSheet } from "react-native";
+import { colors, font, radius, space } from "@/theme";
 
 export interface PermissionOption {
   id: string;
@@ -22,6 +23,7 @@ interface PermissionCardProps {
   onReject: (requestId: string) => void;
 }
 
+/** 扁平化的权限审批卡片 */
 export const PermissionCard: React.FC<PermissionCardProps> = ({
   request,
   onApprove,
@@ -43,16 +45,18 @@ export const PermissionCard: React.FC<PermissionCardProps> = ({
     <View style={styles.card}>
       <View style={styles.header}>
         <View style={styles.badge}>
-          <Text style={styles.badgeText}>操作审批</Text>
+          <Text style={styles.badgeText}>需要授权</Text>
         </View>
-        <Text style={styles.title}>{request.title}</Text>
+        <Text style={styles.title} numberOfLines={2}>
+          {request.title}
+        </Text>
       </View>
 
       {request.description ? (
         <Text style={styles.desc}>{request.description}</Text>
       ) : null}
 
-      {request.options && request.options.length > 0 && (
+      {request.options && request.options.length > 0 ? (
         <View style={styles.optionsList}>
           {request.options.map((opt) => {
             const isSelected = selectedIds.includes(opt.id);
@@ -63,11 +67,18 @@ export const PermissionCard: React.FC<PermissionCardProps> = ({
                 onPress={() => handleToggleOption(opt.id)}
                 activeOpacity={0.7}
               >
-                <View style={[styles.checkbox, isSelected && styles.checkboxSelected]}>
-                  {isSelected && <View style={styles.checkboxInner} />}
+                <View
+                  style={[styles.checkbox, isSelected && styles.checkboxSelected]}
+                >
+                  {isSelected ? <View style={styles.checkboxInner} /> : null}
                 </View>
                 <View style={styles.optionContent}>
-                  <Text style={[styles.optionLabel, isSelected && styles.optionLabelSelected]}>
+                  <Text
+                    style={[
+                      styles.optionLabel,
+                      isSelected && styles.optionLabelSelected,
+                    ]}
+                  >
                     {opt.label}
                   </Text>
                   {opt.description ? (
@@ -78,7 +89,7 @@ export const PermissionCard: React.FC<PermissionCardProps> = ({
             );
           })}
         </View>
-      )}
+      ) : null}
 
       <View style={styles.actions}>
         <TouchableOpacity
@@ -86,14 +97,14 @@ export const PermissionCard: React.FC<PermissionCardProps> = ({
           onPress={() => onReject(request.id)}
           activeOpacity={0.7}
         >
-          <Text style={styles.rejectText}>拒绝操作</Text>
+          <Text style={styles.rejectText}>拒绝</Text>
         </TouchableOpacity>
         <TouchableOpacity
           style={styles.approveBtn}
           onPress={() => onApprove(request.id, selectedIds)}
           activeOpacity={0.7}
         >
-          <Text style={styles.approveText}>确认授权并继续</Text>
+          <Text style={styles.approveText}>允许并继续</Text>
         </TouchableOpacity>
       </View>
     </View>
@@ -102,129 +113,124 @@ export const PermissionCard: React.FC<PermissionCardProps> = ({
 
 const styles = StyleSheet.create({
   card: {
-    backgroundColor: "#1c1c28",
-    borderRadius: 12,
+    backgroundColor: colors.surface,
+    borderRadius: radius.lg,
     borderWidth: 1,
-    borderColor: "#3f3f50",
-    padding: 16,
-    marginVertical: 8,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 4,
+    borderColor: colors.borderStrong,
+    padding: space.lg,
+    marginVertical: space.sm,
   },
   header: {
     flexDirection: "row",
     alignItems: "center",
-    marginBottom: 8,
+    gap: space.sm,
+    marginBottom: space.sm,
   },
   badge: {
-    backgroundColor: "rgba(99, 102, 241, 0.2)",
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: radius.sm,
     borderWidth: 1,
-    borderColor: "#6366f1",
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
-    marginRight: 8,
+    borderColor: colors.accent,
+    backgroundColor: colors.accentSoft,
   },
   badgeText: {
-    color: "#a5b4fc",
-    fontSize: 11,
+    color: colors.accentText,
+    fontSize: font.tiny,
     fontWeight: "600",
   },
   title: {
-    fontSize: 14,
-    fontWeight: "700",
-    color: "#ffffff",
     flex: 1,
+    fontSize: font.body,
+    fontWeight: "600",
+    color: colors.text,
+    lineHeight: 21,
   },
   desc: {
-    fontSize: 12,
-    color: "#a1a1aa",
-    lineHeight: 18,
-    marginBottom: 12,
+    fontSize: font.small,
+    color: colors.textMuted,
+    lineHeight: 19,
+    marginBottom: space.md,
   },
   optionsList: {
-    gap: 8,
-    marginBottom: 14,
+    gap: space.sm,
+    marginBottom: space.md,
   },
   optionItem: {
     flexDirection: "row",
     alignItems: "center",
-    padding: 10,
-    borderRadius: 6,
-    backgroundColor: "#161620",
+    padding: space.md,
+    borderRadius: radius.md,
+    backgroundColor: colors.surfaceAlt,
     borderWidth: 1,
-    borderColor: "#27273a",
+    borderColor: colors.border,
   },
   optionItemSelected: {
-    borderColor: "#6366f1",
-    backgroundColor: "rgba(99, 102, 241, 0.08)",
+    borderColor: colors.accent,
+    backgroundColor: colors.accentSoft,
   },
   checkbox: {
     width: 16,
     height: 16,
-    borderRadius: 4,
+    borderRadius: radius.sm,
     borderWidth: 1.5,
-    borderColor: "#52525b",
-    marginRight: 10,
+    borderColor: colors.borderStrong,
+    marginRight: space.md,
     alignItems: "center",
     justifyContent: "center",
   },
   checkboxSelected: {
-    borderColor: "#6366f1",
+    borderColor: colors.accent,
   },
   checkboxInner: {
     width: 8,
     height: 8,
     borderRadius: 2,
-    backgroundColor: "#6366f1",
+    backgroundColor: colors.accent,
   },
   optionContent: {
     flex: 1,
   },
   optionLabel: {
-    fontSize: 13,
-    color: "#e4e4e7",
+    fontSize: font.small,
+    color: colors.text,
   },
   optionLabelSelected: {
-    color: "#a5b4fc",
+    color: colors.accentText,
     fontWeight: "600",
   },
   optionDesc: {
-    fontSize: 11,
-    color: "#71717a",
+    fontSize: font.tiny,
+    color: colors.textFaint,
     marginTop: 2,
   },
   actions: {
     flexDirection: "row",
-    gap: 10,
+    gap: space.sm,
     justifyContent: "flex-end",
-    marginTop: 4,
   },
   rejectBtn: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 6,
+    paddingHorizontal: space.lg,
+    paddingVertical: space.sm + 2,
+    borderRadius: radius.md,
     borderWidth: 1,
-    borderColor: "#3f3f46",
-    backgroundColor: "#181820",
+    borderColor: colors.borderStrong,
+    backgroundColor: colors.surfaceAlt,
   },
   rejectText: {
-    color: "#a1a1aa",
-    fontSize: 12,
+    color: colors.textMuted,
+    fontSize: font.small,
     fontWeight: "600",
   },
   approveBtn: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 6,
-    backgroundColor: "#6366f1",
+    paddingHorizontal: space.lg,
+    paddingVertical: space.sm + 2,
+    borderRadius: radius.md,
+    backgroundColor: colors.accent,
   },
   approveText: {
     color: "#ffffff",
-    fontSize: 12,
+    fontSize: font.small,
     fontWeight: "600",
   },
 });

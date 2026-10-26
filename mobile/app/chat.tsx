@@ -1,17 +1,17 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import {
   View,
   Text,
   TextInput,
   TouchableOpacity,
   FlatList,
+  ScrollView,
   StyleSheet,
   KeyboardAvoidingView,
   Platform,
   Alert,
-  Modal,
-  ScrollView,
-  SafeAreaView,
+  BackHandler,
+  useWindowDimensions,
 } from "react-native";
 import { useRouter } from "expo-router";
 import type { ChatMessage, RelayMessage, ProjectItem, ModelItem } from "@/types";
@@ -20,6 +20,7 @@ import {
   onStatusChange,
   onAuthError,
   send,
+  sendStop,
   sendPermissionResponse,
   connectToRelay,
   disconnect,
@@ -35,36 +36,52 @@ import {
   getLastPairInfo,
 } from "@/services/storage";
 import { setBaseUrl } from "@/services/api";
-import { StatusBar } from "@/components/StatusBar";
-import { ChatBubble } from "@/components/ChatBubble";
-import { PermissionCard, type PermissionOption, type PermissionRequest } from "@/components/PermissionCard";
-
-let nextId = 1;
-
-function generateId(): string {
-  return `msg_${Date.now()}_${nextId++}`;
-}
+import {
+  appendText,
+  appendThinking,
+  buildConversationRows,
+  createErrorMessage,
+  createTextMessage,
+  markQueuedCancelled,
+  markUserMessageDelivered,
+  parseToolCall,
+  upsertTool,
+  type ConversationRowItem,
+} from "@/services/conversation";
+import { ChatHeader } from "@/components/ChatHeader";
+import { ConversationRow } from "@/components/ConversationRow";
+import {
+  PermissionCard,
+  type PermissionOption,
+  type PermissionRequest,
+} from "@/components/PermissionCard";
+import { SlideDrawer, SlideUpSheet } from "@/components/overlays";
+import { Chevron, StatusDot, StopIcon } from "@/components/icons";
+import { colors, font, radius, space } from "@/theme";
 
 /** 单个项目的独立会话状态容器 */
 interface ProjectSessionState {
   messages: ChatMessage[];
   draftText: string;
   modelId: string;
-  activeAgentId: string | null;
-  thinkingText: string;
-  toolCallIds: Record<string, string>;
   pendingPermission: PermissionRequest | null;
+  /** 该项目是否有正在进行的一轮对话 */
+  busy: boolean;
+  /** 已请求停止，等待桌面端确认 */
+  stopping: boolean;
+  /** 本轮即将开始回应提问，等第一条 Agent 帧到达后把提问标记为「已送达」 */
+  awaitingDelivery: boolean;
 }
 
-function createDefaultSessionState(modelId: string = "default"): ProjectSessionState {
+function createDefaultSessionState(modelId: string = ""): ProjectSessionState {
   return {
     messages: [],
     draftText: "",
     modelId,
-    activeAgentId: null,
-    thinkingText: "",
-    toolCallIds: {},
     pendingPermission: null,
+    busy: false,
+    stopping: false,
+    awaitingDelivery: false,
   };
 }
 
@@ -87,6 +104,7 @@ function toPermissionRequest(parsed: {
 
 export default function ChatScreen() {
   const router = useRouter();
+  const { width: windowWidth } = useWindowDimensions();
 
   // 1. 已开放的项目与模型清单
   const [projects, setProjects] = useState<ProjectItem[]>([]);
@@ -95,13 +113,15 @@ export default function ChatScreen() {
 
   const [models, setModels] = useState<ModelItem[]>([]);
   const [showModelPicker, setShowModelPicker] = useState(false);
+  /** 桌面端当前使用的模型（项目未单独指定时以此为准） */
+  const [desktopModelId, setDesktopModelId] = useState<string>("");
 
   // 2. 每个项目独立的会话状态池：projectId -> ProjectSessionState
   const [sessions, setSessions] = useState<Record<string, ProjectSessionState>>({});
 
   const [connected, setConnected] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
-  const flatListRef = useRef<FlatList<ChatMessage>>(null);
+  const flatListRef = useRef<FlatList<ConversationRowItem>>(null);
 
   // 使用 ref 跟踪当前活动项目 ID，避免 WebSocket 回调闭包捕获旧状态
   const activeProjectIdRef = useRef<string>("");
@@ -110,15 +130,36 @@ export default function ChatScreen() {
   }, [currentProjectId]);
 
   // 当前活动项目的独立会话数据
-  const currentSession = sessions[currentProjectId] || createDefaultSessionState();
+  const currentSession = useMemo(
+    () => sessions[currentProjectId] ?? createDefaultSessionState(),
+    [sessions, currentProjectId],
+  );
   const currentMessages = currentSession.messages;
-  const currentModelId = currentSession.modelId;
+  const currentModelId = currentSession.modelId || desktopModelId;
   const currentInputText = currentSession.draftText;
   const currentPendingPermission = currentSession.pendingPermission;
+  /** 当前项目是否有一轮对话正在进行 */
+  const currentBusy = currentSession.busy;
+  /** 已请求停止、等待桌面端确认 */
+  const currentStopping = currentSession.stopping;
+
+  // 供 WebSocket 回调读取的最新模型 ID，避免闭包捕获旧值
+  const currentModelIdRef = useRef<string>("");
+  useEffect(() => {
+    currentModelIdRef.current = currentModelId;
+  }, [currentModelId]);
+
+  // 渲染单元：连续的多个工具调用合并为一行
+  const rows = useMemo(
+    () => buildConversationRows(currentMessages),
+    [currentMessages],
+  );
 
   // 获取当前项目名称和当前模型名称
-  const currentProjectName = projects.find((p) => p.id === currentProjectId)?.name || "默认工作区";
-  const currentModelName = models.find((m) => m.id === currentModelId)?.name || "mcode (默认)";
+  const currentProjectName =
+    projects.find((p) => p.id === currentProjectId)?.name || "默认工作区";
+  const currentModelName =
+    models.find((m) => m.id === currentModelId)?.name || "默认模型";
 
   // 更新当前项目的输入框草稿
   const handleInputChange = (text: string) => {
@@ -132,159 +173,158 @@ export default function ChatScreen() {
     });
   };
 
-  // 追加消息到指定项目的独立流中
-  const appendMessage = useCallback((msg: ChatMessage, projId?: string) => {
-    const targetPid = projId || activeProjectIdRef.current;
-    if (!targetPid) return;
+  /**
+   * 帧归属的项目。
+   *
+   * 桌面端给每个下行帧都带上 projectId（多个项目的会话可以同时在跑），
+   * 缺失时（例如旧版桌面端）退回当前正在看的项目。
+   */
+  const resolveFrameProject = useCallback(
+    (relayMsg: RelayMessage): string => {
+      return relayMsg.projectId || activeProjectIdRef.current;
+    },
+    [],
+  );
 
-    setSessions((prev) => {
-      const sess = prev[targetPid] || createDefaultSessionState();
-      return {
-        ...prev,
-        [targetPid]: {
-          ...sess,
-          messages: [...sess.messages, msg],
-        },
-      };
-    });
-  }, []);
-
-  // 追加 Agent 文本增量（合并到该项目当前活跃回复气泡）
-  const appendAgentText = useCallback((text: string, timestamp: number) => {
-    if (!text) return;
-    const targetPid = activeProjectIdRef.current;
-    if (!targetPid) return;
-
-    setSessions((prev) => {
-      const sess = prev[targetPid] || createDefaultSessionState();
-      const activeId = sess.activeAgentId;
-
-      if (activeId) {
+  /** 更新指定项目的消息序列 */
+  const updateProjectMessages = useCallback(
+    (pid: string, updater: (messages: ChatMessage[]) => ChatMessage[]) => {
+      if (!pid) return;
+      setSessions((prev) => {
+        const sess = prev[pid] || createDefaultSessionState();
         return {
           ...prev,
-          [targetPid]: {
+          [pid]: { ...sess, messages: updater(sess.messages) },
+        };
+      });
+    },
+    [],
+  );
+
+  /**
+   * 落一条 Agent 帧：追加内容，并把本轮对应的提问标记为已送达。
+   *
+   * `awaitingDelivery` 只在「本轮即将开始回应提问」时为真，
+   * 这样「本轮剩余的输出」不会被误判成「排队提问已经开始执行」。
+   */
+  const appendAgentFrame = useCallback(
+    (pid: string, updater: (messages: ChatMessage[]) => ChatMessage[]) => {
+      if (!pid) return;
+      setSessions((prev) => {
+        const sess = prev[pid] || createDefaultSessionState();
+        const messages = updater(sess.messages);
+        return {
+          ...prev,
+          [pid]: {
             ...sess,
-            messages: sess.messages.map((m) =>
-              m.id === activeId ? { ...m, content: m.content + text } : m,
-            ),
+            messages: sess.awaitingDelivery
+              ? markUserMessageDelivered(messages)
+              : messages,
+            busy: true,
+            awaitingDelivery: false,
           },
         };
-      }
+      });
+    },
+    [],
+  );
 
-      const id = generateId();
-      const thinking = sess.thinkingText;
-      const content = thinking ? `<thinking>${thinking}</thinking>\n${text}` : text;
-      const newMsg: ChatMessage = {
-        id,
-        role: "agent",
-        content,
-        timestamp,
-        status: "delivered",
-      };
-
+  /**
+   * 本轮结束：清掉「生成中」状态。
+   *
+   * 被叫停时（stopReason 为 cancelled），排队中的提问一并标记为已取消。
+   */
+  const endTurn = useCallback((pid: string, stopReason: string) => {
+    if (!pid) return;
+    const cancelled = stopReason === "cancelled";
+    setSessions((prev) => {
+      const sess = prev[pid] || createDefaultSessionState();
+      const messages = cancelled
+        ? markQueuedCancelled(sess.messages)
+        : sess.messages;
+      const hasPending = messages.some(
+        (m) => m.role === "user" && (m.status === "sent" || m.status === "queued"),
+      );
       return {
         ...prev,
-        [targetPid]: {
+        [pid]: {
           ...sess,
-          activeAgentId: id,
-          thinkingText: "",
-          messages: [...sess.messages, newMsg],
+          busy: false,
+          stopping: false,
+          // 下一轮会回应剩下的提问：等它的第一条帧到达再标记送达
+          awaitingDelivery: hasPending,
+          messages,
         },
       };
     });
   }, []);
+
+  /** 权限请求：说明 Agent 正在本轮中回应，同时把提问标记为已送达 */
+  const markPermissionRequest = useCallback(
+    (pid: string, request: PermissionRequest) => {
+      if (!pid) return;
+      setSessions((prev) => {
+        const sess = prev[pid] || createDefaultSessionState();
+        return {
+          ...prev,
+          [pid]: {
+            ...sess,
+            messages: sess.awaitingDelivery
+              ? markUserMessageDelivered(sess.messages)
+              : sess.messages,
+            awaitingDelivery: false,
+            busy: true,
+            pendingPermission: request,
+          },
+        };
+      });
+    },
+    [],
+  );
+
+  // 追加 Agent 文本增量（按到达顺序落库）
+  const appendAgentText = useCallback(
+    (pid: string, text: string) => {
+      appendAgentFrame(pid, (messages) => appendText(messages, text));
+    },
+    [appendAgentFrame],
+  );
 
   // 追加思考过程增量
-  const appendThinking = useCallback((text: string) => {
-    if (!text) return;
-    const targetPid = activeProjectIdRef.current;
-    if (!targetPid) return;
-
-    setSessions((prev) => {
-      const sess = prev[targetPid] || createDefaultSessionState();
-      const activeId = sess.activeAgentId;
-
-      if (!activeId) {
-        return {
-          ...prev,
-          [targetPid]: {
-            ...sess,
-            thinkingText: sess.thinkingText + text,
-          },
-        };
-      }
-
-      return {
-        ...prev,
-        [targetPid]: {
-          ...sess,
-          messages: sess.messages.map((m) => {
-            if (m.id !== activeId) return m;
-            const matched = m.content.match(/<thinking>([\s\S]*?)<\/thinking>/);
-            if (matched) {
-              const head = `<thinking>${matched[1]}${text}</thinking>`;
-              return { ...m, content: head + m.content.slice(matched[0].length) };
-            }
-            return { ...m, content: `<thinking>${text}</thinking>\n${m.content}` };
-          }),
-        },
-      };
-    });
-  }, []);
+  const appendThinkingText = useCallback(
+    (pid: string, text: string) => {
+      appendAgentFrame(pid, (messages) => appendThinking(messages, text));
+    },
+    [appendAgentFrame],
+  );
 
   // 追加工具调用状态
-  const appendToolCall = useCallback((payload: string) => {
-    let toolCallId = "";
-    let label = payload;
-    try {
-      const info = JSON.parse(payload) as {
-        toolCallId?: string;
-        name?: string;
-        title?: string;
-        status?: string;
-      };
-      toolCallId = info.toolCallId || "";
-      const name = info.name || info.title || "工具";
-      label = `[工具] ${name} · ${info.status || "pending"}`;
-    } catch {
-      return;
-    }
-    if (!toolCallId) return;
+  const appendToolCall = useCallback(
+    (pid: string, payload: string) => {
+      const tool = parseToolCall(payload);
+      if (!tool) return;
+      appendAgentFrame(pid, (messages) => upsertTool(messages, tool));
+    },
+    [appendAgentFrame],
+  );
 
+  /** 切换模型：更新模型并清空当前项目的对话区 */
+  const applyModelSwitch = useCallback((modelId: string) => {
+    setDesktopModelId(modelId);
     const targetPid = activeProjectIdRef.current;
     if (!targetPid) return;
-
     setSessions((prev) => {
       const sess = prev[targetPid] || createDefaultSessionState();
-      const existingId = sess.toolCallIds[toolCallId];
-
-      if (existingId) {
-        return {
-          ...prev,
-          [targetPid]: {
-            ...sess,
-            messages: sess.messages.map((m) =>
-              m.id === existingId ? { ...m, content: label } : m,
-            ),
-          },
-        };
-      }
-
-      const id = generateId();
-      const newMsg: ChatMessage = {
-        id,
-        role: "agent",
-        content: label,
-        timestamp: Date.now(),
-        status: "delivered",
-      };
-
       return {
         ...prev,
         [targetPid]: {
           ...sess,
-          toolCallIds: { ...sess.toolCallIds, [toolCallId]: id },
-          messages: [...sess.messages, newMsg],
+          modelId,
+          messages: [],
+          pendingPermission: null,
+          busy: false,
+          stopping: false,
+          awaitingDelivery: false,
         },
       };
     });
@@ -296,6 +336,20 @@ export default function ChatScreen() {
       if (isConnected) {
         setAuthError(null);
         requestContext();
+      } else {
+        // 链路断开：桌面端那轮对话已经不存在了，清理「生成中」状态
+        setSessions((prev) => {
+          const next: Record<string, ProjectSessionState> = {};
+          for (const [pid, sess] of Object.entries(prev)) {
+            next[pid] = {
+              ...sess,
+              busy: false,
+              stopping: false,
+              awaitingDelivery: false,
+            };
+          }
+          return next;
+        });
       }
     });
 
@@ -324,7 +378,8 @@ export default function ChatScreen() {
             if (data.projects && Array.isArray(data.projects)) {
               setProjects(data.projects);
               if (!activeProjectIdRef.current) {
-                const initialPid = data.currentProjectId || data.projects[0]?.id || "";
+                const initialPid =
+                  data.currentProjectId || data.projects[0]?.id || "";
                 setCurrentProjectId(initialPid);
               }
             }
@@ -341,6 +396,9 @@ export default function ChatScreen() {
             };
             if (data.models && Array.isArray(data.models)) {
               setModels(data.models);
+              if (data.currentModelId) {
+                setDesktopModelId(data.currentModelId);
+              }
             }
           } catch {
             // ignore
@@ -366,15 +424,11 @@ export default function ChatScreen() {
               modelId: string;
               modelName: string;
             };
-            const targetPid = activeProjectIdRef.current;
-            if (targetPid) {
-              setSessions((prev) => {
-                const sess = prev[targetPid] || createDefaultSessionState();
-                return {
-                  ...prev,
-                  [targetPid]: { ...sess, modelId: data.modelId },
-                };
-              });
+            // 模型变化后清空对话区，避免新旧模型的上下文混在一起
+            if (data.modelId && data.modelId !== currentModelIdRef.current) {
+              applyModelSwitch(data.modelId);
+            } else if (data.modelId) {
+              setDesktopModelId(data.modelId);
             }
           } catch {
             // ignore
@@ -382,75 +436,42 @@ export default function ChatScreen() {
           return;
         }
         case "chat": {
+          const pid = resolveFrameProject(relayMsg);
           if (relayMsg.payload.startsWith("{")) {
             try {
               const parsed = JSON.parse(relayMsg.payload);
               if (parsed && parsed.method === "request_permission" && parsed.params) {
-                const targetPid = activeProjectIdRef.current;
-                if (targetPid) {
-                  setSessions((prev) => {
-                    const sess = prev[targetPid] || createDefaultSessionState();
-                    return {
-                      ...prev,
-                      [targetPid]: {
-                        ...sess,
-                        pendingPermission: toPermissionRequest(parsed),
-                      },
-                    };
-                  });
-                }
+                markPermissionRequest(pid, toPermissionRequest(parsed));
                 return;
               }
             } catch {
               // 普通文本消息
             }
           }
-          appendAgentText(relayMsg.payload, relayMsg.timestamp);
+          appendAgentText(pid, relayMsg.payload);
           return;
         }
         case "chat_end": {
-          const targetPid = activeProjectIdRef.current;
-          if (targetPid) {
-            setSessions((prev) => {
-              const sess = prev[targetPid];
-              if (!sess) return prev;
-              return {
-                ...prev,
-                [targetPid]: {
-                  ...sess,
-                  activeAgentId: null,
-                  thinkingText: "",
-                },
-              };
-            });
-          }
+          // 本轮结束：正文、思考、工具已按到达顺序落入列表，这里只收尾状态
+          endTurn(resolveFrameProject(relayMsg), relayMsg.payload);
           return;
         }
         case "thinking": {
-          appendThinking(relayMsg.payload);
+          appendThinkingText(resolveFrameProject(relayMsg), relayMsg.payload);
           return;
         }
         case "tool_call": {
-          appendToolCall(relayMsg.payload);
+          appendToolCall(resolveFrameProject(relayMsg), relayMsg.payload);
           return;
         }
         case "permission_request": {
           try {
             const parsed = JSON.parse(relayMsg.payload);
             if (parsed && parsed.params) {
-              const targetPid = activeProjectIdRef.current;
-              if (targetPid) {
-                setSessions((prev) => {
-                  const sess = prev[targetPid] || createDefaultSessionState();
-                  return {
-                    ...prev,
-                    [targetPid]: {
-                      ...sess,
-                      pendingPermission: toPermissionRequest(parsed),
-                    },
-                  };
-                });
-              }
+              markPermissionRequest(
+                resolveFrameProject(relayMsg),
+                toPermissionRequest(parsed),
+              );
             }
           } catch {
             // 忽略
@@ -458,13 +479,12 @@ export default function ChatScreen() {
           return;
         }
         case "error": {
-          appendMessage({
-            id: generateId(),
-            role: "agent",
-            content: `[错误] ${relayMsg.payload}`,
-            timestamp: Date.now(),
-            status: "error",
-          });
+          const pid = resolveFrameProject(relayMsg);
+          updateProjectMessages(pid, (messages) => [
+            ...messages,
+            createErrorMessage(relayMsg.payload),
+          ]);
+          endTurn(pid, "end_turn");
           return;
         }
         default:
@@ -477,7 +497,17 @@ export default function ChatScreen() {
       unsubAuthError();
       unsubMessage();
     };
-  }, [appendAgentText, appendThinking, appendToolCall, appendMessage, router]);
+  }, [
+    appendAgentText,
+    appendThinkingText,
+    appendToolCall,
+    updateProjectMessages,
+    endTurn,
+    markPermissionRequest,
+    resolveFrameProject,
+    applyModelSwitch,
+    router,
+  ]);
 
   // 初始建联
   useEffect(() => {
@@ -503,22 +533,39 @@ export default function ChatScreen() {
   }, [router]);
 
   useEffect(() => {
-    if (currentMessages.length > 0) {
+    if (rows.length > 0) {
       flatListRef.current?.scrollToEnd({ animated: true });
     }
-  }, [currentMessages]);
+  }, [rows.length, currentMessages]);
+
+  // Android 实体返回键：优先关闭抽屉/面板
+  useEffect(() => {
+    const subscription = BackHandler.addEventListener(
+      "hardwareBackPress",
+      () => {
+        if (showProjectDrawer) {
+          setShowProjectDrawer(false);
+          return true;
+        }
+        if (showModelPicker) {
+          setShowModelPicker(false);
+          return true;
+        }
+        return false;
+      },
+    );
+    return () => subscription.remove();
+  }, [showProjectDrawer, showModelPicker]);
 
   const handleSend = useCallback(() => {
     const text = currentInputText.trim();
     if (!text || !currentProjectId) return;
 
-    const userMessage: ChatMessage = {
-      id: generateId(),
-      role: "user",
-      content: text,
-      timestamp: Date.now(),
-      status: "sending",
-    };
+    // 本轮对话进行中：这条提问会排在本轮之后执行
+    const queued = currentBusy;
+
+    const userMessage = createTextMessage(text, "user");
+    userMessage.status = queued ? "queued" : "sending";
 
     // 清空草稿并放入用户提问气泡
     setSessions((prev) => {
@@ -528,6 +575,10 @@ export default function ChatScreen() {
         [currentProjectId]: {
           ...sess,
           draftText: "",
+          // 发出即进入「生成中」：桌面端收到后才会开始本轮对话
+          busy: true,
+          // 空闲时发出的提问会立即开启一轮对话：等第一条 Agent 帧到达再标记送达
+          awaitingDelivery: queued ? sess.awaitingDelivery : true,
           messages: [...sess.messages, userMessage],
         },
       };
@@ -537,6 +588,7 @@ export default function ChatScreen() {
     send(text);
 
     // 标记为已发送
+    const sentStatus: ChatMessage["status"] = queued ? "queued" : "sent";
     setSessions((prev) => {
       const sess = prev[currentProjectId];
       if (!sess) return prev;
@@ -545,12 +597,26 @@ export default function ChatScreen() {
         [currentProjectId]: {
           ...sess,
           messages: sess.messages.map((m) =>
-            m.id === userMessage.id ? { ...m, status: "sent" as const } : m,
+            m.id === userMessage.id ? { ...m, status: sentStatus } : m,
           ),
         },
       };
     });
-  }, [currentInputText, currentProjectId]);
+  }, [currentInputText, currentProjectId, currentBusy]);
+
+  /** 叫停当前项目正在进行的一轮对话 */
+  const handleStop = useCallback(() => {
+    const pid = currentProjectId;
+    if (!pid) return;
+    sendStop();
+    setSessions((prev) => {
+      const sess = prev[pid] || createDefaultSessionState();
+      return {
+        ...prev,
+        [pid]: { ...sess, stopping: true },
+      };
+    });
+  }, [currentProjectId]);
 
   async function handleDisconnect() {
     disconnect();
@@ -558,7 +624,10 @@ export default function ChatScreen() {
     router.replace("/login");
   }
 
-  const handleApprovePermission = (requestId: string, selectedOptions?: string[]) => {
+  const handleApprovePermission = (
+    requestId: string,
+    selectedOptions?: string[],
+  ) => {
     sendPermissionResponse(requestId, true, selectedOptions?.[0]);
     if (currentProjectId) {
       setSessions((prev) => {
@@ -594,23 +663,16 @@ export default function ChatScreen() {
     sendSwitchProject(proj.id);
   };
 
-  // 切换模型：仅改变当前项目的选定模型设置
+  // 切换模型：清空当前项目的对话区后再切换
   const handleSelectModel = (model: ModelItem) => {
     setShowModelPicker(false);
     if (model.id === currentModelId) return;
 
-    if (currentProjectId) {
-      setSessions((prev) => {
-        const sess = prev[currentProjectId] || createDefaultSessionState();
-        return {
-          ...prev,
-          [currentProjectId]: { ...sess, modelId: model.id },
-        };
-      });
-    }
-
+    applyModelSwitch(model.id);
     sendSwitchModel(model.id);
   };
+
+  const drawerWidth = Math.min(300, Math.round(windowWidth * 0.82));
 
   return (
     <KeyboardAvoidingView
@@ -618,14 +680,13 @@ export default function ChatScreen() {
       behavior={Platform.OS === "ios" ? "padding" : undefined}
       keyboardVerticalOffset={88}
     >
-      {/* 顶部自定义状态栏 */}
-      <StatusBar
+      {/* 顶栏 */}
+      <ChatHeader
         connected={connected}
-        currentProjectName={currentProjectName}
-        currentModelName={currentModelName}
+        projectName={currentProjectName}
+        modelName={currentModelName}
         onOpenProjects={() => setShowProjectDrawer(true)}
         onOpenModels={() => setShowModelPicker(true)}
-        onDisconnect={handleDisconnect}
       />
 
       {/* 鉴权失败横幅 */}
@@ -650,7 +711,7 @@ export default function ChatScreen() {
       ) : null}
 
       {/* 权限确认审批卡片 */}
-      {currentPendingPermission && (
+      {currentPendingPermission ? (
         <View style={styles.permissionWrapper}>
           <PermissionCard
             request={currentPendingPermission}
@@ -658,38 +719,65 @@ export default function ChatScreen() {
             onReject={handleRejectPermission}
           />
         </View>
-      )}
+      ) : null}
 
-      {/* 当前项目的独立聊天气泡流 */}
+      {/* 对话流：正文横向占满，工具调用折叠成行 */}
       <FlatList
         ref={flatListRef}
         style={styles.messageList}
         contentContainerStyle={styles.messageListContent}
-        data={currentMessages}
-        renderItem={({ item }) => <ChatBubble message={item} />}
-        keyExtractor={(item) => item.id}
+        data={rows}
+        renderItem={({ item }) => <ConversationRow item={item} />}
+        keyExtractor={(item) => item.key}
         ListEmptyComponent={
-          <View style={styles.emptyContainer}>
-            <View style={styles.emptyIconBadge}>
-              <Text style={styles.emptyIconBadgeText}>📁</Text>
-            </View>
-            <Text style={styles.emptyTitle}>
-              {currentProjectName}
-            </Text>
-            <Text style={styles.emptySubText}>
-              当前项目尚未开启对话（ACP 进程处于休眠状态）
+          <View style={styles.emptyCard}>
+            <Text style={styles.emptyTitle}>{currentProjectName}</Text>
+            <Text style={styles.emptySubText}>尚未开始对话</Text>
+            <View style={styles.emptyDivider} />
+            <Text style={styles.emptyTip}>
+              发送消息后，桌面端会为该项目按需拉起专属会话
             </Text>
             <View style={styles.modelTag}>
-              <Text style={styles.modelTagText}>
-                待激活 Agent: {currentModelName}
-              </Text>
+              <Text style={styles.modelTagText}>{currentModelName}</Text>
             </View>
-            <Text style={styles.emptyTip}>
-              在下方输入消息并发送，将即时为该项目拉起专属 ACP 会话
-            </Text>
           </View>
         }
       />
+
+      {/* 生成中状态条：显示当前轮次进度，并提供「停止」 */}
+      {currentBusy ? (
+        <View style={styles.busyBar}>
+          <View style={styles.busyStatus}>
+            <StatusDot
+              color={currentStopping ? colors.textFaint : colors.accent}
+              size={6}
+            />
+            <Text style={styles.busyText}>
+              {currentStopping ? "正在停止…" : "生成中"}
+            </Text>
+          </View>
+          <TouchableOpacity
+            style={styles.stopButton}
+            onPress={handleStop}
+            disabled={currentStopping}
+            activeOpacity={0.7}
+            accessibilityLabel="停止当前对话"
+          >
+            <StopIcon
+              color={currentStopping ? colors.textFaint : colors.danger}
+              size={9}
+            />
+            <Text
+              style={[
+                styles.stopText,
+                currentStopping && styles.stopTextDisabled,
+              ]}
+            >
+              停止
+            </Text>
+          </TouchableOpacity>
+        </View>
+      ) : null}
 
       {/* 底部输入框 */}
       <View style={styles.inputBar}>
@@ -697,8 +785,12 @@ export default function ChatScreen() {
           style={styles.input}
           value={currentInputText}
           onChangeText={handleInputChange}
-          placeholder={`向 ${currentProjectName} 发送消息...`}
-          placeholderTextColor="#71717a"
+          placeholder={
+            currentBusy
+              ? "继续输入，提问将排在本轮之后"
+              : `向 ${currentProjectName} 发送消息`
+          }
+          placeholderTextColor={colors.textFaint}
           multiline
           maxLength={4096}
           returnKeyType="send"
@@ -718,178 +810,173 @@ export default function ChatScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* 侧边栏：多项目切换抽屉（停靠在左侧） */}
-      <Modal
+      {/* 侧边栏：工作区项目抽屉（滑出 + 可滚动） */}
+      <SlideDrawer
         visible={showProjectDrawer}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setShowProjectDrawer(false)}
+        onClose={() => setShowProjectDrawer(false)}
+        width={drawerWidth}
       >
-        <View style={styles.modalOverlay}>
-          <SafeAreaView style={styles.drawerContainer}>
-            <View style={styles.drawerHeader}>
-              <View>
-                <Text style={styles.drawerTitle}>工作区项目</Text>
-                <Text style={styles.drawerSubtitle}>
-                  已开放 Loom 项目 ({projects.length}) · 独立工作区
-                </Text>
-              </View>
-              <TouchableOpacity
-                onPress={() => setShowProjectDrawer(false)}
-                style={styles.closeButton}
-              >
-                <Text style={styles.closeButtonText}>✕</Text>
-              </TouchableOpacity>
-            </View>
-
-            <ScrollView style={styles.drawerList}>
-              {projects.length === 0 ? (
-                <View style={styles.drawerEmpty}>
-                  <Text style={styles.drawerEmptyText}>
-                    暂未同步到已注册项目，连接后自动加载
-                  </Text>
-                </View>
-              ) : (
-                projects.map((proj) => {
-                  const isSelected = proj.id === currentProjectId;
-                  const sess = sessions[proj.id];
-                  const msgCount = sess?.messages?.length || 0;
-                  const hasConversation = msgCount > 0;
-
-                  return (
-                    <TouchableOpacity
-                      key={proj.id}
-                      style={[
-                        styles.projectItem,
-                        isSelected && styles.projectItemSelected,
-                      ]}
-                      onPress={() => handleSelectProject(proj)}
-                      activeOpacity={0.7}
-                    >
-                      <View style={styles.projectItemHeader}>
-                        <Text style={styles.projectItemIcon}>📁</Text>
-                        <Text
-                          style={[
-                            styles.projectItemName,
-                            isSelected && styles.projectItemNameSelected,
-                          ]}
-                          numberOfLines={1}
-                        >
-                          {proj.name}
-                        </Text>
-                        {isSelected ? (
-                          <View style={styles.currentBadge}>
-                            <Text style={styles.currentBadgeText}>当前活动</Text>
-                          </View>
-                        ) : hasConversation ? (
-                          <View style={styles.activeBadge}>
-                            <Text style={styles.activeBadgeText}>{msgCount} 条对话</Text>
-                          </View>
-                        ) : (
-                          <View style={styles.idleBadge}>
-                            <Text style={styles.idleBadgeText}>空对话</Text>
-                          </View>
-                        )}
-                      </View>
-                      <Text style={styles.projectItemPath} numberOfLines={1}>
-                        {proj.path}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })
-              )}
-            </ScrollView>
-          </SafeAreaView>
-          <TouchableOpacity
-            style={styles.drawerBackdrop}
-            activeOpacity={1}
-            onPress={() => setShowProjectDrawer(false)}
-          />
-        </View>
-      </Modal>
-
-      {/* 模型选择弹出层 */}
-      <Modal
-        visible={showModelPicker}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setShowModelPicker(false)}
-      >
-        <TouchableOpacity
-          style={styles.modalOverlayCenter}
-          activeOpacity={1}
-          onPress={() => setShowModelPicker(false)}
-        >
-          <View
-            style={styles.modelDialog}
-            onStartShouldSetResponder={() => true}
-          >
-            <View style={styles.modelDialogHeader}>
-              <Text style={styles.modelDialogTitle}>为当前项目切换 Agent 模型</Text>
-              <Text style={styles.modelDialogSubtitle}>
-                当前工作区: 【{currentProjectName}】
+        <View style={styles.drawerRoot}>
+          <View style={styles.drawerHeader}>
+            <View style={styles.drawerHeaderText}>
+              <Text style={styles.drawerTitle}>工作区项目</Text>
+              <Text style={styles.drawerSubtitle}>
+                {projects.length} 个项目 · 每个项目独立会话
               </Text>
             </View>
-
-            <ScrollView style={[styles.modelList, { maxHeight: 360 }]}>
-              {models.length === 0 ? (
-                <View style={styles.drawerEmpty}>
-                  <Text style={styles.drawerEmptyText}>
-                    暂无可用模型，连接后自动加载
-                  </Text>
-                </View>
-              ) : (
-                models.map((model) => {
-                  const isSelected = model.id === currentModelId;
-                  const argsDesc = model.args && model.args.length > 0 ? model.args.join(" ") : "默认配置";
-                  return (
-                    <TouchableOpacity
-                      key={model.id}
-                      style={[
-                        styles.modelItem,
-                        isSelected && styles.modelItemSelected,
-                      ]}
-                      onPress={() => handleSelectModel(model)}
-                      activeOpacity={0.7}
-                    >
-                      <View style={styles.modelItemLeft}>
-                        <Text style={styles.modelItemIcon}>🤖</Text>
-                        <View style={styles.modelItemTextGroup}>
-                          <Text
-                            style={[
-                              styles.modelItemName,
-                              isSelected && styles.modelItemNameSelected,
-                            ]}
-                            numberOfLines={1}
-                          >
-                            {model.name}
-                          </Text>
-                          <Text style={styles.modelItemArgs} numberOfLines={1}>
-                            {argsDesc}
-                          </Text>
-                        </View>
-                      </View>
-                      {isSelected && (
-                        <View style={styles.activeCheckmark}>
-                          <Text style={styles.activeCheckmarkText}>✓</Text>
-                        </View>
-                      )}
-                    </TouchableOpacity>
-                  );
-                })
-              )}
-            </ScrollView>
-
             <TouchableOpacity
-              style={styles.modelCancelButton}
-              onPress={() => setShowModelPicker(false)}
-              activeOpacity={0.7}
+              style={styles.drawerClose}
+              onPress={() => setShowProjectDrawer(false)}
+              activeOpacity={0.6}
+              accessibilityLabel="关闭项目列表"
             >
-              <Text style={styles.modelCancelButtonText}>取消</Text>
+              <Chevron size={13} color={colors.textMuted} direction="left" />
             </TouchableOpacity>
           </View>
-        </TouchableOpacity>
-      </Modal>
+
+          <ScrollView
+            style={styles.drawerList}
+            contentContainerStyle={styles.drawerListContent}
+            showsVerticalScrollIndicator={false}
+          >
+            {projects.length === 0 ? (
+              <View style={styles.drawerEmpty}>
+                <Text style={styles.drawerEmptyText}>
+                  暂未同步到已注册项目，连接后自动加载
+                </Text>
+              </View>
+            ) : (
+              projects.map((proj) => {
+                const isSelected = proj.id === currentProjectId;
+                const msgCount = sessions[proj.id]?.messages?.length || 0;
+
+                return (
+                  <TouchableOpacity
+                    key={proj.id}
+                    style={[
+                      styles.projectItem,
+                      isSelected && styles.projectItemSelected,
+                    ]}
+                    onPress={() => handleSelectProject(proj)}
+                    activeOpacity={0.7}
+                  >
+                    <View style={styles.projectItemHeader}>
+                      <Text
+                        style={[
+                          styles.projectItemName,
+                          isSelected && styles.projectItemNameSelected,
+                        ]}
+                        numberOfLines={1}
+                      >
+                        {proj.name}
+                      </Text>
+                      <View
+                        style={[
+                          styles.projectBadge,
+                          isSelected && styles.projectBadgeActive,
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.projectBadgeText,
+                            isSelected && styles.projectBadgeTextActive,
+                          ]}
+                        >
+                          {isSelected
+                            ? "当前"
+                            : msgCount > 0
+                              ? `${msgCount} 条`
+                              : "空"}
+                        </Text>
+                      </View>
+                    </View>
+                    <Text style={styles.projectItemPath} numberOfLines={1}>
+                      {proj.path}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })
+            )}
+          </ScrollView>
+
+          <View style={styles.drawerFooter}>
+            <TouchableOpacity
+              style={styles.disconnectButton}
+              onPress={handleDisconnect}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.disconnectText}>断开连接</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </SlideDrawer>
+
+      {/* 模型选择：底部滑出面板 */}
+      <SlideUpSheet
+        visible={showModelPicker}
+        onClose={() => setShowModelPicker(false)}
+      >
+        <View style={styles.sheetHeader}>
+          <Text style={styles.sheetTitle}>切换模型</Text>
+          <Text style={styles.sheetSubtitle} numberOfLines={1}>
+            {currentProjectName} · 切换后清空当前对话
+          </Text>
+        </View>
+
+        <ScrollView
+          style={styles.modelList}
+          contentContainerStyle={styles.modelListContent}
+          showsVerticalScrollIndicator={false}
+        >
+          {models.length === 0 ? (
+            <View style={styles.drawerEmpty}>
+              <Text style={styles.drawerEmptyText}>
+                暂无可用模型，连接后自动加载
+              </Text>
+            </View>
+          ) : (
+            models.map((model) => {
+              const isSelected = model.id === currentModelId;
+              const argsDesc =
+                model.args && model.args.length > 0
+                  ? model.args.join(" ")
+                  : "默认配置";
+              return (
+                <TouchableOpacity
+                  key={model.id}
+                  style={[
+                    styles.modelItem,
+                    isSelected && styles.modelItemSelected,
+                  ]}
+                  onPress={() => handleSelectModel(model)}
+                  activeOpacity={0.7}
+                >
+                  <View style={styles.modelItemTextGroup}>
+                    <Text
+                      style={[
+                        styles.modelItemName,
+                        isSelected && styles.modelItemNameSelected,
+                      ]}
+                      numberOfLines={1}
+                    >
+                      {model.name}
+                    </Text>
+                    <Text style={styles.modelItemArgs} numberOfLines={1}>
+                      {argsDesc}
+                    </Text>
+                  </View>
+                  <View
+                    style={[
+                      styles.modelDot,
+                      isSelected && styles.modelDotSelected,
+                    ]}
+                  />
+                </TouchableOpacity>
+              );
+            })
+          )}
+        </ScrollView>
+      </SlideUpSheet>
     </KeyboardAvoidingView>
   );
 }
@@ -897,368 +984,349 @@ export default function ChatScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#0a0a0f",
+    backgroundColor: colors.bg,
   },
   permissionWrapper: {
-    paddingHorizontal: 16,
-    paddingTop: 8,
+    paddingHorizontal: space.lg,
+    paddingTop: space.sm,
   },
   messageList: {
     flex: 1,
   },
   messageListContent: {
-    paddingVertical: 12,
+    paddingVertical: space.lg,
   },
-  emptyContainer: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    paddingTop: 100,
-    paddingHorizontal: 32,
-  },
-  emptyIconBadge: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: "#1c1c28",
-    justifyContent: "center",
-    alignItems: "center",
-    marginBottom: 16,
+  emptyCard: {
+    marginHorizontal: space.lg,
+    marginTop: space.xxl,
+    padding: space.lg,
+    borderRadius: radius.lg,
     borderWidth: 1,
-    borderColor: "#2d2d40",
-  },
-  emptyIconBadgeText: {
-    fontSize: 26,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
   },
   emptyTitle: {
-    color: "#f4f4f5",
-    fontSize: 18,
+    color: colors.text,
+    fontSize: font.title,
     fontWeight: "700",
-    textAlign: "center",
   },
   emptySubText: {
-    color: "#a1a1aa",
-    fontSize: 13,
-    marginTop: 6,
-    textAlign: "center",
+    color: colors.textMuted,
+    fontSize: font.small,
+    marginTop: 4,
   },
-  modelTag: {
-    backgroundColor: "#202030",
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: "#373752",
-    marginTop: 14,
-    marginBottom: 8,
-  },
-  modelTagText: {
-    color: "#a5b4fc",
-    fontSize: 12,
-    fontWeight: "600",
+  emptyDivider: {
+    height: 1,
+    backgroundColor: colors.border,
+    marginVertical: space.md,
   },
   emptyTip: {
-    color: "#52525b",
-    fontSize: 11,
-    marginTop: 10,
-    textAlign: "center",
-    maxWidth: 260,
-    lineHeight: 16,
+    color: colors.textFaint,
+    fontSize: font.small,
+    lineHeight: 20,
+  },
+  modelTag: {
+    alignSelf: "flex-start",
+    marginTop: space.md,
+    paddingHorizontal: space.md,
+    paddingVertical: 5,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surfaceAlt,
+  },
+  modelTagText: {
+    color: colors.accentText,
+    fontSize: font.tiny,
+    fontWeight: "600",
   },
   authBanner: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    backgroundColor: "#241a10",
+    backgroundColor: "rgba(240, 180, 41, 0.10)",
     borderBottomWidth: 1,
-    borderBottomColor: "#78350f",
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    gap: 12,
+    borderBottomColor: "rgba(240, 180, 41, 0.35)",
+    paddingHorizontal: space.lg,
+    paddingVertical: space.sm,
+    gap: space.md,
   },
   authBannerText: {
     flex: 1,
-    color: "#fbbf24",
-    fontSize: 12,
+    color: colors.warning,
+    fontSize: font.small,
     lineHeight: 18,
   },
   authBannerButton: {
-    paddingHorizontal: 12,
+    paddingHorizontal: space.md,
     paddingVertical: 6,
-    borderRadius: 6,
-    backgroundColor: "#78350f",
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: "rgba(240, 180, 41, 0.45)",
   },
   authBannerButtonText: {
-    color: "#fef3c7",
-    fontSize: 12,
+    color: colors.warning,
+    fontSize: font.tiny,
     fontWeight: "600",
   },
   inputBar: {
     flexDirection: "row",
     alignItems: "flex-end",
-    backgroundColor: "#16161d",
+    backgroundColor: colors.bg,
     borderTopWidth: 1,
-    borderTopColor: "#27272a",
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+    borderTopColor: colors.border,
+    paddingHorizontal: space.md,
+    paddingVertical: space.sm,
+  },
+  busyBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    backgroundColor: colors.surface,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+    paddingHorizontal: space.lg,
+    paddingVertical: space.sm,
+  },
+  busyStatus: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: space.sm,
+  },
+  busyText: {
+    color: colors.textMuted,
+    fontSize: font.tiny,
+  },
+  stopButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: space.md,
+    paddingVertical: 5,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  stopText: {
+    color: colors.danger,
+    fontSize: font.tiny,
+    fontWeight: "600",
+  },
+  stopTextDisabled: {
+    color: colors.textFaint,
   },
   input: {
     flex: 1,
-    backgroundColor: "#20202a",
-    borderRadius: 20,
-    paddingHorizontal: 16,
-    paddingTop: 8,
-    paddingBottom: 8,
-    color: "#f4f4f5",
-    fontSize: 15,
+    backgroundColor: colors.surfaceAlt,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingHorizontal: space.md,
+    paddingTop: space.sm + 2,
+    paddingBottom: space.sm + 2,
+    color: colors.text,
+    fontSize: font.body,
     maxHeight: 120,
-    marginRight: 8,
+    marginRight: space.sm,
   },
   sendButton: {
-    backgroundColor: "#6366f1",
-    borderRadius: 20,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
+    backgroundColor: colors.accent,
+    borderRadius: radius.md,
+    paddingHorizontal: space.lg,
+    paddingVertical: space.sm + 4,
     justifyContent: "center",
     alignItems: "center",
   },
   sendButtonDisabled: {
-    backgroundColor: "#2e2e3e",
+    backgroundColor: colors.surfaceActive,
   },
   sendButtonText: {
     color: "#ffffff",
-    fontSize: 14,
+    fontSize: font.small,
     fontWeight: "600",
   },
-  modalOverlay: {
+  drawerRoot: {
     flex: 1,
-    flexDirection: "row",
-    backgroundColor: "rgba(0, 0, 0, 0.65)",
-  },
-  drawerBackdrop: {
-    flex: 1,
-  },
-  drawerContainer: {
-    width: "78%",
-    maxWidth: 300,
-    backgroundColor: "#13131a",
-    borderRightWidth: 1,
-    borderRightColor: "#27272a",
-    paddingTop: Platform.OS === "android" ? 36 : 0,
+    paddingTop: space.lg,
   },
   drawerHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 16,
-    paddingVertical: 16,
+    paddingHorizontal: space.lg,
+    paddingBottom: space.md,
     borderBottomWidth: 1,
-    borderBottomColor: "#202028",
+    borderBottomColor: colors.border,
+  },
+  drawerHeaderText: {
+    flex: 1,
+  },
+  drawerClose: {
+    width: 30,
+    height: 30,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: "center",
+    justifyContent: "center",
   },
   drawerTitle: {
-    color: "#f4f4f5",
-    fontSize: 17,
+    color: colors.text,
+    fontSize: font.title,
     fontWeight: "700",
   },
   drawerSubtitle: {
-    color: "#71717a",
-    fontSize: 11,
+    color: colors.textFaint,
+    fontSize: font.tiny,
     marginTop: 2,
-  },
-  closeButton: {
-    padding: 6,
-    borderRadius: 6,
-    backgroundColor: "#202028",
-  },
-  closeButtonText: {
-    color: "#a1a1aa",
-    fontSize: 14,
-    fontWeight: "600",
   },
   drawerList: {
     flex: 1,
-    paddingHorizontal: 12,
-    paddingVertical: 12,
+  },
+  drawerListContent: {
+    paddingHorizontal: space.md,
+    paddingVertical: space.md,
   },
   drawerEmpty: {
-    paddingVertical: 40,
+    paddingVertical: space.xxl,
     alignItems: "center",
   },
   drawerEmptyText: {
-    color: "#71717a",
-    fontSize: 13,
+    color: colors.textFaint,
+    fontSize: font.small,
     textAlign: "center",
+    lineHeight: 20,
   },
   projectItem: {
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderRadius: 8,
-    backgroundColor: "#181822",
-    marginBottom: 8,
+    paddingHorizontal: space.md,
+    paddingVertical: space.md,
+    borderRadius: radius.md,
     borderWidth: 1,
-    borderColor: "#272732",
+    borderColor: colors.border,
+    backgroundColor: colors.surfaceAlt,
+    marginBottom: space.sm,
   },
   projectItemSelected: {
-    backgroundColor: "#1e1e2e",
-    borderColor: "#6366f1",
+    borderColor: colors.accent,
+    backgroundColor: colors.accentSoft,
   },
   projectItemHeader: {
     flexDirection: "row",
     alignItems: "center",
-  },
-  projectItemIcon: {
-    fontSize: 14,
-    marginRight: 8,
+    gap: space.sm,
   },
   projectItemName: {
-    color: "#e4e4e7",
-    fontSize: 14,
-    fontWeight: "600",
     flex: 1,
+    color: colors.text,
+    fontSize: font.body,
+    fontWeight: "600",
   },
   projectItemNameSelected: {
-    color: "#a5b4fc",
+    color: colors.accentText,
   },
-  currentBadge: {
-    backgroundColor: "#312e81",
-    paddingHorizontal: 6,
+  projectBadge: {
+    paddingHorizontal: 7,
     paddingVertical: 2,
-    borderRadius: 4,
-  },
-  currentBadgeText: {
-    color: "#c7d2fe",
-    fontSize: 10,
-    fontWeight: "600",
-  },
-  activeBadge: {
-    backgroundColor: "#1e293b",
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
+    borderRadius: radius.sm,
     borderWidth: 1,
-    borderColor: "#334155",
+    borderColor: colors.border,
   },
-  activeBadgeText: {
-    color: "#94a3b8",
-    fontSize: 10,
-    fontWeight: "500",
+  projectBadgeActive: {
+    borderColor: colors.accent,
   },
-  idleBadge: {
-    backgroundColor: "#181820",
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
+  projectBadgeText: {
+    color: colors.textFaint,
+    fontSize: font.tiny,
   },
-  idleBadgeText: {
-    color: "#52525b",
-    fontSize: 10,
+  projectBadgeTextActive: {
+    color: colors.accentText,
   },
   projectItemPath: {
-    color: "#71717a",
-    fontSize: 11,
+    color: colors.textFaint,
+    fontSize: font.tiny,
     marginTop: 4,
-    marginLeft: 22,
   },
-  modalOverlayCenter: {
-    flex: 1,
-    backgroundColor: "rgba(0, 0, 0, 0.7)",
-    justifyContent: "center",
-    alignItems: "center",
-    paddingHorizontal: 20,
+  drawerFooter: {
+    paddingHorizontal: space.md,
+    paddingTop: space.md,
+    paddingBottom: space.xl,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
   },
-  modelDialog: {
-    width: "100%",
-    maxWidth: 380,
-    backgroundColor: "#161620",
-    borderRadius: 14,
+  disconnectButton: {
+    paddingVertical: space.md,
+    borderRadius: radius.md,
     borderWidth: 1,
-    borderColor: "#272736",
-    padding: 16,
+    borderColor: "rgba(240, 101, 111, 0.4)",
+    alignItems: "center",
   },
-  modelDialogHeader: {
-    marginBottom: 12,
+  disconnectText: {
+    color: colors.danger,
+    fontSize: font.small,
+    fontWeight: "600",
+  },
+  sheetHeader: {
+    paddingHorizontal: space.lg,
+    paddingTop: space.lg,
+    paddingBottom: space.md,
     borderBottomWidth: 1,
-    borderBottomColor: "#252535",
-    paddingBottom: 10,
+    borderBottomColor: colors.border,
   },
-  modelDialogTitle: {
-    color: "#f4f4f5",
-    fontSize: 16,
+  sheetTitle: {
+    color: colors.text,
+    fontSize: font.title,
     fontWeight: "700",
   },
-  modelDialogSubtitle: {
-    color: "#818cf8",
-    fontSize: 12,
-    marginTop: 2,
+  sheetSubtitle: {
+    color: colors.textFaint,
+    fontSize: font.tiny,
+    marginTop: 3,
   },
   modelList: {
-    marginVertical: 4,
+    flexShrink: 1,
+  },
+  modelListContent: {
+    paddingHorizontal: space.md,
+    paddingTop: space.md,
   },
   modelItem: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderRadius: 8,
-    backgroundColor: "#1e1e2b",
-    marginBottom: 8,
+    gap: space.md,
+    paddingHorizontal: space.md,
+    paddingVertical: space.md,
+    borderRadius: radius.md,
     borderWidth: 1,
-    borderColor: "#2a2a3c",
+    borderColor: colors.border,
+    backgroundColor: colors.surfaceAlt,
+    marginBottom: space.sm,
   },
   modelItemSelected: {
-    backgroundColor: "#26263b",
-    borderColor: "#6366f1",
-  },
-  modelItemLeft: {
-    flexDirection: "row",
-    alignItems: "center",
-    flex: 1,
-    marginRight: 8,
-  },
-  modelItemIcon: {
-    fontSize: 16,
-    marginRight: 10,
+    borderColor: colors.accent,
+    backgroundColor: colors.accentSoft,
   },
   modelItemTextGroup: {
     flex: 1,
   },
   modelItemName: {
-    color: "#e4e4e7",
-    fontSize: 14,
+    color: colors.text,
+    fontSize: font.body,
     fontWeight: "600",
   },
   modelItemNameSelected: {
-    color: "#c7d2fe",
+    color: colors.accentText,
   },
   modelItemArgs: {
-    color: "#71717a",
-    fontSize: 11,
+    color: colors.textFaint,
+    fontSize: font.tiny,
     marginTop: 2,
   },
-  activeCheckmark: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    backgroundColor: "#6366f1",
-    alignItems: "center",
-    justifyContent: "center",
+  modelDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
   },
-  activeCheckmarkText: {
-    color: "#ffffff",
-    fontSize: 12,
-    fontWeight: "700",
-  },
-  modelCancelButton: {
-    marginTop: 10,
-    paddingVertical: 10,
-    borderRadius: 8,
-    backgroundColor: "#20202e",
-    alignItems: "center",
-  },
-  modelCancelButtonText: {
-    color: "#a1a1aa",
-    fontSize: 14,
-    fontWeight: "600",
+  modelDotSelected: {
+    backgroundColor: colors.accent,
+    borderColor: colors.accent,
   },
 });

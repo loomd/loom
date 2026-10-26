@@ -18,8 +18,32 @@ use std::process::{Child, Command, Stdio};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use crate::acp::AcpBridge;
+use crate::acp::{frame as acp_frame, make_frame, AcpBridge, STOP_REASON_CANCELLED};
 use loom_core::storage as cstore;
+
+/// 取消请求的兜底超时（毫秒）。
+///
+/// 并非所有 Agent 都实现了 ACP `session/cancel`；超时未果时由桌面端直接结束
+/// 该项目的 ACP 子进程，保证手机端的「停止」一定能生效。
+const CANCEL_FALLBACK_TIMEOUT_MS: u64 = 3000;
+
+/// 给下发手机端的帧补上项目标识。
+///
+/// 多个项目的 ACP 会话可以同时在跑，中继层又只是字节透传，帧本身不带归属信息。
+/// 手机端据此把内容写回**产生它**的那个项目的会话，而不是当前正在看的项目，
+/// 避免「对话中途切项目 → 内容串到别的项目」。
+fn tag_project(frame: &str, project_id: &str) -> String {
+    let Ok(mut value) = serde_json::from_str::<serde_json::Value>(frame) else {
+        return frame.to_string();
+    };
+    if let Some(obj) = value.as_object_mut() {
+        obj.insert(
+            "projectId".to_string(),
+            serde_json::Value::String(project_id.to_string()),
+        );
+    }
+    serde_json::to_string(&value).unwrap_or_else(|_| frame.to_string())
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -1155,7 +1179,8 @@ fn relay_bridge_thread(
                     }
 
                     // 1. 排空已激活项目的 stdout 并转发到手机端
-                    for (_pid, agent) in pool.iter_mut() {
+                    let mut cancel_timeout_agents: Vec<String> = Vec::new();
+                    for (pid, agent) in pool.iter_mut() {
                         while let Ok(line) = agent.rx_out.try_recv() {
                             if line.trim().is_empty() {
                                 continue;
@@ -1167,7 +1192,7 @@ fn relay_bridge_thread(
                             }
                             let mut failed = false;
                             for frame in actions.to_mobile {
-                                if let Err(e) = socket.send(Message::Text(frame)) {
+                                if let Err(e) = socket.send(Message::Text(tag_project(&frame, pid))) {
                                     eprintln!("[RELAY-BRIDGE] 发送消息到 WebSocket 失败: {}", e);
                                     failed = true;
                                     break;
@@ -1176,6 +1201,21 @@ fn relay_bridge_thread(
                             if failed {
                                 break;
                             }
+                        }
+                        // 兜底：Agent 未实现 session/cancel 时，超时后结束该会话
+                        if agent.bridge.cancel_timed_out(CANCEL_FALLBACK_TIMEOUT_MS) {
+                            cancel_timeout_agents.push(pid.clone());
+                        }
+                    }
+                    for pid in cancel_timeout_agents {
+                        if let Some(mut agent) = pool.remove(&pid) {
+                            eprintln!(
+                                "[RELAY-CANCEL] 项目【{}】的 Agent 未响应 session/cancel，结束该会话进程",
+                                pid
+                            );
+                            agent.stop();
+                            let frame = make_frame(acp_frame::CHAT_END, STOP_REASON_CANCELLED);
+                            let _ = socket.send(Message::Text(tag_project(&frame, &pid)));
                         }
                     }
 
@@ -1278,6 +1318,23 @@ fn relay_bridge_thread(
                                         eprintln!("[RELAY-BRIDGE] 📋 收到 get_context 请求，下发已注册项目与可用模型列表");
                                         send_context_lists(&mut socket, &active_project_id, &current_model_id);
                                         continue;
+                                    } else if msg_type == "stop" || msg_type == "cancel" {
+                                        // 手机端叫停：不新建 ACP 进程，只对当前项目已有的会话发取消
+                                        eprintln!("[RELAY-CANCEL] 收到手机端停止请求 (目标活动项目: {})", active_project_id);
+                                        if let Some(agent) = pool.get_mut(&active_project_id) {
+                                            let actions = agent.bridge.on_mobile_frame(&text);
+                                            let pid = agent.project_id.clone();
+                                            if !write_to_agent(&mut agent.stdin, &actions.to_agent) {
+                                                eprintln!("[RELAY-BRIDGE] 写入 Agent stdin 失败");
+                                            }
+                                            for frame in actions.to_mobile {
+                                                if let Err(e) = socket.send(Message::Text(tag_project(&frame, &pid))) {
+                                                    eprintln!("[RELAY-BRIDGE] 发送消息到 WebSocket 失败: {}", e);
+                                                    break;
+                                                }
+                                            }
+                                        }
+                                        continue;
                                     }
                                 }
 
@@ -1316,12 +1373,13 @@ fn relay_bridge_thread(
 
                                 if let Some(agent) = pool.get_mut(&active_project_id) {
                                     let actions = agent.bridge.on_mobile_frame(&text);
+                                    let pid = agent.project_id.clone();
                                     if !write_to_agent(&mut agent.stdin, &actions.to_agent) {
                                         eprintln!("[RELAY-BRIDGE] 写入 Agent stdin 失败");
                                         break;
                                     }
                                     for frame in actions.to_mobile {
-                                        if let Err(e) = socket.send(Message::Text(frame)) {
+                                        if let Err(e) = socket.send(Message::Text(tag_project(&frame, &pid))) {
                                             eprintln!("[RELAY-BRIDGE] 发送消息到 WebSocket 失败: {}", e);
                                             break;
                                         }
@@ -1396,6 +1454,22 @@ mod tests {
         assert_eq!(data.token, "abc");
         assert_eq!(data.expires_at, 123456);
         assert_eq!(data.username, "");
+    }
+
+    #[test]
+    fn test_tag_project_adds_project_id_to_frame() {
+        let frame = r#"{"type":"chat","payload":"hi","timestamp":1}"#;
+        let tagged = tag_project(frame, "proj-a");
+        let v: serde_json::Value = serde_json::from_str(&tagged).expect("should be json");
+        assert_eq!(v["type"], "chat");
+        assert_eq!(v["payload"], "hi");
+        assert_eq!(v["projectId"], "proj-a");
+    }
+
+    #[test]
+    fn test_tag_project_keeps_non_json_frame() {
+        let frame = "not a json frame";
+        assert_eq!(tag_project(frame, "proj-a"), frame);
     }
 }
 

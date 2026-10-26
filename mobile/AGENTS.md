@@ -10,9 +10,12 @@
 ```
 mobile/
 ├── app/          expo-router 文件系统路由（index/login/register/pair/chat/settings）
-├── components/   ChatBubble / CodeBlock / ThinkingBlock / PermissionCard / StatusBar
-├── services/     api.ts（HTTP）、websocket.ts（WS 连接管理）、storage.ts（本地持久化）
+├── components/   ChatHeader / ConversationRow / MarkdownText / ToolCallGroup /
+│                 ThinkingBlock / PermissionCard / overlays（滑出抽屉与底部面板）/ icons
+├── services/     api.ts（HTTP）、websocket.ts（WS 连接管理）、storage.ts（本地持久化）、
+│                 conversation.ts（消息组装与渲染单元切分）
 ├── scripts/      sync-version.mjs（版本号对齐）、build-apk.mjs（本地打包入口）
+├── theme.ts      全局设计令牌（色板 / 圆角 / 间距），全端共用
 ├── types/        与 relay/src/types.ts 对齐的类型
 ├── android/      **expo prebuild 生成目录，已被 .gitignore 排除，不入库**
 └── dist/         打包产物目录，已被 .gitignore 排除，不入库
@@ -61,15 +64,35 @@ mobile/
 
 | type | 含义 | 手机端处理 |
 |---|---|---|
-| `chat` | Agent 回复正文增量 | **同一轮的所有增量合并进同一个气泡**，直到 `chat_end` |
-| `chat_end` | 本轮结束 | 关闭当前气泡（后续 `chat` 另起气泡） |
-| `thinking` | 思考过程增量 | 并入当前气泡的 `<thinking>` 块 |
-| `tool_call` | 工具调用状态（payload 为 JSON 字符串） | 同一 `toolCallId` 的更新合并为一条，**独立成气泡** |
+| `chat` | Agent 回复正文增量 | **按到达顺序**追加为正文消息；只有最后一条仍是正文时才合并增量，否则另起一条 |
+| `chat_end` | 本轮结束 | 无需收尾（正文/思考/工具已按到达顺序落库）；载荷为 `cancelled` 表示本轮被叫停 |
+| `thinking` | 思考过程增量 | 独立成「思考」消息（连续增量合并），位置跟随真实到达顺序 |
+| `tool_call` | 工具调用状态（payload 为 JSON 字符串） | 同一 `toolCallId` 原地更新状态；**连续的多个工具调用在列表里折叠成一行**，点击展开明细 |
 | `permission_request` | 权限审批请求（payload 为 JSON 字符串） | 弹审批卡片 |
 | `error` | 错误提示 | 独立成气泡 |
 
+**每个下行帧都带 `projectId`**：多项目的 ACP 会话可以同时在跑，中继层又只是字节透传，
+帧不带归属信息就没法区分内容来自哪个项目。手机端按 `projectId` 落库，
+**不是**按「当前正在看的项目」——否则「对话中途切项目」时，切换前那个项目的输出会串到新项目里。
+（旧版桌面端不下发该字段，手机端此时退回当前项目，属兼容降级。）
+
 上行：用户文本走 `chat` 信封；审批裁决走 `permission_response` 帧
-`{"type":"permission_response","payload":"{\"id\",\"approved\",\"optionId\"}"}`。
+`{"type":"permission_response","payload":"{\"id\",\"approved\",\"optionId\"}"}`；
+叫停走 `stop` 帧 `{"type":"stop"}`。
+
+### 2.5 停止与插入（桌面端与手机端必须同时更新）
+
+| 能力 | 手机端 | 桌面端 |
+|---|---|---|
+| 停止当前对话 | 生成中显示「停止」按钮，发 `stop` 帧 | 转成 ACP `session/cancel`（`params.sessionId` 必需），丢弃排队中的提问，Agent 回应后补发 `chat_end`（载荷 `cancelled`） |
+| 对话中插入提问 | 生成中发送的消息标记「排队中」，本轮结束后自动执行 | 同一 session 只允许一个 `session/prompt` 在途，后续提问进 `prompt_queue`，上一轮结束后自动派发 |
+
+- **不是所有 Agent 都实现了 `session/cancel`**：桌面端有 3 秒兜底超时，
+  超时未收到 Agent 回应就直接结束该项目的 ACP 子进程，保证「停止」一定生效
+  （代价是该项目下一条消息要重新拉起会话）。
+- 叫停会**连带丢弃排队中的提问**（桌面端清 `prompt_queue`），
+  手机端收到 `chat_end`（载荷 `cancelled`）后把「排队中」的消息标记为「已取消」。
+- `stop` 帧由桌面端桥接循环单独处理：**不会**为该项目新建 ACP 进程。
 
 ### 2.4 账号级绑定与重连语义（中继侧已实现）
 
@@ -123,13 +146,15 @@ npm run build:apk:local # 打包入口：自动先 sync 再 gradle，最后拷�
 ### 3.2 `thinking` 帧可能晚于首段正文到达
 
 工具调用场景下真实帧序是：`chat`(英文铺垫) → `tool_call` → `thinking`(大段) → `chat`(正文) → `chat_end`。
-思考增量**不能只在"开气泡那一刻"取一次**，否则整段思考过程会被 `chat_end` 直接丢弃；
-必须"已开气泡就并入该气泡的 `<thinking>` 块"。
+手机端**按到达顺序**把每一段落成独立消息，因此思考增量必须**来一段就追加一段**，
+不能只在"开气泡那一刻"取一次，否则整段思考过程会被 `chat_end` 直接丢弃。
 
-### 3.3 工具调用本来就是独立气泡
+### 3.3 工具调用连续出现时要折叠成一行
 
-`tool_call` 帧会另起一条气泡（`[工具] 名称 · 状态`），这是预期行为，
-不是"流式回复被拆包"。排查时先区分"正文被拆"还是"工具卡片插在中间"。
+`tool_call` 帧各自是一条消息（同一 `toolCallId` 的后续状态原地覆盖），
+但渲染层 `buildConversationRows()` 会把**连续的多个工具调用合并为一个渲染单元**，
+只显示一行摘要，点击才展开明细——否则工具卡片会在对话流里堆成一长条。
+「正文 → 工具 → 正文」必须保持三段，不要把工具后的正文并回前面的正文。
 
 ### 3.4 心跳与控制帧不能进业务协议流
 
@@ -140,6 +165,18 @@ npm run build:apk:local # 打包入口：自动先 sync 再 gradle，最后拷�
 
 手机端 → relay → 桌面端 → `mcode acp` 是单向串行链路，任一环协议错配都是**静默失败**，
 接入新协议时先做「发一条 → 看对端是否真的执行」的单向验证，再往上叠 UI。
+
+### 3.6 多项目并发：帧必须按 projectId 归属
+
+桌面端会同时为多个项目各拉起一个 ACP 会话，它们的输出在同一条中继链路上交织。
+手机端**不能**按「当前正在看的项目」落库，必须按帧里的 `projectId`，
+否则「对话中途切项目」会把上一个项目的输出写进新项目（用户看到的就是内容串台）。
+
+桌面端新增下行帧时，务必同步补上 `projectId`
+（`crates/gui/src-tauri/src/relay_adapter.rs` 的 `tag_project`）。
+
+同理，手机端**每个项目各自维护** `busy` / `stopping` / `awaitingDelivery`：
+A 项目在生成中不影响 B 项目的状态条与停止按钮。
 
 ---
 
@@ -164,6 +201,11 @@ mobile\dist\loom-remote-release.apk
 | `npm run build:apk:local` | sync → `gradlew assembleRelease` → 拷贝 APK 到 `mobile/dist/` 并回显版本号 |
 
 - 若原生工程被删改过，先 `npx expo prebuild --platform android` 重新生成再打包。
+- **明文 HTTP**：`app.json` 里已声明 `android.usesCleartextTraffic: true`（设置页允许填
+  `http://ip:port` 的 relay）。但 `mobile/android/` 是生成目录，**旧 prebuild 产物里
+  `AndroidManifest.xml` 不会带这个属性**，导致 release 包发 `http://` 请求直接
+  `Network request failed`。重新 `npx expo prebuild --platform android` 即可补齐；
+  排查「连不上 http  relay」时先确认 manifest 里有 `usesCleartextTraffic`。
 - release 包复用 `signingConfigs.debug`（debug.keystore），**与历史包同签名**，可直接覆盖安装；
   正式分发前应换自有 keystore。
 - gradle 打包会顺带跑 `expo:lintVitalRelease`（lint）与 `createBundleReleaseJsAndAssets`（Metro 导出 JS bundle）。
@@ -174,11 +216,35 @@ mobile\dist\loom-remote-release.apk
 - `updates.url` 目前是占位地址 `https://u.expo.dev/placeholder`，OTA 实际不可用；
   排查"代码没生效"时先确认手机跑的是包内 bundle 而不是 OTA bundle。
 
+### 4.1 「JS 改了但包里还是旧代码」的坑（已实测踩过）
+
+APK 里的 `assets/index.android.bundle` 是 **Hermes 字节码**（不是可读 JS），
+所以**别用 `grep 字符串` 的方式判断包里有没有你的新代码**——一定搜不到。
+
+真正会「打进去旧代码」的有两处缓存：
+
+| 缓存 | 位置 | 症状 |
+|---|---|---|
+| gradle bundle 任务产物 | `android/app/build/generated/assets/createBundleReleaseJsAndAssets/`（含 `.hbc`）与 `generated/res/createBundleReleaseJsAndAssets/` | 任务被判定 UP-TO-DATE，把上一次的 `.hbc` 重新打进 APK |
+| Metro 转换缓存 | `%TEMP%/metro-cache` | 命中旧模块转换结果 |
+
+`npm run build:apk:local` 现在会一次性清掉上面这些目录再打包（见 `scripts/build-apk.mjs`），
+**不要绕过脚本直接跑 `gradlew assembleRelease`**，否则可能拿到旧 bundle。
+
+判定"包里到底是不是新代码"要用**行为验证**，不要靠 grep：
+
+- 先在界面上放一个肉眼可见的标记（例如空态文案加 `· dbg`），
+  装到设备上确认能看到，再删掉标记重新打包；
+- 或用 `debugPrintTree` 之类在运行时打印，让 logcat 说话。
+
 ---
 
 ## 5. 本目录的验证方式
 
 - 类型检查：`cd mobile; npx tsc --noEmit`（本目录没有 lint / test 脚本，这是唯一的静态检查）
+- 打包可行性检查（Metro 全量编译，验证模块解析与 reanimated babel 插件）：
+  `cd mobile; npx expo export --platform android --output-dir .tmp-export-check`
+  （产物目录是临时的，验证完删掉）
 - 桌面端协议适配层（Rust）单测：
   `cargo test -p loom-gui --bin loom-gui acp::tests`
 - 真实 `mcode acp` 端到端（需本机已登录 mcode，默认跳过）：
@@ -193,3 +259,7 @@ mobile\dist\loom-remote-release.apk
   禁止未经授权 `git push`，禁止创建分支（一律在 `main` 上改）。
 - 本目录的改动优先保持小 diff；不要顺手重构 `app/chat.tsx` 的帧分发结构，
   它与 `crates/gui/src-tauri/src/acp.rs` 的帧协议是强耦合的。
+- 消息的**组装规则**（增量合并、工具折叠、渲染单元切分）集中在
+  `services/conversation.ts`，改渲染样式请动 `components/`，不要在 `app/chat.tsx` 里堆样式。
+- **禁止在界面里使用 emoji**：图标一律用 `components/icons.tsx` 里的纯 View 绘制，
+  配色与圆角一律取自 `theme.ts`，保持全端风格统一。

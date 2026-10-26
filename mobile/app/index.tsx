@@ -4,6 +4,7 @@ import { useRouter } from "expo-router";
 import Constants from "expo-constants";
 import { getToken, getServerUrl } from "@/services/storage";
 import { setBaseUrl, getPairBinding } from "@/services/api";
+import { colors, font, space } from "@/theme";
 
 const APP_VERSION = Constants.expoConfig?.version ?? "0.0.0";
 
@@ -56,7 +57,7 @@ export default function IndexScreen() {
       <ActivityIndicator
         style={styles.spinner}
         size="small"
-        color="#6366f1"
+        color={colors.accent}
       />
     </View>
   );
@@ -65,22 +66,22 @@ export default function IndexScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#0a0a0f",
+    backgroundColor: colors.bg,
     alignItems: "center",
     justifyContent: "center",
   },
   title: {
-    fontSize: 32,
+    fontSize: 30,
     fontWeight: "700",
-    color: "#e4e4e7",
+    color: colors.text,
     letterSpacing: 1,
   },
   version: {
-    fontSize: 14,
-    color: "#a1a1aa",
-    marginTop: 8,
+    fontSize: font.small,
+    color: colors.textFaint,
+    marginTop: space.sm,
   },
   spinner: {
-    marginTop: 32,
+    marginTop: space.xl,
   },
 });

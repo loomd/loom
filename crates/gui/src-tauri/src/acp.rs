@@ -8,6 +8,7 @@
 //! 手机端信封与 ACP 标准协议之间做双向翻译：
 //!
 //! - 手机端 `chat` 信封 → ACP `session/prompt` 请求
+//! - 手机端 `stop` 信封 → ACP `session/cancel` 通知（中断在途的一轮）
 //! - ACP `session/update` → 手机端 `chat` / `thinking` / `tool_call` 帧
 //! - ACP `session/request_permission` → 手机端 `permission_request` 帧
 //! - 中继层控制帧与心跳帧（`control` / `ping` / `pong`）一律不下发给 Agent
@@ -15,7 +16,7 @@
 //! 参考：`specs/073-074-relay-pairing-protocol`、`specs/075-076-mobile-chat-protocol`。
 
 use serde_json::{json, Value};
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 
 /// `mcode acp` 的 ACP 协议版本。`initialize` 的 `protocolVersion` 必须是数字，
 /// 传字符串会被服务端拒绝（-32602 Invalid params）。
@@ -36,6 +37,11 @@ pub mod frame {
     /// 错误提示。
     pub const ERROR: &str = "error";
 }
+
+/// 本轮被用户中断时的 `chat_end` 载荷。
+///
+/// 与 ACP 的 `stopReason: "cancelled"` 保持一致，手机端据此把排队中的提问标记为已取消。
+pub const STOP_REASON_CANCELLED: &str = "cancelled";
 
 /// ACP 连接阶段。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -95,6 +101,12 @@ pub struct AcpBridge {
     prompt_queue: VecDeque<String>,
     pending_permissions: HashMap<String, PendingPermission>,
     tool_calls: HashMap<String, ToolCallSnapshot>,
+    /// 已发出 `session/cancel` 但尚未收到 Agent 回应的 prompt id。
+    ///
+    /// 这些 prompt 的迟到响应不再产出错误帧，只用于收尾（补发 `chat_end`）。
+    cancelled_prompt_ids: HashSet<i64>,
+    /// 发出取消请求的时刻（毫秒），用于桌面端判断「Agent 不支持取消」时的兜底超时。
+    cancel_requested_at: Option<u64>,
 }
 
 impl AcpBridge {
@@ -110,6 +122,8 @@ impl AcpBridge {
             prompt_queue: VecDeque::new(),
             pending_permissions: HashMap::new(),
             tool_calls: HashMap::new(),
+            cancelled_prompt_ids: HashSet::new(),
+            cancel_requested_at: None,
         }
     }
 
@@ -203,8 +217,18 @@ impl AcpBridge {
             Phase::Failed => return actions,
         }
 
+        // 已被取消的 prompt：Agent 的迟到响应只用于收尾，不再产出错误帧
+        if self.cancelled_prompt_ids.remove(&id) {
+            self.active_prompt_id = None;
+            self.cancel_requested_at = None;
+            actions.to_mobile.push(make_frame(frame::CHAT_END, STOP_REASON_CANCELLED));
+            actions.to_agent.extend(self.pump_prompts());
+            return actions;
+        }
+
         if self.active_prompt_id == Some(id) {
             self.active_prompt_id = None;
+            self.cancel_requested_at = None;
             if let Some(err) = value.get("error") {
                 actions.to_mobile.push(error_frame(&error_message(err)));
             } else {
@@ -272,6 +296,10 @@ impl AcpBridge {
                     }
                 }
                 self.enqueue_prompt(&payload, &mut actions);
+            }
+            // 手机端主动叫停：转成 ACP `session/cancel` 通知
+            "stop" | "cancel" => {
+                self.cancel_active(&mut actions);
             }
             _ => {}
         }
@@ -469,6 +497,47 @@ impl AcpBridge {
         actions.to_agent.extend(self.pump_prompts());
     }
 
+    /// 中断在途的一轮对话。
+    ///
+    /// - 排队中的提问一并丢弃：用户既然叫停，未执行的提问不再排队；
+    /// - 向 Agent 发出 ACP `session/cancel`（`sessionId` 为必需参数）；
+    /// - `chat_end` 在 Agent 回应（或桌面端兜底结束会话）时才补发，
+    ///   手机端据此结束「生成中」状态。
+    fn cancel_active(&mut self, actions: &mut AcpActions) {
+        self.prompt_queue.clear();
+
+        let Some(prompt_id) = self.active_prompt_id else {
+            // 本来就没有在途的一轮：直接告诉手机端本轮已结束
+            actions.to_mobile.push(make_frame(frame::CHAT_END, STOP_REASON_CANCELLED));
+            return;
+        };
+
+        self.cancelled_prompt_ids.insert(prompt_id);
+        self.cancel_requested_at = Some(now_ms());
+
+        if let Some(session_id) = self.session_id.clone() {
+            actions.to_agent.push(
+                json!({
+                    "jsonrpc": "2.0",
+                    "method": "session/cancel",
+                    "params": { "sessionId": session_id }
+                })
+                .to_string(),
+            );
+        }
+    }
+
+    /// 取消请求是否已超时未果。
+    ///
+    /// 并非所有 Agent 都实现了 `session/cancel`；超时后由桌面端结束该会话的
+    /// 子进程，保证手机端的「停止」一定能生效。
+    pub fn cancel_timed_out(&self, timeout_ms: u64) -> bool {
+        match self.cancel_requested_at {
+            Some(at) => now_ms().saturating_sub(at) > timeout_ms,
+            None => false,
+        }
+    }
+
     /// 派发队列中的 prompt。同一时刻只允许一个 `session/prompt` 在途。
     fn pump_prompts(&mut self) -> Vec<String> {
         let mut out = Vec::new();
@@ -505,7 +574,8 @@ impl AcpBridge {
     }
 }
 
-fn make_frame(kind: &str, payload: &str) -> String {
+/// 构造一条下发手机端的帧。
+pub fn make_frame(kind: &str, payload: &str) -> String {
     json!({
         "type": kind,
         "payload": payload,
@@ -585,6 +655,71 @@ mod tests {
         assert_eq!(actions.to_mobile.len(), 1);
         assert!(actions.to_mobile[0].contains("\"type\":\"error\""));
         assert!(actions.to_mobile[0].contains("protocol mismatch"));
+    }
+
+    #[test]
+    fn test_stop_frame_becomes_session_cancel() {
+        let mut b = ready_bridge();
+        // 先发一轮对话，制造在途的 prompt
+        let actions = b.on_mobile_frame(r#"{"type":"chat","payload":"跑很久"}"#);
+        assert_eq!(actions.to_agent.len(), 1);
+        let prompt_id: i64 = serde_json::from_str::<Value>(&actions.to_agent[0]).unwrap()["id"]
+            .as_i64()
+            .unwrap();
+
+        // 手机端叫停
+        let actions = b.on_mobile_frame(r#"{"type":"stop","payload":""}"#);
+        assert_eq!(actions.to_agent.len(), 1);
+        let req: Value = serde_json::from_str(&actions.to_agent[0]).unwrap();
+        assert_eq!(req["method"], "session/cancel");
+        assert_eq!(req["params"]["sessionId"], "mvs_test");
+        assert!(actions.to_mobile.is_empty(), "chat_end 等 Agent 回应后再补发");
+
+        // Agent 对被取消的 prompt 的迟到响应：只收尾，不报错误
+        let actions = b.on_agent_line(&format!(
+            r#"{{"jsonrpc":"2.0","id":{},"error":{{"code":-32000,"message":"cancelled"}}}}"#,
+            prompt_id
+        ));
+        assert_eq!(actions.to_mobile.len(), 1);
+        let frame: Value = serde_json::from_str(&actions.to_mobile[0]).unwrap();
+        assert_eq!(frame["type"], "chat_end");
+        assert_eq!(frame["payload"], STOP_REASON_CANCELLED);
+    }
+
+    #[test]
+    fn test_stop_discards_queued_prompts() {
+        let mut b = ready_bridge();
+        let first = b.on_mobile_frame(r#"{"type":"chat","payload":"一"}"#);
+        assert_eq!(first.to_agent.len(), 1);
+        let prompt_id: i64 = serde_json::from_str::<Value>(&first.to_agent[0]).unwrap()["id"]
+            .as_i64()
+            .unwrap();
+        // 第二条排队中
+        let second = b.on_mobile_frame(r#"{"type":"chat","payload":"二"}"#);
+        assert!(second.to_agent.is_empty(), "同一时刻只允许一个 prompt 在途");
+
+        // 叫停：排队中的提问一并丢弃
+        let actions = b.on_mobile_frame(r#"{"type":"stop","payload":""}"#);
+        assert_eq!(actions.to_agent.len(), 1);
+
+        // Agent 回应取消后不应再派发排队中的 prompt
+        let actions = b.on_agent_line(&format!(
+            r#"{{"jsonrpc":"2.0","id":{},"result":{{"stopReason":"cancelled"}}}}"#,
+            prompt_id
+        ));
+        assert!(actions.to_agent.is_empty(), "排队中的提问应随叫停一起丢弃");
+        assert_eq!(actions.to_mobile.len(), 1);
+    }
+
+    #[test]
+    fn test_stop_without_active_prompt_ends_turn() {
+        let mut b = ready_bridge();
+        let actions = b.on_mobile_frame(r#"{"type":"stop","payload":""}"#);
+        assert!(actions.to_agent.is_empty(), "没有在途 prompt 时不必发 session/cancel");
+        assert_eq!(actions.to_mobile.len(), 1);
+        let frame: Value = serde_json::from_str(&actions.to_mobile[0]).unwrap();
+        assert_eq!(frame["type"], "chat_end");
+        assert_eq!(frame["payload"], STOP_REASON_CANCELLED);
     }
 
     #[test]

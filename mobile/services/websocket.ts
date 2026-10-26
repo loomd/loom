@@ -256,6 +256,23 @@ export function send(message: string): void {
 }
 
 /**
+ * 叫停当前正在进行的一轮对话。
+ *
+ * 桌面端收到后转成 ACP `session/cancel` 中断在途的 prompt；
+ * 桌面端没有在途对话时，这帧是空操作。
+ */
+export function sendStop(): void {
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    const relayMessage: RelayMessage = {
+      type: "stop",
+      payload: "",
+      timestamp: Date.now(),
+    };
+    ws.send(JSON.stringify(relayMessage));
+  }
+}
+
+/**
  * 回应桌面端发来的权限审批请求。
  *
  * 桌面端会把它转换成对 `session/request_permission` 的 JSON-RPC 响应，

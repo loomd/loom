@@ -8,6 +8,7 @@
  * versionCode 不变导致无法覆盖安装。
  */
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
@@ -56,13 +57,35 @@ function run(command, args, cwd) {
 run("node", [path.join(scriptDir, "sync-version.mjs")], mobileRoot);
 
 // 2. 清理旧 Bundle 缓存，防止 React Native / Metro 沿用旧缓存
-const oldBundleDir = path.join(androidRoot, "app", "build", "generated", "assets", "createBundleReleaseJsAndAssets");
-if (fs.existsSync(oldBundleDir)) {
-  fs.rmSync(oldBundleDir, { recursive: true, force: true });
+//
+// 注意：只删 generated/assets 下的一层目录**不够**。实测遇到过「JS 改动没进包」：
+//   - gradle 的 bundle 任务被判定 UP-TO-DATE，直接把上一次的 index.android.bundle
+//     （Hermes 字节码 .hbc）重新打进 APK；
+//   - Metro 的转换缓存（%TEMP%/metro-cache）也会命中旧产物。
+// 因此这里把 bundle 产物、assets 目标目录、intermediates 以及 Metro 缓存一起清掉，
+// 保证打出来的包一定包含当前源码。
+const staleDirs = [
+  path.join(androidRoot, "app", "build", "generated", "assets", "createBundleReleaseJsAndAssets"),
+  path.join(androidRoot, "app", "build", "generated", "res", "createBundleReleaseJsAndAssets"),
+  path.join(androidRoot, "app", "build", "intermediates", "assets", "release"),
+  path.join(androidRoot, "app", "build", "intermediates", "sourcemaps", "react", "release"),
+  path.join(os.tmpdir(), "metro-cache"),
+];
+for (const dir of staleDirs) {
+  if (fs.existsSync(dir)) {
+    fs.rmSync(dir, { recursive: true, force: true });
+    console.log(`[build-apk] 已清理陈旧产物: ${dir}`);
+  }
 }
-const oldAssetsDir = path.join(androidRoot, "app", "build", "intermediates", "assets", "release");
-if (fs.existsSync(oldAssetsDir)) {
-  fs.rmSync(oldAssetsDir, { recursive: true, force: true });
+const staleManifests = [
+  path.join(androidRoot, "app", "build", "generated", "assets", "createReleaseUpdatesResources", "app.manifest"),
+  path.join(androidRoot, "app", "build", "intermediates", "assets", "release", "mergeReleaseAssets", "app.manifest"),
+];
+for (const manifest of staleManifests) {
+  if (fs.existsSync(manifest)) {
+    fs.rmSync(manifest, { force: true });
+    console.log(`[build-apk] 已清理陈旧 manifest: ${manifest}`);
+  }
 }
 
 // 3. 打包

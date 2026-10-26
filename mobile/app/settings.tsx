@@ -10,6 +10,7 @@ import {
 import { useRouter } from "expo-router";
 import { getServerUrl, saveServerUrl } from "@/services/storage";
 import { setBaseUrl } from "@/services/api";
+import { colors, font, radius, space } from "@/theme";
 
 export default function SettingsScreen() {
   const router = useRouter();
@@ -49,7 +50,7 @@ export default function SettingsScreen() {
             setSaved(false);
           }}
           placeholder="https://agent.ccxcc.cn"
-          placeholderTextColor="#71717a"
+          placeholderTextColor={colors.textFaint}
           autoCapitalize="none"
           autoCorrect={false}
           keyboardType="url"
@@ -82,57 +83,58 @@ export default function SettingsScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#0a0a0f",
-    paddingHorizontal: 24,
-    paddingTop: 32,
+    backgroundColor: colors.bg,
+    paddingHorizontal: space.xl,
+    paddingTop: space.xl,
   },
   heading: {
     fontSize: 24,
     fontWeight: "700",
-    color: "#e4e4e7",
-    marginBottom: 32,
+    color: colors.text,
+    marginBottom: space.xl,
   },
   inputGroup: {
-    marginBottom: 24,
+    marginBottom: space.xl,
   },
   label: {
-    fontSize: 14,
-    color: "#a1a1aa",
+    fontSize: font.small,
+    color: colors.textMuted,
     marginBottom: 6,
   },
   input: {
-    backgroundColor: "#16161d",
-    borderRadius: 8,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    fontSize: 16,
-    color: "#e4e4e7",
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    paddingHorizontal: space.md,
+    paddingVertical: space.md,
+    fontSize: font.body,
+    color: colors.text,
     borderWidth: 1,
-    borderColor: "#27272a",
+    borderColor: colors.border,
   },
   hint: {
-    fontSize: 12,
-    color: "#71717a",
+    fontSize: font.tiny,
+    color: colors.textFaint,
     marginTop: 6,
+    lineHeight: 17,
   },
   button: {
-    backgroundColor: "#6366f1",
-    borderRadius: 8,
-    paddingVertical: 14,
+    backgroundColor: colors.accent,
+    borderRadius: radius.md,
+    paddingVertical: space.md + 2,
     alignItems: "center",
   },
   buttonText: {
-    fontSize: 16,
+    fontSize: font.body,
     fontWeight: "600",
     color: "#ffffff",
   },
   backButton: {
     alignItems: "center",
-    marginTop: 20,
-    paddingVertical: 10,
+    marginTop: space.xl,
+    paddingVertical: space.md,
   },
   backButtonText: {
-    fontSize: 15,
-    color: "#a1a1aa",
+    fontSize: font.body,
+    color: colors.textMuted,
   },
 });

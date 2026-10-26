@@ -18,6 +18,7 @@ import {
   saveLastPairInfo,
 } from "@/services/storage";
 import { connectToRelay } from "@/services/websocket";
+import { colors, font, radius, space } from "@/theme";
 
 const CODE_LENGTH = 4;
 
@@ -235,7 +236,7 @@ export default function PairScreen() {
         <ActivityIndicator
           style={styles.spinner}
           size="large"
-          color="#6366f1"
+          color={colors.accent}
         />
       )}
 
@@ -271,75 +272,75 @@ export default function PairScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#0a0a0f",
+    backgroundColor: colors.bg,
     alignItems: "center",
-    paddingHorizontal: 24,
-    paddingTop: 64,
+    paddingHorizontal: space.xl,
+    paddingTop: space.xxl + space.xl,
   },
   heading: {
     fontSize: 24,
     fontWeight: "700",
-    color: "#e4e4e7",
-    marginBottom: 12,
+    color: colors.text,
+    marginBottom: space.md,
   },
   subtext: {
-    fontSize: 14,
-    color: "#a1a1aa",
+    fontSize: font.small,
+    color: colors.textMuted,
     textAlign: "center",
-    marginBottom: 40,
-    lineHeight: 20,
+    marginBottom: space.xxl,
+    lineHeight: 21,
   },
   warning: {
-    fontSize: 13,
-    color: "#fbbf24",
+    fontSize: font.small,
+    color: colors.warning,
     textAlign: "center",
-    marginBottom: 24,
-    lineHeight: 19,
+    marginBottom: space.xl,
+    lineHeight: 20,
   },
   codeRow: {
     flexDirection: "row",
-    gap: 12,
-    marginBottom: 32,
+    gap: space.md,
+    marginBottom: space.xl,
   },
   codeInput: {
-    width: 60,
-    height: 72,
-    backgroundColor: "#16161d",
-    borderRadius: 12,
-    borderWidth: 2,
-    borderColor: "#27272a",
-    fontSize: 28,
+    width: 58,
+    height: 70,
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    borderWidth: 1.5,
+    borderColor: colors.border,
+    fontSize: 26,
     fontWeight: "700",
-    color: "#e4e4e7",
+    color: colors.text,
     textAlign: "center",
   },
   codeInputFilled: {
-    borderColor: "#6366f1",
+    borderColor: colors.accent,
   },
   spinner: {
-    marginBottom: 24,
+    marginBottom: space.xl,
   },
   actions: {
-    marginTop: 16,
+    marginTop: space.lg,
     alignItems: "center",
-    gap: 12,
+    gap: space.md,
   },
   secondaryButton: {
-    paddingVertical: 10,
-    paddingHorizontal: 24,
+    paddingVertical: space.md,
+    paddingHorizontal: space.xl,
   },
   secondaryButtonText: {
-    fontSize: 15,
-    color: "#6366f1",
+    fontSize: font.body,
+    color: colors.accentText,
     fontWeight: "500",
   },
   dangerButton: {
-    paddingVertical: 10,
-    paddingHorizontal: 24,
+    paddingVertical: space.md,
+    paddingHorizontal: space.xl,
   },
   dangerButtonText: {
-    fontSize: 15,
-    color: "#ef4444",
+    fontSize: font.body,
+    color: colors.danger,
     fontWeight: "500",
   },
 });

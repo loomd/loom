@@ -1,85 +1,97 @@
 import React, { useState } from "react";
-import { View, Text, TouchableOpacity, StyleSheet } from "react-native";
+import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { colors, font, monoFont, space } from "@/theme";
+import { Chevron, VerticalRule } from "./icons";
 
 interface ThinkingBlockProps {
   content: string;
 }
 
+/**
+ * 思考过程折叠块。
+ *
+ * 思考内容通常很长，默认收起为一行摘要，点击才展开全文；
+ * 位置跟随真实到达顺序，位于其所对应的正文之间。
+ */
 export const ThinkingBlock: React.FC<ThinkingBlockProps> = ({ content }) => {
-  const [expanded, setExpanded] = useState<boolean>(false);
+  const [expanded, setExpanded] = useState(false);
 
   if (!content || !content.trim()) return null;
 
-  return (
-    <View style={styles.container}>
-      <TouchableOpacity
-        style={styles.header}
-        onPress={() => setExpanded(!expanded)}
-        activeOpacity={0.7}
-      >
-        <View style={styles.headerLeft}>
-          <View style={styles.indicatorDot} />
-          <Text style={styles.headerTitle}>思考过程</Text>
-        </View>
-        <Text style={styles.toggleText}>{expanded ? "收起" : "展开"}</Text>
-      </TouchableOpacity>
+  const preview = content.trim().replace(/\s+/g, " ").slice(0, 60);
 
-      {expanded && (
-        <View style={styles.contentContainer}>
+  return (
+    <View style={styles.wrapper}>
+      <View style={styles.row}>
+        <VerticalRule color={colors.border} />
+        <TouchableOpacity
+          style={styles.summary}
+          onPress={() => setExpanded((prev) => !prev)}
+          activeOpacity={0.6}
+        >
+          <Text style={styles.title}>思考过程</Text>
+          {!expanded ? (
+            <Text style={styles.preview} numberOfLines={1}>
+              {preview}
+            </Text>
+          ) : null}
+          <Chevron
+            size={11}
+            color={colors.textFaint}
+            direction={expanded ? "down" : "right"}
+          />
+        </TouchableOpacity>
+      </View>
+
+      {expanded ? (
+        <View style={styles.contentBox}>
           <Text style={styles.contentText}>{content.trim()}</Text>
         </View>
-      )}
+      ) : null}
     </View>
   );
 };
 
 const styles = StyleSheet.create({
-  container: {
-    marginVertical: 6,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: "#3b3b4f",
-    backgroundColor: "#13131e",
-    overflow: "hidden",
+  wrapper: {
+    marginLeft: space.lg,
+    marginRight: space.lg,
+    marginBottom: space.md,
   },
-  header: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    backgroundColor: "#1c1c2b",
-  },
-  headerLeft: {
+  row: {
     flexDirection: "row",
     alignItems: "center",
   },
-  indicatorDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: "#818cf8",
-    marginRight: 6,
+  summary: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 6,
+    paddingLeft: space.sm,
+    gap: space.sm,
   },
-  headerTitle: {
-    fontSize: 12,
-    color: "#a5b4fc",
-    fontWeight: "600",
+  title: {
+    fontSize: font.small,
+    color: colors.textFaint,
   },
-  toggleText: {
-    fontSize: 11,
-    color: "#71717a",
+  preview: {
+    flex: 1,
+    fontSize: font.small,
+    color: colors.textFaint,
   },
-  contentContainer: {
-    padding: 10,
-    borderTopWidth: 1,
-    borderTopColor: "#27273a",
+  contentBox: {
+    marginTop: space.xs,
+    marginLeft: space.lg + space.sm,
+    paddingLeft: space.md,
+    paddingRight: space.sm,
+    borderLeftWidth: 1,
+    borderLeftColor: colors.border,
   },
   contentText: {
-    fontSize: 12,
-    color: "#94a3b8",
-    lineHeight: 18,
-    fontFamily: "monospace",
+    fontSize: font.small,
+    color: colors.textMuted,
+    lineHeight: 20,
+    fontFamily: monoFont,
   },
 });
 

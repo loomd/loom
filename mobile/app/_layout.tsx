@@ -1,21 +1,18 @@
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { SafeAreaProvider } from "react-native-safe-area-context";
-
-const BACKGROUND = "#0a0a0f";
-const HEADER_BG = "#16161d";
-const TEXT_COLOR = "#e4e4e7";
+import { colors } from "@/theme";
 
 export default function RootLayout() {
   return (
     <SafeAreaProvider>
-      <StatusBar style="light" backgroundColor={BACKGROUND} />
+      <StatusBar style="light" backgroundColor={colors.bg} />
       <Stack
         screenOptions={{
-          headerStyle: { backgroundColor: HEADER_BG },
-          headerTintColor: TEXT_COLOR,
+          headerStyle: { backgroundColor: colors.surface },
+          headerTintColor: colors.text,
           headerTitleStyle: { fontWeight: "600" },
-          contentStyle: { backgroundColor: BACKGROUND },
+          contentStyle: { backgroundColor: colors.bg },
           animation: "slide_from_right",
         }}
       >

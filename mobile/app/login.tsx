@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useCallback } from "react";
 import {
   View,
   Text,
@@ -11,11 +11,12 @@ import {
   Platform,
   ScrollView,
 } from "react-native";
-import { useRouter } from "expo-router";
+import { useFocusEffect, useRouter } from "expo-router";
 import Constants from "expo-constants";
 import { login } from "@/services/api";
 import { saveToken, getServerUrl } from "@/services/storage";
 import { setBaseUrl } from "@/services/api";
+import { colors, font, radius, space } from "@/theme";
 
 const APP_VERSION = Constants.expoConfig?.version ?? "0.0.0";
 
@@ -26,12 +27,15 @@ export default function LoginScreen() {
   const [loading, setLoading] = useState(false);
   const [serverUrl, setServerUrl] = useState("");
 
-  useEffect(() => {
-    getServerUrl().then((url) => {
-      setServerUrl(url);
-      setBaseUrl(url);
-    });
-  }, []);
+  // 每次回到本页都重新读取服务器地址：从设置页改完返回时不能还显示旧值
+  useFocusEffect(
+    useCallback(() => {
+      getServerUrl().then((url) => {
+        setServerUrl(url);
+        setBaseUrl(url);
+      });
+    }, []),
+  );
 
   async function handleLogin() {
     const trimmedUser = username.trim();
@@ -67,7 +71,7 @@ export default function LoginScreen() {
         keyboardShouldPersistTaps="handled"
       >
         <Text style={styles.heading}>登录到 Loom Remote</Text>
-        <Text style={{ color: "#a1a1aa", fontSize: 13, marginBottom: 16 }}>版本: v{APP_VERSION}</Text>
+        <Text style={styles.version}>v{APP_VERSION}</Text>
 
         <TouchableOpacity
           style={styles.serverRow}
@@ -86,7 +90,7 @@ export default function LoginScreen() {
             value={username}
             onChangeText={setUsername}
             placeholder="输入用户名"
-            placeholderTextColor="#71717a"
+            placeholderTextColor={colors.textFaint}
             autoCapitalize="none"
             autoCorrect={false}
           />
@@ -99,7 +103,7 @@ export default function LoginScreen() {
             value={password}
             onChangeText={setPassword}
             placeholder="输入密码"
-            placeholderTextColor="#71717a"
+            placeholderTextColor={colors.textFaint}
             secureTextEntry
           />
         </View>
@@ -133,80 +137,88 @@ export default function LoginScreen() {
 const styles = StyleSheet.create({
   flex: {
     flex: 1,
-    backgroundColor: "#0a0a0f",
+    backgroundColor: colors.bg,
   },
   container: {
     flexGrow: 1,
-    paddingHorizontal: 24,
-    paddingTop: 48,
-    paddingBottom: 32,
+    paddingHorizontal: space.xl,
+    paddingTop: space.xxl + space.lg,
+    paddingBottom: space.xl,
   },
   heading: {
     fontSize: 24,
     fontWeight: "700",
-    color: "#e4e4e7",
-    marginBottom: 24,
+    color: colors.text,
+    marginBottom: space.sm,
+  },
+  version: {
+    fontSize: font.small,
+    color: colors.textFaint,
+    marginBottom: space.lg,
   },
   serverRow: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#16161d",
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    marginBottom: 24,
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingHorizontal: space.md,
+    paddingVertical: space.md,
+    marginBottom: space.xl,
+    marginTop: space.lg,
   },
   serverLabel: {
-    fontSize: 13,
-    color: "#a1a1aa",
+    fontSize: font.small,
+    color: colors.textMuted,
   },
   serverUrl: {
-    fontSize: 13,
-    color: "#6366f1",
+    fontSize: font.small,
+    color: colors.accentText,
     flex: 1,
   },
   inputGroup: {
-    marginBottom: 16,
+    marginBottom: space.lg,
   },
   label: {
-    fontSize: 14,
-    color: "#a1a1aa",
+    fontSize: font.small,
+    color: colors.textMuted,
     marginBottom: 6,
   },
   input: {
-    backgroundColor: "#16161d",
-    borderRadius: 8,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    fontSize: 16,
-    color: "#e4e4e7",
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    paddingHorizontal: space.md,
+    paddingVertical: space.md,
+    fontSize: font.body,
+    color: colors.text,
     borderWidth: 1,
-    borderColor: "#27272a",
+    borderColor: colors.border,
   },
   button: {
-    backgroundColor: "#6366f1",
-    borderRadius: 8,
-    paddingVertical: 14,
+    backgroundColor: colors.accent,
+    borderRadius: radius.md,
+    paddingVertical: space.md + 2,
     alignItems: "center",
-    marginTop: 8,
+    marginTop: space.sm,
   },
   buttonDisabled: {
     opacity: 0.6,
   },
   buttonText: {
-    fontSize: 16,
+    fontSize: font.body,
     fontWeight: "600",
     color: "#ffffff",
   },
   linkRow: {
     alignItems: "center",
-    marginTop: 20,
+    marginTop: space.xl,
   },
   linkText: {
-    fontSize: 14,
-    color: "#a1a1aa",
+    fontSize: font.small,
+    color: colors.textMuted,
   },
   linkHighlight: {
-    color: "#6366f1",
+    color: colors.accentText,
   },
 });

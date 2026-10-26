@@ -30,16 +30,20 @@ updated_at: 2026-10-25T06:30:00.000000000Z
 
 ### 核心流式对话工作区（Chat View）
 - [x] 对接 Loom 远程聊天帧协议: 通过 WebSocket 接收电脑端（ACP 适配层）下发的帧并增量渲染。
-  - [x] `chat`: Agent 回复正文增量，同一轮的多个增量合并进同一个气泡。
-  - [x] `chat_end`: 本轮结束，关闭当前气泡。
-  - [x] `thinking`: 思考过程增量，归入下一条 Agent 消息的 `<thinking>` 块（由 `ChatBubble` 折叠展示）。
-  - [x] `tool_call`: 工具调用状态（同一 `toolCallId` 的更新合并为一条）。
+  - [x] `chat`: Agent 回复正文增量，**按到达顺序**追加为正文消息（仅当最后一条仍是正文时才合并增量）。
+  - [x] `chat_end`: 本轮结束（正文/思考/工具已按到达顺序落库，无需额外收尾）。
+  - [x] `thinking`: 思考过程增量，独立成「思考」折叠行，位置跟随真实到达顺序。
+  - [x] `tool_call`: 工具调用状态（同一 `toolCallId` 的更新原地覆盖；**连续的多个工具调用在列表里折叠成一行**，点击展开明细）。
   - [x] `permission_request`: 权限审批请求，载荷为 JSON 字符串。
   - [x] `error`: 错误提示。
-  - [x] 上行: 用户文本走 `chat` 信封；审批裁决走 `permission_response` 帧（`{"id","approved","optionId"}`）。
+  - [x] 每个下行帧带 `projectId`：多项目会话可同时在跑，帧据此归属到**产生它**的项目会话（对话中途切项目不会串内容）。
+  - [x] 上行: 用户文本走 `chat` 信封；审批裁决走 `permission_response` 帧（`{"id","approved","optionId"}`）；叫停走 `stop` 帧（桌面端转成 ACP `session/cancel`）。
+- [x] 停止当前对话: 生成中显示「生成中 + 停止」状态条，停止后本轮结束（`chat_end` 载荷为 `cancelled`）。
+- [x] 对话中插入提问: 生成中发送的消息标记为「排队中」，本轮结束后自动执行。
 - [x] 思考状态折叠展开展现（Thinking Process）。
-- [x] Markdown 渲染: 支持标题、列表、代码块高亮（react-native-markdown-display）。
-- [x] 代码块一键复制到剪贴板。
+- [x] Markdown 渲染: 支持标题、列表、表格、代码块高亮（react-native-markdown-display）。
+  - 注：库的默认表格规则在 RN 上会渲染成空表格，移动端改为自绘表格规则（`components/MarkdownText.tsx`）。
+- [ ] 代码块一键复制到剪贴板（未落地：当前无剪贴板依赖，代码块为只读展示；历史按钮因未接 `onCopy` 而无实际功能，已移除）。
 - [x] 输入框: 底部固定输入区，支持多行文本输入，发送按钮。
 - [x] 消息列表: FlatList 虚拟化长列表，自动滚动到底部。
 
@@ -92,17 +96,22 @@ mobile/
 │   ├── chat.tsx          # 核心对话工作台
 │   └── settings.tsx      # 服务器地址配置
 ├── components/
-│   ├── ChatBubble.tsx    # 消息气泡组件
-│   ├── CodeBlock.tsx     # 代码高亮块
-│   ├── ThinkingBlock.tsx # 思考过程折叠块
-│   ├── PermissionCard.tsx# 权限审批卡片
-│   └── StatusBar.tsx     # 连接状态栏
+│   ├── ChatHeader.tsx     # 顶栏（项目/模型/连接状态）
+│   ├── ConversationRow.tsx# 对话行渲染分发（用户气泡/正文/思考/工具组）
+│   ├── MarkdownText.tsx   # Markdown 渲染（自绘表格与代码块）
+│   ├── ToolCallGroup.tsx  # 连续工具调用折叠成一行
+│   ├── ThinkingBlock.tsx  # 思考过程折叠块
+│   ├── PermissionCard.tsx # 权限审批卡片
+│   ├── overlays.tsx       # 左侧滑出抽屉 / 底部滑出面板
+│   └── icons.tsx          # 纯 View 绘制的图标（禁用 emoji）
 ├── services/
-│   ├── api.ts            # HTTP API 调用
-│   ├── websocket.ts      # WebSocket 连接管理
-│   └── storage.ts        # 本地持久化
+│   ├── api.ts             # HTTP API 调用
+│   ├── websocket.ts       # WebSocket 连接管理
+│   ├── conversation.ts    # 消息组装与渲染单元切分
+│   └── storage.ts         # 本地持久化
+├── theme.ts               # 全局设计令牌（色板/圆角/间距）
 └── types/
-    └── index.ts          # 类型定义（与 relay 对齐）
+    └── index.ts           # 类型定义（与 relay 对齐）
 ```
 
 ## Acceptance Criteria
