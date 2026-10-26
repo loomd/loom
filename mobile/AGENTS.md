@@ -222,6 +222,8 @@ mobile\dist\loom-remote-release.apk
   与 `android/app/build/intermediates/assets/release/mergeReleaseAssets/app.manifest` 后重打包。
 - `updates.url` 目前是占位地址 `https://u.expo.dev/placeholder`，OTA 实际不可用；
   排查"代码没生效"时先确认手机跑的是包内 bundle 而不是 OTA bundle。
+- **Kotlin 1.9.25 依赖**：`expo-modules-core` 的 Compose Compiler (1.5.15) 强依赖 Kotlin `1.9.25`，
+  `sync-version.mjs` 与 `build-apk.mjs` 会自动注入 `android.kotlinVersion=1.9.25`，避免 1.9.24 报错。
 
 ### 4.1 「JS 改了但包里还是旧代码」的坑（已实测踩过）
 

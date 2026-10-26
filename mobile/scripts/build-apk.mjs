@@ -90,7 +90,7 @@ for (const manifest of staleManifests) {
 
 // 3. 打包
 const gradlew = process.platform === "win32" ? "gradlew.bat" : "./gradlew";
-run(gradlew, ["assembleRelease", "--console=plain"], androidRoot);
+run(gradlew, ["assembleRelease", "-Pandroid.kotlinVersion=1.9.25", "--console=plain"], androidRoot);
 
 // 3. 产物分发 + 版本回显
 if (!fs.existsSync(apkPath)) {

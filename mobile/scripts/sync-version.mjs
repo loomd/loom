@@ -134,6 +134,25 @@ if (fs.existsSync(manifestPath)) {
   }
 }
 
+// 保证 Kotlin 版本为 1.9.25（兼容 expo-modules-core Compose Compiler）
+const rootGradlePath = path.join(mobileRoot, "android", "build.gradle");
+if (fs.existsSync(rootGradlePath)) {
+  const rootGradle = fs.readFileSync(rootGradlePath, "utf8");
+  if (rootGradle.includes("'1.9.24'")) {
+    fs.writeFileSync(rootGradlePath, rootGradle.replace(/'1.9.24'/g, "'1.9.25'"), "utf8");
+    console.log("[sync-version] 已将 root build.gradle 的 kotlinVersion 对齐至 1.9.25");
+  }
+}
+
+const gradlePropsPath = path.join(mobileRoot, "android", "gradle.properties");
+if (fs.existsSync(gradlePropsPath)) {
+  const props = fs.readFileSync(gradlePropsPath, "utf8");
+  if (!props.includes("android.kotlinVersion")) {
+    fs.appendFileSync(gradlePropsPath, "\nandroid.kotlinVersion=1.9.25\n", "utf8");
+    console.log("[sync-version] 已在 gradle.properties 中配置 android.kotlinVersion=1.9.25");
+  }
+}
+
 if (problems.length > 0) {
   console.error(
     `[sync-version] 版本号不一致：\n  - ${problems.join("\n  - ")}\n` +
