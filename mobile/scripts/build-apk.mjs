@@ -55,7 +55,17 @@ function run(command, args, cwd) {
 // 1. 版本号同步
 run("node", [path.join(scriptDir, "sync-version.mjs")], mobileRoot);
 
-// 2. 打包
+// 2. 清理旧 Bundle 缓存，防止 React Native / Metro 沿用旧缓存
+const oldBundleDir = path.join(androidRoot, "app", "build", "generated", "assets", "createBundleReleaseJsAndAssets");
+if (fs.existsSync(oldBundleDir)) {
+  fs.rmSync(oldBundleDir, { recursive: true, force: true });
+}
+const oldAssetsDir = path.join(androidRoot, "app", "build", "intermediates", "assets", "release");
+if (fs.existsSync(oldAssetsDir)) {
+  fs.rmSync(oldAssetsDir, { recursive: true, force: true });
+}
+
+// 3. 打包
 const gradlew = process.platform === "win32" ? "gradlew.bat" : "./gradlew";
 run(gradlew, ["assembleRelease", "--console=plain"], androidRoot);
 

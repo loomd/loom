@@ -37,7 +37,7 @@ export default function RootLayout() {
         />
         <Stack.Screen
           name="chat"
-          options={{ title: "对话", headerBackVisible: false }}
+          options={{ headerShown: false }}
         />
         <Stack.Screen
           name="settings"

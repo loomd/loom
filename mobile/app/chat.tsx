@@ -9,9 +9,12 @@ import {
   KeyboardAvoidingView,
   Platform,
   Alert,
+  Modal,
+  ScrollView,
+  SafeAreaView,
 } from "react-native";
 import { useRouter } from "expo-router";
-import type { ChatMessage, RelayMessage } from "@/types";
+import type { ChatMessage, RelayMessage, ProjectItem, ModelItem } from "@/types";
 import {
   onMessage,
   onStatusChange,
@@ -20,6 +23,9 @@ import {
   sendPermissionResponse,
   connectToRelay,
   disconnect,
+  sendSwitchProject,
+  sendSwitchModel,
+  requestContext,
 } from "@/services/websocket";
 import {
   clearToken,
@@ -37,6 +43,29 @@ let nextId = 1;
 
 function generateId(): string {
   return `msg_${Date.now()}_${nextId++}`;
+}
+
+/** 单个项目的独立会话状态容器 */
+interface ProjectSessionState {
+  messages: ChatMessage[];
+  draftText: string;
+  modelId: string;
+  activeAgentId: string | null;
+  thinkingText: string;
+  toolCallIds: Record<string, string>;
+  pendingPermission: PermissionRequest | null;
+}
+
+function createDefaultSessionState(modelId: string = "default"): ProjectSessionState {
+  return {
+    messages: [],
+    draftText: "",
+    modelId,
+    activeAgentId: null,
+    thinkingText: "",
+    toolCallIds: {},
+    pendingPermission: null,
+  };
 }
 
 /** 把桌面端下发的权限请求 JSON 转成审批卡片需要的结构。 */
@@ -58,62 +87,152 @@ function toPermissionRequest(parsed: {
 
 export default function ChatScreen() {
   const router = useRouter();
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [inputText, setInputText] = useState("");
+
+  // 1. 已开放的项目与模型清单
+  const [projects, setProjects] = useState<ProjectItem[]>([]);
+  const [currentProjectId, setCurrentProjectId] = useState<string>("");
+  const [showProjectDrawer, setShowProjectDrawer] = useState(false);
+
+  const [models, setModels] = useState<ModelItem[]>([]);
+  const [showModelPicker, setShowModelPicker] = useState(false);
+
+  // 2. 每个项目独立的会话状态池：projectId -> ProjectSessionState
+  const [sessions, setSessions] = useState<Record<string, ProjectSessionState>>({});
+
   const [connected, setConnected] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
-  const [pendingPermission, setPendingPermission] = useState<PermissionRequest | null>(null);
   const flatListRef = useRef<FlatList<ChatMessage>>(null);
-  // 正在累积内容的 Agent 回复气泡
-  const activeAgentIdRef = useRef<string | null>(null);
-  // 尚未归入气泡的思考过程
-  const thinkingRef = useRef("");
-  // toolCallId -> 已创建的气泡 ID
-  const toolCallIdsRef = useRef<Record<string, string>>({});
 
-  // 追加 Agent 回复增量：同一轮的多段增量合并到同一个气泡里
+  // 使用 ref 跟踪当前活动项目 ID，避免 WebSocket 回调闭包捕获旧状态
+  const activeProjectIdRef = useRef<string>("");
+  useEffect(() => {
+    activeProjectIdRef.current = currentProjectId;
+  }, [currentProjectId]);
+
+  // 当前活动项目的独立会话数据
+  const currentSession = sessions[currentProjectId] || createDefaultSessionState();
+  const currentMessages = currentSession.messages;
+  const currentModelId = currentSession.modelId;
+  const currentInputText = currentSession.draftText;
+  const currentPendingPermission = currentSession.pendingPermission;
+
+  // 获取当前项目名称和当前模型名称
+  const currentProjectName = projects.find((p) => p.id === currentProjectId)?.name || "默认工作区";
+  const currentModelName = models.find((m) => m.id === currentModelId)?.name || "mcode (默认)";
+
+  // 更新当前项目的输入框草稿
+  const handleInputChange = (text: string) => {
+    if (!currentProjectId) return;
+    setSessions((prev) => {
+      const sess = prev[currentProjectId] || createDefaultSessionState();
+      return {
+        ...prev,
+        [currentProjectId]: { ...sess, draftText: text },
+      };
+    });
+  };
+
+  // 追加消息到指定项目的独立流中
+  const appendMessage = useCallback((msg: ChatMessage, projId?: string) => {
+    const targetPid = projId || activeProjectIdRef.current;
+    if (!targetPid) return;
+
+    setSessions((prev) => {
+      const sess = prev[targetPid] || createDefaultSessionState();
+      return {
+        ...prev,
+        [targetPid]: {
+          ...sess,
+          messages: [...sess.messages, msg],
+        },
+      };
+    });
+  }, []);
+
+  // 追加 Agent 文本增量（合并到该项目当前活跃回复气泡）
   const appendAgentText = useCallback((text: string, timestamp: number) => {
     if (!text) return;
-    const activeId = activeAgentIdRef.current;
-    if (activeId) {
-      setMessages((prev) =>
-        prev.map((m) => (m.id === activeId ? { ...m, content: m.content + text } : m)),
-      );
-      return;
-    }
-    const id = generateId();
-    activeAgentIdRef.current = id;
-    const thinking = thinkingRef.current;
-    thinkingRef.current = "";
-    const content = thinking ? `<thinking>${thinking}</thinking>\n${text}` : text;
-    setMessages((prev) => [
-      ...prev,
-      { id, role: "agent", content, timestamp, status: "delivered" },
-    ]);
+    const targetPid = activeProjectIdRef.current;
+    if (!targetPid) return;
+
+    setSessions((prev) => {
+      const sess = prev[targetPid] || createDefaultSessionState();
+      const activeId = sess.activeAgentId;
+
+      if (activeId) {
+        return {
+          ...prev,
+          [targetPid]: {
+            ...sess,
+            messages: sess.messages.map((m) =>
+              m.id === activeId ? { ...m, content: m.content + text } : m,
+            ),
+          },
+        };
+      }
+
+      const id = generateId();
+      const thinking = sess.thinkingText;
+      const content = thinking ? `<thinking>${thinking}</thinking>\n${text}` : text;
+      const newMsg: ChatMessage = {
+        id,
+        role: "agent",
+        content,
+        timestamp,
+        status: "delivered",
+      };
+
+      return {
+        ...prev,
+        [targetPid]: {
+          ...sess,
+          activeAgentId: id,
+          thinkingText: "",
+          messages: [...sess.messages, newMsg],
+        },
+      };
+    });
   }, []);
 
-  // 思考过程增量：正文气泡还没开时先缓存；已经开了则并入该气泡的 <thinking> 块
+  // 追加思考过程增量
   const appendThinking = useCallback((text: string) => {
     if (!text) return;
-    const activeId = activeAgentIdRef.current;
-    if (!activeId) {
-      thinkingRef.current += text;
-      return;
-    }
-    setMessages((prev) =>
-      prev.map((m) => {
-        if (m.id !== activeId) return m;
-        const matched = m.content.match(/<thinking>([\s\S]*?)<\/thinking>/);
-        if (matched) {
-          const head = `<thinking>${matched[1]}${text}</thinking>`;
-          return { ...m, content: head + m.content.slice(matched[0].length) };
-        }
-        return { ...m, content: `<thinking>${text}</thinking>\n${m.content}` };
-      }),
-    );
+    const targetPid = activeProjectIdRef.current;
+    if (!targetPid) return;
+
+    setSessions((prev) => {
+      const sess = prev[targetPid] || createDefaultSessionState();
+      const activeId = sess.activeAgentId;
+
+      if (!activeId) {
+        return {
+          ...prev,
+          [targetPid]: {
+            ...sess,
+            thinkingText: sess.thinkingText + text,
+          },
+        };
+      }
+
+      return {
+        ...prev,
+        [targetPid]: {
+          ...sess,
+          messages: sess.messages.map((m) => {
+            if (m.id !== activeId) return m;
+            const matched = m.content.match(/<thinking>([\s\S]*?)<\/thinking>/);
+            if (matched) {
+              const head = `<thinking>${matched[1]}${text}</thinking>`;
+              return { ...m, content: head + m.content.slice(matched[0].length) };
+            }
+            return { ...m, content: `<thinking>${text}</thinking>\n${m.content}` };
+          }),
+        },
+      };
+    });
   }, []);
 
-  // 工具调用：同一个 toolCallId 的状态更新合并到同一条
+  // 追加工具调用状态
   const appendToolCall = useCallback((payload: string) => {
     let toolCallId = "";
     let label = payload;
@@ -131,45 +250,55 @@ export default function ChatScreen() {
       return;
     }
     if (!toolCallId) return;
-    const existingId = toolCallIdsRef.current[toolCallId];
-    if (existingId) {
-      setMessages((prev) =>
-        prev.map((m) => (m.id === existingId ? { ...m, content: label } : m)),
-      );
-      return;
-    }
-    const id = generateId();
-    toolCallIdsRef.current[toolCallId] = id;
-    setMessages((prev) => [
-      ...prev,
-      { id, role: "agent", content: label, timestamp: Date.now(), status: "delivered" },
-    ]);
-  }, []);
 
-  const appendError = useCallback((text: string) => {
-    const id = generateId();
-    setMessages((prev) => [
-      ...prev,
-      {
+    const targetPid = activeProjectIdRef.current;
+    if (!targetPid) return;
+
+    setSessions((prev) => {
+      const sess = prev[targetPid] || createDefaultSessionState();
+      const existingId = sess.toolCallIds[toolCallId];
+
+      if (existingId) {
+        return {
+          ...prev,
+          [targetPid]: {
+            ...sess,
+            messages: sess.messages.map((m) =>
+              m.id === existingId ? { ...m, content: label } : m,
+            ),
+          },
+        };
+      }
+
+      const id = generateId();
+      const newMsg: ChatMessage = {
         id,
         role: "agent",
-        content: `[错误] ${text}`,
+        content: label,
         timestamp: Date.now(),
-        status: "error",
-      },
-    ]);
+        status: "delivered",
+      };
+
+      return {
+        ...prev,
+        [targetPid]: {
+          ...sess,
+          toolCallIds: { ...sess.toolCallIds, [toolCallId]: id },
+          messages: [...sess.messages, newMsg],
+        },
+      };
+    });
   }, []);
 
   useEffect(() => {
     const unsubStatus = onStatusChange((isConnected) => {
       setConnected(isConnected);
-      // 重新连上后清掉鉴权失败提示
-      if (isConnected) setAuthError(null);
+      if (isConnected) {
+        setAuthError(null);
+        requestContext();
+      }
     });
 
-    // 鉴权失败（未绑定 / 绑定失效 / 绑定到其他设备）：
-    // 断连与鉴权拒绝是两件事，这里保留「连接中断 / 等待重连」状态，
-    // 由用户决定是否去重新配对，而不是直接把人丢到配对页。
     const unsubAuthError = onAuthError((reason) => {
       const detail =
         reason || "绑定已失效，请在桌面端点击「开启远程会话」生成新的配对码";
@@ -186,13 +315,90 @@ export default function ChatScreen() {
 
     const unsubMessage = onMessage((relayMsg: RelayMessage) => {
       switch (relayMsg.type) {
+        case "project_list": {
+          try {
+            const data = JSON.parse(relayMsg.payload) as {
+              currentProjectId: string;
+              projects: ProjectItem[];
+            };
+            if (data.projects && Array.isArray(data.projects)) {
+              setProjects(data.projects);
+              if (!activeProjectIdRef.current) {
+                const initialPid = data.currentProjectId || data.projects[0]?.id || "";
+                setCurrentProjectId(initialPid);
+              }
+            }
+          } catch {
+            // ignore
+          }
+          return;
+        }
+        case "model_list": {
+          try {
+            const data = JSON.parse(relayMsg.payload) as {
+              currentModelId: string;
+              models: ModelItem[];
+            };
+            if (data.models && Array.isArray(data.models)) {
+              setModels(data.models);
+            }
+          } catch {
+            // ignore
+          }
+          return;
+        }
+        case "project_switched": {
+          try {
+            const data = JSON.parse(relayMsg.payload) as {
+              projectId: string;
+              projectName: string;
+              workspaceDir: string;
+            };
+            setCurrentProjectId(data.projectId);
+          } catch {
+            // ignore
+          }
+          return;
+        }
+        case "model_switched": {
+          try {
+            const data = JSON.parse(relayMsg.payload) as {
+              modelId: string;
+              modelName: string;
+            };
+            const targetPid = activeProjectIdRef.current;
+            if (targetPid) {
+              setSessions((prev) => {
+                const sess = prev[targetPid] || createDefaultSessionState();
+                return {
+                  ...prev,
+                  [targetPid]: { ...sess, modelId: data.modelId },
+                };
+              });
+            }
+          } catch {
+            // ignore
+          }
+          return;
+        }
         case "chat": {
-          // 兼容旧版桌面端：权限请求以 JSON 形式塞在 chat 信封里
           if (relayMsg.payload.startsWith("{")) {
             try {
               const parsed = JSON.parse(relayMsg.payload);
               if (parsed && parsed.method === "request_permission" && parsed.params) {
-                setPendingPermission(toPermissionRequest(parsed));
+                const targetPid = activeProjectIdRef.current;
+                if (targetPid) {
+                  setSessions((prev) => {
+                    const sess = prev[targetPid] || createDefaultSessionState();
+                    return {
+                      ...prev,
+                      [targetPid]: {
+                        ...sess,
+                        pendingPermission: toPermissionRequest(parsed),
+                      },
+                    };
+                  });
+                }
                 return;
               }
             } catch {
@@ -203,8 +409,21 @@ export default function ChatScreen() {
           return;
         }
         case "chat_end": {
-          activeAgentIdRef.current = null;
-          thinkingRef.current = "";
+          const targetPid = activeProjectIdRef.current;
+          if (targetPid) {
+            setSessions((prev) => {
+              const sess = prev[targetPid];
+              if (!sess) return prev;
+              return {
+                ...prev,
+                [targetPid]: {
+                  ...sess,
+                  activeAgentId: null,
+                  thinkingText: "",
+                },
+              };
+            });
+          }
           return;
         }
         case "thinking": {
@@ -219,15 +438,33 @@ export default function ChatScreen() {
           try {
             const parsed = JSON.parse(relayMsg.payload);
             if (parsed && parsed.params) {
-              setPendingPermission(toPermissionRequest(parsed));
+              const targetPid = activeProjectIdRef.current;
+              if (targetPid) {
+                setSessions((prev) => {
+                  const sess = prev[targetPid] || createDefaultSessionState();
+                  return {
+                    ...prev,
+                    [targetPid]: {
+                      ...sess,
+                      pendingPermission: toPermissionRequest(parsed),
+                    },
+                  };
+                });
+              }
             }
           } catch {
-            // 忽略无法解析的权限请求
+            // 忽略
           }
           return;
         }
         case "error": {
-          appendError(relayMsg.payload);
+          appendMessage({
+            id: generateId(),
+            role: "agent",
+            content: `[错误] ${relayMsg.payload}`,
+            timestamp: Date.now(),
+            status: "error",
+          });
           return;
         }
         default:
@@ -240,9 +477,9 @@ export default function ChatScreen() {
       unsubAuthError();
       unsubMessage();
     };
-  }, [appendAgentText, appendThinking, appendToolCall, appendError, router]);
+  }, [appendAgentText, appendThinking, appendToolCall, appendMessage, router]);
 
-  // 进入聊天页即自动建联：已绑定的账号凭 token 直接连上，无需输入配对码
+  // 初始建联
   useEffect(() => {
     let cancelled = false;
 
@@ -266,14 +503,14 @@ export default function ChatScreen() {
   }, [router]);
 
   useEffect(() => {
-    if (messages.length > 0) {
+    if (currentMessages.length > 0) {
       flatListRef.current?.scrollToEnd({ animated: true });
     }
-  }, [messages]);
+  }, [currentMessages]);
 
   const handleSend = useCallback(() => {
-    const text = inputText.trim();
-    if (!text) return;
+    const text = currentInputText.trim();
+    if (!text || !currentProjectId) return;
 
     const userMessage: ChatMessage = {
       id: generateId(),
@@ -282,17 +519,38 @@ export default function ChatScreen() {
       timestamp: Date.now(),
       status: "sending",
     };
-    setMessages((prev) => [...prev, userMessage]);
-    setInputText("");
 
+    // 清空草稿并放入用户提问气泡
+    setSessions((prev) => {
+      const sess = prev[currentProjectId] || createDefaultSessionState();
+      return {
+        ...prev,
+        [currentProjectId]: {
+          ...sess,
+          draftText: "",
+          messages: [...sess.messages, userMessage],
+        },
+      };
+    });
+
+    // 发送消息：桌面端在此时才会为该项目按需拉起对应模型的 ACP 进程
     send(text);
 
-    setMessages((prev) =>
-      prev.map((m) =>
-        m.id === userMessage.id ? { ...m, status: "sent" as const } : m,
-      ),
-    );
-  }, [inputText]);
+    // 标记为已发送
+    setSessions((prev) => {
+      const sess = prev[currentProjectId];
+      if (!sess) return prev;
+      return {
+        ...prev,
+        [currentProjectId]: {
+          ...sess,
+          messages: sess.messages.map((m) =>
+            m.id === userMessage.id ? { ...m, status: "sent" as const } : m,
+          ),
+        },
+      };
+    });
+  }, [currentInputText, currentProjectId]);
 
   async function handleDisconnect() {
     disconnect();
@@ -302,12 +560,56 @@ export default function ChatScreen() {
 
   const handleApprovePermission = (requestId: string, selectedOptions?: string[]) => {
     sendPermissionResponse(requestId, true, selectedOptions?.[0]);
-    setPendingPermission(null);
+    if (currentProjectId) {
+      setSessions((prev) => {
+        const sess = prev[currentProjectId];
+        if (!sess) return prev;
+        return {
+          ...prev,
+          [currentProjectId]: { ...sess, pendingPermission: null },
+        };
+      });
+    }
   };
 
   const handleRejectPermission = (requestId: string) => {
     sendPermissionResponse(requestId, false);
-    setPendingPermission(null);
+    if (currentProjectId) {
+      setSessions((prev) => {
+        const sess = prev[currentProjectId];
+        if (!sess) return prev;
+        return {
+          ...prev,
+          [currentProjectId]: { ...sess, pendingPermission: null },
+        };
+      });
+    }
+  };
+
+  // 切换项目：切换到对应项目的独立会话空间
+  const handleSelectProject = (proj: ProjectItem) => {
+    setShowProjectDrawer(false);
+    if (proj.id === currentProjectId) return;
+    setCurrentProjectId(proj.id);
+    sendSwitchProject(proj.id);
+  };
+
+  // 切换模型：仅改变当前项目的选定模型设置
+  const handleSelectModel = (model: ModelItem) => {
+    setShowModelPicker(false);
+    if (model.id === currentModelId) return;
+
+    if (currentProjectId) {
+      setSessions((prev) => {
+        const sess = prev[currentProjectId] || createDefaultSessionState();
+        return {
+          ...prev,
+          [currentProjectId]: { ...sess, modelId: model.id },
+        };
+      });
+    }
+
+    sendSwitchModel(model.id);
   };
 
   return (
@@ -316,12 +618,17 @@ export default function ChatScreen() {
       behavior={Platform.OS === "ios" ? "padding" : undefined}
       keyboardVerticalOffset={88}
     >
+      {/* 顶部自定义状态栏 */}
       <StatusBar
         connected={connected}
+        currentProjectName={currentProjectName}
+        currentModelName={currentModelName}
+        onOpenProjects={() => setShowProjectDrawer(true)}
+        onOpenModels={() => setShowModelPicker(true)}
         onDisconnect={handleDisconnect}
       />
 
-      {/* 鉴权失败横幅：给出「重新配对」入口，而不是强制跳转 */}
+      {/* 鉴权失败横幅 */}
       {authError ? (
         <View style={styles.authBanner}>
           <Text style={styles.authBannerText} numberOfLines={2}>
@@ -343,38 +650,54 @@ export default function ChatScreen() {
       ) : null}
 
       {/* 权限确认审批卡片 */}
-      {pendingPermission && (
+      {currentPendingPermission && (
         <View style={styles.permissionWrapper}>
           <PermissionCard
-            request={pendingPermission}
+            request={currentPendingPermission}
             onApprove={handleApprovePermission}
             onReject={handleRejectPermission}
           />
         </View>
       )}
 
+      {/* 当前项目的独立聊天气泡流 */}
       <FlatList
         ref={flatListRef}
         style={styles.messageList}
         contentContainerStyle={styles.messageListContent}
-        data={messages}
+        data={currentMessages}
         renderItem={({ item }) => <ChatBubble message={item} />}
         keyExtractor={(item) => item.id}
         ListEmptyComponent={
           <View style={styles.emptyContainer}>
-            <Text style={styles.emptyText}>
-              已连接到工作区，发送消息开始对话
+            <View style={styles.emptyIconBadge}>
+              <Text style={styles.emptyIconBadgeText}>📁</Text>
+            </View>
+            <Text style={styles.emptyTitle}>
+              {currentProjectName}
+            </Text>
+            <Text style={styles.emptySubText}>
+              当前项目尚未开启对话（ACP 进程处于休眠状态）
+            </Text>
+            <View style={styles.modelTag}>
+              <Text style={styles.modelTagText}>
+                待激活 Agent: {currentModelName}
+              </Text>
+            </View>
+            <Text style={styles.emptyTip}>
+              在下方输入消息并发送，将即时为该项目拉起专属 ACP 会话
             </Text>
           </View>
         }
       />
 
+      {/* 底部输入框 */}
       <View style={styles.inputBar}>
         <TextInput
           style={styles.input}
-          value={inputText}
-          onChangeText={setInputText}
-          placeholder="输入消息..."
+          value={currentInputText}
+          onChangeText={handleInputChange}
+          placeholder={`向 ${currentProjectName} 发送消息...`}
           placeholderTextColor="#71717a"
           multiline
           maxLength={4096}
@@ -385,15 +708,188 @@ export default function ChatScreen() {
         <TouchableOpacity
           style={[
             styles.sendButton,
-            !inputText.trim() && styles.sendButtonDisabled,
+            !currentInputText.trim() && styles.sendButtonDisabled,
           ]}
           onPress={handleSend}
-          disabled={!inputText.trim()}
+          disabled={!currentInputText.trim()}
           activeOpacity={0.7}
         >
           <Text style={styles.sendButtonText}>发送</Text>
         </TouchableOpacity>
       </View>
+
+      {/* 侧边栏：多项目切换抽屉（停靠在左侧） */}
+      <Modal
+        visible={showProjectDrawer}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowProjectDrawer(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <SafeAreaView style={styles.drawerContainer}>
+            <View style={styles.drawerHeader}>
+              <View>
+                <Text style={styles.drawerTitle}>工作区项目</Text>
+                <Text style={styles.drawerSubtitle}>
+                  已开放 Loom 项目 ({projects.length}) · 独立工作区
+                </Text>
+              </View>
+              <TouchableOpacity
+                onPress={() => setShowProjectDrawer(false)}
+                style={styles.closeButton}
+              >
+                <Text style={styles.closeButtonText}>✕</Text>
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView style={styles.drawerList}>
+              {projects.length === 0 ? (
+                <View style={styles.drawerEmpty}>
+                  <Text style={styles.drawerEmptyText}>
+                    暂未同步到已注册项目，连接后自动加载
+                  </Text>
+                </View>
+              ) : (
+                projects.map((proj) => {
+                  const isSelected = proj.id === currentProjectId;
+                  const sess = sessions[proj.id];
+                  const msgCount = sess?.messages?.length || 0;
+                  const hasConversation = msgCount > 0;
+
+                  return (
+                    <TouchableOpacity
+                      key={proj.id}
+                      style={[
+                        styles.projectItem,
+                        isSelected && styles.projectItemSelected,
+                      ]}
+                      onPress={() => handleSelectProject(proj)}
+                      activeOpacity={0.7}
+                    >
+                      <View style={styles.projectItemHeader}>
+                        <Text style={styles.projectItemIcon}>📁</Text>
+                        <Text
+                          style={[
+                            styles.projectItemName,
+                            isSelected && styles.projectItemNameSelected,
+                          ]}
+                          numberOfLines={1}
+                        >
+                          {proj.name}
+                        </Text>
+                        {isSelected ? (
+                          <View style={styles.currentBadge}>
+                            <Text style={styles.currentBadgeText}>当前活动</Text>
+                          </View>
+                        ) : hasConversation ? (
+                          <View style={styles.activeBadge}>
+                            <Text style={styles.activeBadgeText}>{msgCount} 条对话</Text>
+                          </View>
+                        ) : (
+                          <View style={styles.idleBadge}>
+                            <Text style={styles.idleBadgeText}>空对话</Text>
+                          </View>
+                        )}
+                      </View>
+                      <Text style={styles.projectItemPath} numberOfLines={1}>
+                        {proj.path}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })
+              )}
+            </ScrollView>
+          </SafeAreaView>
+          <TouchableOpacity
+            style={styles.drawerBackdrop}
+            activeOpacity={1}
+            onPress={() => setShowProjectDrawer(false)}
+          />
+        </View>
+      </Modal>
+
+      {/* 模型选择弹出层 */}
+      <Modal
+        visible={showModelPicker}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowModelPicker(false)}
+      >
+        <TouchableOpacity
+          style={styles.modalOverlayCenter}
+          activeOpacity={1}
+          onPress={() => setShowModelPicker(false)}
+        >
+          <View
+            style={styles.modelDialog}
+            onStartShouldSetResponder={() => true}
+          >
+            <View style={styles.modelDialogHeader}>
+              <Text style={styles.modelDialogTitle}>为当前项目切换 Agent 模型</Text>
+              <Text style={styles.modelDialogSubtitle}>
+                当前工作区: 【{currentProjectName}】
+              </Text>
+            </View>
+
+            <ScrollView style={[styles.modelList, { maxHeight: 360 }]}>
+              {models.length === 0 ? (
+                <View style={styles.drawerEmpty}>
+                  <Text style={styles.drawerEmptyText}>
+                    暂无可用模型，连接后自动加载
+                  </Text>
+                </View>
+              ) : (
+                models.map((model) => {
+                  const isSelected = model.id === currentModelId;
+                  const argsDesc = model.args && model.args.length > 0 ? model.args.join(" ") : "默认配置";
+                  return (
+                    <TouchableOpacity
+                      key={model.id}
+                      style={[
+                        styles.modelItem,
+                        isSelected && styles.modelItemSelected,
+                      ]}
+                      onPress={() => handleSelectModel(model)}
+                      activeOpacity={0.7}
+                    >
+                      <View style={styles.modelItemLeft}>
+                        <Text style={styles.modelItemIcon}>🤖</Text>
+                        <View style={styles.modelItemTextGroup}>
+                          <Text
+                            style={[
+                              styles.modelItemName,
+                              isSelected && styles.modelItemNameSelected,
+                            ]}
+                            numberOfLines={1}
+                          >
+                            {model.name}
+                          </Text>
+                          <Text style={styles.modelItemArgs} numberOfLines={1}>
+                            {argsDesc}
+                          </Text>
+                        </View>
+                      </View>
+                      {isSelected && (
+                        <View style={styles.activeCheckmark}>
+                          <Text style={styles.activeCheckmarkText}>✓</Text>
+                        </View>
+                      )}
+                    </TouchableOpacity>
+                  );
+                })
+              )}
+            </ScrollView>
+
+            <TouchableOpacity
+              style={styles.modelCancelButton}
+              onPress={() => setShowModelPicker(false)}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.modelCancelButtonText}>取消</Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
     </KeyboardAvoidingView>
   );
 }
@@ -417,11 +913,57 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
-    paddingTop: 120,
+    paddingTop: 100,
+    paddingHorizontal: 32,
   },
-  emptyText: {
+  emptyIconBadge: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: "#1c1c28",
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: "#2d2d40",
+  },
+  emptyIconBadgeText: {
+    fontSize: 26,
+  },
+  emptyTitle: {
+    color: "#f4f4f5",
+    fontSize: 18,
+    fontWeight: "700",
+    textAlign: "center",
+  },
+  emptySubText: {
+    color: "#a1a1aa",
+    fontSize: 13,
+    marginTop: 6,
+    textAlign: "center",
+  },
+  modelTag: {
+    backgroundColor: "#202030",
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#373752",
+    marginTop: 14,
+    marginBottom: 8,
+  },
+  modelTagText: {
+    color: "#a5b4fc",
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  emptyTip: {
     color: "#52525b",
-    fontSize: 14,
+    fontSize: 11,
+    marginTop: 10,
+    textAlign: "center",
+    maxWidth: 260,
+    lineHeight: 16,
   },
   authBanner: {
     flexDirection: "row",
@@ -485,6 +1027,237 @@ const styles = StyleSheet.create({
   },
   sendButtonText: {
     color: "#ffffff",
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  modalOverlay: {
+    flex: 1,
+    flexDirection: "row",
+    backgroundColor: "rgba(0, 0, 0, 0.65)",
+  },
+  drawerBackdrop: {
+    flex: 1,
+  },
+  drawerContainer: {
+    width: "78%",
+    maxWidth: 300,
+    backgroundColor: "#13131a",
+    borderRightWidth: 1,
+    borderRightColor: "#27272a",
+    paddingTop: Platform.OS === "android" ? 36 : 0,
+  },
+  drawerHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: "#202028",
+  },
+  drawerTitle: {
+    color: "#f4f4f5",
+    fontSize: 17,
+    fontWeight: "700",
+  },
+  drawerSubtitle: {
+    color: "#71717a",
+    fontSize: 11,
+    marginTop: 2,
+  },
+  closeButton: {
+    padding: 6,
+    borderRadius: 6,
+    backgroundColor: "#202028",
+  },
+  closeButtonText: {
+    color: "#a1a1aa",
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  drawerList: {
+    flex: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+  },
+  drawerEmpty: {
+    paddingVertical: 40,
+    alignItems: "center",
+  },
+  drawerEmptyText: {
+    color: "#71717a",
+    fontSize: 13,
+    textAlign: "center",
+  },
+  projectItem: {
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 8,
+    backgroundColor: "#181822",
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: "#272732",
+  },
+  projectItemSelected: {
+    backgroundColor: "#1e1e2e",
+    borderColor: "#6366f1",
+  },
+  projectItemHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  projectItemIcon: {
+    fontSize: 14,
+    marginRight: 8,
+  },
+  projectItemName: {
+    color: "#e4e4e7",
+    fontSize: 14,
+    fontWeight: "600",
+    flex: 1,
+  },
+  projectItemNameSelected: {
+    color: "#a5b4fc",
+  },
+  currentBadge: {
+    backgroundColor: "#312e81",
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  currentBadgeText: {
+    color: "#c7d2fe",
+    fontSize: 10,
+    fontWeight: "600",
+  },
+  activeBadge: {
+    backgroundColor: "#1e293b",
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: "#334155",
+  },
+  activeBadgeText: {
+    color: "#94a3b8",
+    fontSize: 10,
+    fontWeight: "500",
+  },
+  idleBadge: {
+    backgroundColor: "#181820",
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  idleBadgeText: {
+    color: "#52525b",
+    fontSize: 10,
+  },
+  projectItemPath: {
+    color: "#71717a",
+    fontSize: 11,
+    marginTop: 4,
+    marginLeft: 22,
+  },
+  modalOverlayCenter: {
+    flex: 1,
+    backgroundColor: "rgba(0, 0, 0, 0.7)",
+    justifyContent: "center",
+    alignItems: "center",
+    paddingHorizontal: 20,
+  },
+  modelDialog: {
+    width: "100%",
+    maxWidth: 380,
+    backgroundColor: "#161620",
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "#272736",
+    padding: 16,
+  },
+  modelDialogHeader: {
+    marginBottom: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: "#252535",
+    paddingBottom: 10,
+  },
+  modelDialogTitle: {
+    color: "#f4f4f5",
+    fontSize: 16,
+    fontWeight: "700",
+  },
+  modelDialogSubtitle: {
+    color: "#818cf8",
+    fontSize: 12,
+    marginTop: 2,
+  },
+  modelList: {
+    marginVertical: 4,
+  },
+  modelItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 8,
+    backgroundColor: "#1e1e2b",
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: "#2a2a3c",
+  },
+  modelItemSelected: {
+    backgroundColor: "#26263b",
+    borderColor: "#6366f1",
+  },
+  modelItemLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    flex: 1,
+    marginRight: 8,
+  },
+  modelItemIcon: {
+    fontSize: 16,
+    marginRight: 10,
+  },
+  modelItemTextGroup: {
+    flex: 1,
+  },
+  modelItemName: {
+    color: "#e4e4e7",
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  modelItemNameSelected: {
+    color: "#c7d2fe",
+  },
+  modelItemArgs: {
+    color: "#71717a",
+    fontSize: 11,
+    marginTop: 2,
+  },
+  activeCheckmark: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: "#6366f1",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  activeCheckmarkText: {
+    color: "#ffffff",
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  modelCancelButton: {
+    marginTop: 10,
+    paddingVertical: 10,
+    borderRadius: 8,
+    backgroundColor: "#20202e",
+    alignItems: "center",
+  },
+  modelCancelButtonText: {
+    color: "#a1a1aa",
     fontSize: 14,
     fontWeight: "600",
   },

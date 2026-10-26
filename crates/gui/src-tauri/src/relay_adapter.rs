@@ -19,6 +19,63 @@ use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::acp::AcpBridge;
+use loom_core::storage as cstore;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RemoteProjectItem {
+    pub id: String,
+    pub name: String,
+    pub path: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RemoteModelItem {
+    pub id: String,
+    pub name: String,
+    pub args: Vec<String>,
+}
+
+pub fn get_available_remote_projects() -> Vec<RemoteProjectItem> {
+    if let Ok(projects) = cstore::get_projects() {
+        projects
+            .into_iter()
+            .map(|p| RemoteProjectItem {
+                id: p.id,
+                name: p.name,
+                path: p.root_path.to_string_lossy().to_string(),
+            })
+            .collect()
+    } else {
+        Vec::new()
+    }
+}
+
+pub fn get_available_remote_models() -> Vec<RemoteModelItem> {
+    let mut list = vec![RemoteModelItem {
+        id: "default".to_string(),
+        name: "mcode (默认模型)".to_string(),
+        args: vec![],
+    }];
+
+    if let Ok(templates) = cstore::get_templates() {
+        for t in templates {
+            if t.args.iter().any(|arg| arg == "--model" || arg.starts_with("--model="))
+                || t.name.to_lowercase().contains("mcode")
+                || t.name.to_lowercase().contains("mc")
+            {
+                list.push(RemoteModelItem {
+                    id: t.id,
+                    name: t.name,
+                    args: t.args,
+                });
+            }
+        }
+    }
+
+    list
+}
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -558,13 +615,31 @@ pub fn start_remote_session(workspace_dir: String) -> Result<RemoteSessionInfo, 
 
     let server_url = cfg.server_url.clone();
 
-    // 查询账号绑定状态：已绑定的手机端重连不需要配对码，
-    // 只有未绑定时才生成一次性配对码。
+    // 默认开放所有已注册项目：确定初始项目与工作目录
+    let projects = get_available_remote_projects();
+    let (initial_workspace_dir, initial_project_id) = if !workspace_dir.trim().is_empty() {
+        let pid = projects
+            .iter()
+            .find(|p| p.path == workspace_dir)
+            .map(|p| p.id.clone())
+            .unwrap_or_default();
+        (workspace_dir, pid)
+    } else if let Some(p) = projects.first() {
+        (p.path.clone(), p.id.clone())
+    } else {
+        (
+            std::env::current_dir()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .to_string(),
+            String::new(),
+        )
+    };
+
     let mobile_paired = refresh_pair_binding_cache(&server_url, &token);
 
     let mut pair_data: Option<RelayPairData> = None;
     if !mobile_paired {
-        // Request pairing code from relay server
         pair_data = Some(request_pairing_code(&server_url, &token)?);
     }
 
@@ -573,7 +648,7 @@ pub fn start_remote_session(workspace_dir: String) -> Result<RemoteSessionInfo, 
         .lock()
         .map_err(|e| format!("锁竞争异常: {}", e))?;
 
-    if let Some(mut existing) = map.remove(&workspace_dir) {
+    for (_, mut existing) in map.drain() {
         if let Ok(mut stop) = existing.stop_signal.lock() {
             *stop = true;
         }
@@ -581,46 +656,6 @@ pub fn start_remote_session(workspace_dir: String) -> Result<RemoteSessionInfo, 
             let _ = child.kill();
         }
     }
-
-    // Spawn mcode acp: the Agent Client Protocol server that provides
-    // session/new, session/prompt and session/update over stdin/stdout.
-    // Note: mcode app-server only exposes low-level account/runtime methods
-    // and does not implement the Agent protocol.
-    #[cfg(windows)]
-    let mut cmd = {
-        let mut c = Command::new("cmd");
-        c.args(["/C", "mcode", "acp"]);
-        c
-    };
-
-    #[cfg(not(windows))]
-    let mut cmd = {
-        let mut c = Command::new("mcode");
-        c.args(["acp"]);
-        c
-    };
-
-    cmd.current_dir(&workspace_dir);
-    cmd.stdin(Stdio::piped());
-    cmd.stdout(Stdio::piped());
-    cmd.stderr(Stdio::piped());
-
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
-    }
-
-    let mut child = cmd.spawn()
-        .map_err(|e| format!("启动 mcode acp 失败: {}", e))?;
-
-    let pid = child.id();
-    let child_stdin = child.stdin.take()
-        .ok_or("无法获取 mcode acp stdin")?;
-    let child_stdout = child.stdout.take()
-        .ok_or("无法获取 mcode acp stdout")?;
-    let child_stderr = child.stderr.take()
-        .ok_or("无法获取 mcode acp stderr")?;
 
     let ws_connected = Arc::new(Mutex::new(false));
     let desktop_online = Arc::new(Mutex::new(None));
@@ -644,10 +679,10 @@ pub fn start_remote_session(workspace_dir: String) -> Result<RemoteSessionInfo, 
     let info = RemoteSessionInfo {
         status,
         pairing_code,
-        workspace_dir: Some(workspace_dir.clone()),
+        workspace_dir: Some(initial_workspace_dir.clone()),
         started_at_ms: Some(now_ms()),
         expires_at_ms,
-        pid: Some(pid),
+        pid: None,
         mobile_device_name: None,
         message: Some(message),
         relay_url: Some(server_url.clone()),
@@ -664,32 +699,32 @@ pub fn start_remote_session(workspace_dir: String) -> Result<RemoteSessionInfo, 
         token
     );
 
-    let workspace_dir_clone = workspace_dir.clone();
     let bridge_flags = BridgeFlags {
         ws_connected: ws_connected.clone(),
         desktop_online: desktop_online.clone(),
         stop_signal: stop_signal_clone,
     };
+
+    let initial_dir_for_thread = initial_workspace_dir.clone();
+    let initial_pid_for_thread = initial_project_id;
     std::thread::spawn(move || {
         relay_bridge_thread(
             ws_url,
             RelayEndpoint {
-                server_url: server_url.clone(),
-                token: token.clone(),
+                server_url,
+                token,
             },
-            child_stdin,
-            child_stdout,
-            child_stderr,
-            workspace_dir_clone,
+            initial_dir_for_thread,
+            initial_pid_for_thread,
             bridge_flags,
         );
     });
 
     map.insert(
-        workspace_dir,
+        initial_workspace_dir,
         ManagedSession {
             info: info.clone(),
-            child: Some(child),
+            child: None,
             ws_connected,
             desktop_online,
             stop_signal,
@@ -865,16 +900,186 @@ struct RelayEndpoint {
     token: String,
 }
 
-/// Background thread that connects to the relay WebSocket and bridges it to
-/// the `mcode acp` child process over the Agent Client Protocol.
-///
-/// The thread acts as the ACP client: it performs the handshake, converts the
-/// phone's envelopes into ACP requests, and converts ACP notifications into
-/// phone frames. The relay server itself stays a stateless byte pipe.
-///
-/// Uses `tungstenite` for synchronous WebSocket communication paired with
-/// standard threads, matching the project-wide convention of avoiding
-/// async runtimes.
+/// 启动 mcode acp 子进程（工作目录与附加参数）
+fn spawn_mcode_acp(workspace_dir: &str, model_args: &[String]) -> Result<Child, String> {
+    #[cfg(windows)]
+    let (mut cmd, args_display) = {
+        let mut c = Command::new("cmd");
+        let mut args = vec!["/C".to_string(), "mcode".to_string()];
+        args.extend(model_args.iter().cloned());
+        args.push("acp".to_string());
+        let display = args.join(" ");
+        c.args(&args);
+        (c, display)
+    };
+
+    #[cfg(not(windows))]
+    let (mut cmd, args_display) = {
+        let mut c = Command::new("mcode");
+        let mut args = Vec::new();
+        args.extend(model_args.iter().cloned());
+        args.push("acp".to_string());
+        let display = format!("mcode {}", args.join(" "));
+        c.args(&args);
+        (c, display)
+    };
+
+    eprintln!("[RELAY-AGENT] 正在拉起进程: {} (工作目录: {})", args_display, workspace_dir);
+
+    cmd.current_dir(workspace_dir);
+    cmd.stdin(Stdio::piped());
+    cmd.stdout(Stdio::piped());
+    cmd.stderr(Stdio::piped());
+
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+    }
+
+    let child = cmd.spawn().map_err(|e| format!("启动 mcode acp 失败: {}", e))?;
+    eprintln!("[RELAY-AGENT] ✅ mcode acp 进程启动成功 (PID: {})", child.id());
+    Ok(child)
+}
+
+/// 承载单个活跃 ACP 会话与子进程生命周期
+#[allow(dead_code)]
+struct ActiveAgentSession {
+    child: Child,
+    stdin: std::process::ChildStdin,
+    bridge: AcpBridge,
+    rx_out: std::sync::mpsc::Receiver<String>,
+    stop_reader: Arc<Mutex<bool>>,
+    _stdout_thread: Option<std::thread::JoinHandle<()>>,
+    _stderr_thread: Option<std::thread::JoinHandle<()>>,
+    pub workspace_dir: String,
+    pub project_id: String,
+    pub model_id: String,
+    pub model_args: Vec<String>,
+}
+
+impl ActiveAgentSession {
+    fn new(
+        workspace_dir: String,
+        project_id: String,
+        model_id: String,
+        model_args: Vec<String>,
+    ) -> Result<Self, String> {
+        let mut child = spawn_mcode_acp(&workspace_dir, &model_args)?;
+        let mut stdin = child.stdin.take().ok_or("无法获取 mcode acp stdin")?;
+        let stdout = child.stdout.take().ok_or("无法获取 mcode acp stdout")?;
+        let stderr = child.stderr.take().ok_or("无法获取 mcode acp stderr")?;
+
+        let (tx_out, rx_out) = std::sync::mpsc::channel::<String>();
+        let stop_reader = Arc::new(Mutex::new(false));
+
+        let stop_clone1 = stop_reader.clone();
+        let stdout_thread = std::thread::spawn(move || {
+            let reader = BufReader::new(stdout);
+            for line in reader.lines() {
+                if let Ok(stopped) = stop_clone1.lock() {
+                    if *stopped {
+                        break;
+                    }
+                }
+                match line {
+                    Ok(l) => {
+                        if tx_out.send(l).is_err() {
+                            break;
+                        }
+                    }
+                    Err(_) => break,
+                }
+            }
+        });
+
+        let stop_clone2 = stop_reader.clone();
+        let stderr_thread = std::thread::spawn(move || {
+            let reader = BufReader::new(stderr);
+            for line in reader.lines() {
+                if let Ok(stopped) = stop_clone2.lock() {
+                    if *stopped {
+                        break;
+                    }
+                }
+                match line {
+                    Ok(l) => eprintln!("[ACP] {}", l),
+                    Err(_) => break,
+                }
+            }
+        });
+
+        let mut bridge = AcpBridge::new(workspace_dir.clone());
+        for req in bridge.start() {
+            let _ = writeln!(stdin, "{}", req);
+            let _ = stdin.flush();
+        }
+
+        Ok(Self {
+            child,
+            stdin,
+            bridge,
+            rx_out,
+            stop_reader,
+            _stdout_thread: Some(stdout_thread),
+            _stderr_thread: Some(stderr_thread),
+            workspace_dir,
+            project_id,
+            model_id,
+            model_args,
+        })
+    }
+
+    fn stop(&mut self) {
+        if let Ok(mut stopped) = self.stop_reader.lock() {
+            *stopped = true;
+        }
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            let pid = self.child.id();
+            let _ = Command::new("taskkill")
+                .args(["/F", "/T", "/PID", &pid.to_string()])
+                .creation_flags(0x08000000)
+                .output();
+        }
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+    }
+}
+
+/// 向 WebSocket 连接下发当前已注册项目与可用模型/模板列表
+fn send_context_lists<S: std::io::Read + std::io::Write>(
+    socket: &mut tungstenite::WebSocket<S>,
+    current_project_id: &str,
+    current_model_id: &str,
+) {
+    let projects = get_available_remote_projects();
+    let models = get_available_remote_models();
+
+    let proj_payload = serde_json::json!({
+        "currentProjectId": current_project_id,
+        "projects": projects,
+    });
+    let proj_frame = serde_json::json!({
+        "type": "project_list",
+        "payload": proj_payload.to_string(),
+        "timestamp": now_ms(),
+    });
+    let _ = socket.send(tungstenite::Message::Text(proj_frame.to_string()));
+
+    let model_payload = serde_json::json!({
+        "currentModelId": current_model_id,
+        "models": models,
+    });
+    let model_frame = serde_json::json!({
+        "type": "model_list",
+        "payload": model_payload.to_string(),
+        "timestamp": now_ms(),
+    });
+    let _ = socket.send(tungstenite::Message::Text(model_frame.to_string()));
+}
+
 /// Relay 桥接线程共享的运行期标志。
 struct BridgeFlags {
     /// 手机端是否已接入中继管道
@@ -888,13 +1093,10 @@ struct BridgeFlags {
 fn relay_bridge_thread(
     ws_url: String,
     endpoint: RelayEndpoint,
-    mut stdin: std::process::ChildStdin,
-    stdout: std::process::ChildStdout,
-    stderr: std::process::ChildStderr,
-    workspace_dir: String,
+    initial_workspace_dir: String,
+    initial_project_id: String,
     flags: BridgeFlags,
 ) {
-    use std::sync::mpsc;
     use std::time::Duration;
     use tungstenite::{connect, Message};
 
@@ -904,57 +1106,16 @@ fn relay_bridge_thread(
         stop_signal,
     } = flags;
 
-    let (tx_out, rx_out) = mpsc::channel::<String>();
+    // 多项目按需独立 ACP 会话池：每个项目独立工作区，只有开始对话后才为该项目创建对应模型的 ACP 进程
+    let mut pool: HashMap<String, ActiveAgentSession> = HashMap::new();
+    let mut active_project_id: String = initial_project_id.clone();
+    let mut current_model_id: String = "default".to_string();
+    let mut current_model_args: Vec<String> = vec![];
 
-    // Thread: read lines from the Agent's stdout and send through channel
-    let stop_clone1 = stop_signal.clone();
-    let stdout_reader_thread = std::thread::spawn(move || {
-        let reader = BufReader::new(stdout);
-        for line in reader.lines() {
-            if let Ok(stopped) = stop_clone1.lock() {
-                if *stopped {
-                    break;
-                }
-            }
-            match line {
-                Ok(l) => {
-                    if tx_out.send(l).is_err() {
-                        break;
-                    }
-                }
-                Err(_) => break,
-            }
-        }
-    });
-
-    // Thread: continuously drain the Agent's stderr. Without draining it the
-    // pipe buffer fills up and blocks the child process.
-    let stop_clone2 = stop_signal.clone();
-    let stderr_reader_thread = std::thread::spawn(move || {
-        let reader = BufReader::new(stderr);
-        for line in reader.lines() {
-            if let Ok(stopped) = stop_clone2.lock() {
-                if *stopped {
-                    break;
-                }
-            }
-            match line {
-                Ok(l) => eprintln!("[ACP] {}", l),
-                Err(_) => break,
-            }
-        }
-    });
-
-    // ACP handshake: send `initialize` first; the session is created once the
-    // initialize response comes back.
-    let mut bridge = AcpBridge::new(workspace_dir);
-    for req in bridge.start() {
-        if writeln!(stdin, "{}", req).is_err() {
-            eprintln!("[RELAY-BRIDGE] 写入 initialize 失败");
-            return;
-        }
-        let _ = stdin.flush();
-    }
+    println!(
+        "[RELAY-BRIDGE] 远程会话已就绪，当前选定初始项目: {}，尚未产生对话，不提前拉起 ACP 进程",
+        active_project_id
+    );
 
     let mut retry_delay_ms = 1000u64;
 
@@ -993,30 +1154,32 @@ fn relay_bridge_thread(
                         }
                     }
 
-                    // 1. Drain the Agent's stdout, translate it, and forward it to the phone
-                    while let Ok(line) = rx_out.try_recv() {
-                        if line.trim().is_empty() {
-                            continue;
-                        }
-                        let actions = bridge.on_agent_line(&line);
-                        if !write_to_agent(&mut stdin, &actions.to_agent) {
-                            eprintln!("[RELAY-BRIDGE] 写入 stdin 失败");
-                            break;
-                        }
-                        let mut failed = false;
-                        for frame in actions.to_mobile {
-                            if let Err(e) = socket.send(Message::Text(frame)) {
-                                eprintln!("[RELAY-BRIDGE] 发送消息到 WebSocket 失败: {}", e);
-                                failed = true;
+                    // 1. 排空已激活项目的 stdout 并转发到手机端
+                    for (_pid, agent) in pool.iter_mut() {
+                        while let Ok(line) = agent.rx_out.try_recv() {
+                            if line.trim().is_empty() {
+                                continue;
+                            }
+                            let actions = agent.bridge.on_agent_line(&line);
+                            if !write_to_agent(&mut agent.stdin, &actions.to_agent) {
+                                eprintln!("[RELAY-BRIDGE] 写入 Agent stdin 失败");
+                                break;
+                            }
+                            let mut failed = false;
+                            for frame in actions.to_mobile {
+                                if let Err(e) = socket.send(Message::Text(frame)) {
+                                    eprintln!("[RELAY-BRIDGE] 发送消息到 WebSocket 失败: {}", e);
+                                    failed = true;
+                                    break;
+                                }
+                            }
+                            if failed {
                                 break;
                             }
                         }
-                        if failed {
-                            break;
-                        }
                     }
 
-                    // 2. Read from WebSocket and translate it into an ACP request
+                    // 2. Read from WebSocket
                     match socket.read() {
                         Ok(msg) => match msg {
                             Message::Text(text) => {
@@ -1028,9 +1191,9 @@ fn relay_bridge_thread(
                                                 if let Ok(mut c) = ws_connected.lock() {
                                                     *c = true;
                                                 }
-                                                eprintln!("[RELAY-BRIDGE] 手机端已连接");
-                                                // 手机端接入即代表账号已完成绑定：刷新本地绑定缓存，
-                                                // 否则手机端断开后桌面端会因缓存过期退回「等待配对」并重新展示配对码
+                                                eprintln!("[RELAY-BRIDGE] 手机端已连接，正在同步项目与模型列表");
+                                                send_context_lists(&mut socket, &active_project_id, &current_model_id);
+
                                                 refresh_binding_cache_async(
                                                     &endpoint.server_url,
                                                     &endpoint.token,
@@ -1040,8 +1203,6 @@ fn relay_bridge_thread(
                                                     *c = false;
                                                 }
                                                 eprintln!("[RELAY-BRIDGE] 手机端已断开");
-                                                // 断连时再确认一次绑定状态：绑定仍然有效时，
-                                                // 界面应显示「手机端已断连，等待其自动重连」
                                                 refresh_binding_cache_async(
                                                     &endpoint.server_url,
                                                     &endpoint.token,
@@ -1050,18 +1211,120 @@ fn relay_bridge_thread(
                                         }
                                         continue;
                                     }
+
+                                    // 处理多项目与模型切换协议
+                                    let msg_type = val.get("type").and_then(|v| v.as_str()).unwrap_or("");
+                                    if msg_type == "switch_project" {
+                                        if let Some(payload_str) = val.get("payload").and_then(|v| v.as_str()) {
+                                            if let Ok(req) = serde_json::from_str::<serde_json::Value>(payload_str) {
+                                                if let Some(target_pid) = req.get("projectId").and_then(|v| v.as_str()) {
+                                                    let projects = get_available_remote_projects();
+                                                    if let Some(target_p) = projects.into_iter().find(|p| p.id == target_pid) {
+                                                        eprintln!("[RELAY-PROJECT] 📁 手机端请求切换项目 -> 【{}】 (路径: {})", target_p.name, target_p.path);
+                                                        active_project_id = target_p.id.clone();
+                                                        let is_running = pool.contains_key(&active_project_id);
+                                                        eprintln!("[RELAY-PROJECT] 💡 该项目 ACP 状态: {}", if is_running { "已常驻活跃" } else { "未拉起 (将在发送首条消息时按需创建)" });
+
+                                                        let ack = serde_json::json!({
+                                                            "type": "project_switched",
+                                                            "payload": serde_json::json!({
+                                                                "projectId": target_p.id,
+                                                                "projectName": target_p.name,
+                                                                "workspaceDir": target_p.path,
+                                                            }).to_string(),
+                                                            "timestamp": now_ms(),
+                                                        });
+                                                        let _ = socket.send(tungstenite::Message::Text(ack.to_string()));
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        continue;
+                                    } else if msg_type == "switch_model" {
+                                        eprintln!("[RELAY-MODEL] 🤖 收到手机端切换模型请求: {}", text);
+                                        if let Some(payload_str) = val.get("payload").and_then(|v| v.as_str()) {
+                                            if let Ok(req) = serde_json::from_str::<serde_json::Value>(payload_str) {
+                                                if let Some(target_mid) = req.get("modelId").and_then(|v| v.as_str()) {
+                                                    let models = get_available_remote_models();
+                                                    if let Some(target_m) = models.into_iter().find(|m| m.id == target_mid) {
+                                                        eprintln!("[RELAY-MODEL] 🎯 目标模型: 【{}】 (参数: {:?})", target_m.name, target_m.args);
+                                                        current_model_id = target_m.id.clone();
+                                                        current_model_args = target_m.args.clone();
+
+                                                        // 若当前项目此前已经创建过旧模型的 Agent，则将其关闭并从池中移除；
+                                                        // 新模型的 Agent 将在下一次发消息时按需重新拉起
+                                                        if let Some(mut old_agent) = pool.remove(&active_project_id) {
+                                                            eprintln!("[RELAY-MODEL] 🔄 已释放当前项目旧模型的 ACP 进程，等待下一次发消息时拉起新模型");
+                                                            old_agent.stop();
+                                                        } else {
+                                                            eprintln!("[RELAY-MODEL] 💡 当前项目尚未创建进程，已记录选定模型，将在发消息时直接使用此模型拉起");
+                                                        }
+
+                                                        let ack = serde_json::json!({
+                                                            "type": "model_switched",
+                                                            "payload": serde_json::json!({
+                                                                "modelId": target_m.id,
+                                                                "modelName": target_m.name,
+                                                            }).to_string(),
+                                                            "timestamp": now_ms(),
+                                                        });
+                                                        let _ = socket.send(tungstenite::Message::Text(ack.to_string()));
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        continue;
+                                    } else if msg_type == "get_context" {
+                                        eprintln!("[RELAY-BRIDGE] 📋 收到 get_context 请求，下发已注册项目与可用模型列表");
+                                        send_context_lists(&mut socket, &active_project_id, &current_model_id);
+                                        continue;
+                                    }
                                 }
 
-                                // Translate the phone's envelope into an ACP request
-                                let actions = bridge.on_mobile_frame(&text);
-                                if !write_to_agent(&mut stdin, &actions.to_agent) {
-                                    eprintln!("[RELAY-BRIDGE] 写入 stdin 失败");
-                                    break;
+                                // 3. 收到手机端对话/业务消息：按需激活当前项目的 ACP 会话
+                                eprintln!("[RELAY-CHAT] 💬 收到对话消息 (目标活动项目: {}): {}", active_project_id, text);
+
+                                // 若当前项目尚未启动 ACP 会话，则在此时按需为该项目拉起对应模型的 mcode acp
+                                if !pool.contains_key(&active_project_id) {
+                                    let projects = get_available_remote_projects();
+                                    let target_path = projects
+                                        .iter()
+                                        .find(|p| p.id == active_project_id)
+                                        .map(|p| p.path.clone())
+                                        .unwrap_or_else(|| initial_workspace_dir.clone());
+
+                                    eprintln!(
+                                        "[RELAY-CHAT] 🚀 项目【{}】首次对话触发！正在为其拉起专属 ACP 进程 (模型: 【{}】)...",
+                                        active_project_id, current_model_id
+                                    );
+
+                                    match ActiveAgentSession::new(
+                                        target_path,
+                                        active_project_id.clone(),
+                                        current_model_id.clone(),
+                                        current_model_args.clone(),
+                                    ) {
+                                        Ok(agent) => {
+                                            eprintln!("[RELAY-CHAT] ✅ 项目【{}】专属 ACP 会话建立完成！", active_project_id);
+                                            pool.insert(active_project_id.clone(), agent);
+                                        }
+                                        Err(e) => {
+                                            eprintln!("[RELAY-CHAT] ❌ 按需拉起 Agent 失败: {}", e);
+                                        }
+                                    }
                                 }
-                                for frame in actions.to_mobile {
-                                    if let Err(e) = socket.send(Message::Text(frame)) {
-                                        eprintln!("[RELAY-BRIDGE] 发送消息到 WebSocket 失败: {}", e);
+
+                                if let Some(agent) = pool.get_mut(&active_project_id) {
+                                    let actions = agent.bridge.on_mobile_frame(&text);
+                                    if !write_to_agent(&mut agent.stdin, &actions.to_agent) {
+                                        eprintln!("[RELAY-BRIDGE] 写入 Agent stdin 失败");
                                         break;
+                                    }
+                                    for frame in actions.to_mobile {
+                                        if let Err(e) = socket.send(Message::Text(frame)) {
+                                            eprintln!("[RELAY-BRIDGE] 发送消息到 WebSocket 失败: {}", e);
+                                            break;
+                                        }
                                     }
                                 }
                             }
@@ -1103,9 +1366,10 @@ fn relay_bridge_thread(
         }
     }
 
-    drop(stdin);
-    let _ = stdout_reader_thread.join();
-    let _ = stderr_reader_thread.join();
+    // 退出时彻底释放所有项目的 ACP 子进程
+    for (_, mut agent) in pool.drain() {
+        agent.stop();
+    }
 }
 
 #[cfg(test)]

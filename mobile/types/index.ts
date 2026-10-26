@@ -40,6 +40,18 @@ export interface PairBindingResponse {
   deviceId?: string | null;
 }
 
+export interface ProjectItem {
+  id: string;
+  name: string;
+  path: string;
+}
+
+export interface ModelItem {
+  id: string;
+  name: string;
+  args: string[];
+}
+
 export interface RelayMessage {
   type:
     | "chat"
@@ -48,6 +60,13 @@ export interface RelayMessage {
     | "tool_call"
     | "permission_request"
     | "permission_response"
+    | "project_list"
+    | "project_switched"
+    | "model_list"
+    | "model_switched"
+    | "switch_project"
+    | "switch_model"
+    | "get_context"
     | "error"
     | "control"
     | "ping"

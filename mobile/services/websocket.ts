@@ -137,6 +137,7 @@ function connectInternal(): void {
     openedAt = Date.now();
     notifyStatus(true);
     startHeartbeat();
+    requestContext();
   };
 
   ws.onmessage = (event: WebSocketMessageEvent) => {
@@ -323,4 +324,37 @@ export function disconnect(): void {
   statusCallbacks = [];
   authErrorCallbacks = [];
   notifyStatus(false);
+}
+
+export function sendSwitchProject(projectId: string): void {
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    const relayMessage: RelayMessage = {
+      type: "switch_project",
+      payload: JSON.stringify({ projectId }),
+      timestamp: Date.now(),
+    };
+    ws.send(JSON.stringify(relayMessage));
+  }
+}
+
+export function sendSwitchModel(modelId: string): void {
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    const relayMessage: RelayMessage = {
+      type: "switch_model",
+      payload: JSON.stringify({ modelId }),
+      timestamp: Date.now(),
+    };
+    ws.send(JSON.stringify(relayMessage));
+  }
+}
+
+export function requestContext(): void {
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    const relayMessage: RelayMessage = {
+      type: "get_context" as any,
+      payload: "",
+      timestamp: Date.now(),
+    };
+    ws.send(JSON.stringify(relayMessage));
+  }
 }

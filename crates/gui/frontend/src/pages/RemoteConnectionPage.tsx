@@ -485,7 +485,9 @@ export const RemoteConnectionPage: React.FC<RemoteConnectionPageProps> = ({
             <div className="remote-card-head">
               <div className="remote-card-heading">
                 <h2 className="remote-card-title">远程工作区会话</h2>
-                <p className="remote-card-desc">选择工作区后开启远程会话，手机端输入配对码即可直连该工作区。</p>
+                <p className="remote-card-desc">
+                  开启远程会话后，默认开放所有已注册项目（共 {projects.length} 个）。手机端可通过侧边栏随时切换项目并拥有独立工作区。
+                </p>
               </div>
               <span className={`badge ${statusMeta.badge}`}>
                 <span className={`dot ${statusMeta.dot}`} />
@@ -494,13 +496,13 @@ export const RemoteConnectionPage: React.FC<RemoteConnectionPageProps> = ({
             </div>
 
             <div className="remote-field">
-              <label className="form-label">目标工作区项目</label>
+              <label className="form-label">初始工作区项目（手机端可在侧边栏随时切换）</label>
               <WorkspaceSelect
                 projects={projects}
                 value={activeWorkspace}
                 onChange={setSelectedWorkspace}
                 disabled={isSessionRunning}
-                placeholder={projects.length === 0 ? '暂无工作区项目' : '选择工作区项目'}
+                placeholder={projects.length === 0 ? '暂无工作区项目' : '选择初始工作区项目'}
               />
             </div>
 
@@ -511,8 +513,8 @@ export const RemoteConnectionPage: React.FC<RemoteConnectionPageProps> = ({
             <div className="remote-actions">
               <span className="remote-hint">
                 {isSessionRunning
-                  ? `会话工作区：${runningWorkspace || '未知'}${session?.mobilePaired ? ' · 手机端已绑定，等待其自动重连' : ''}`
-                  : '开启后会在下方生成 4 位配对码，有效期内可重复配对。'}
+                  ? `当前活动工作区：${runningWorkspace || '全部开放'}（手机端可通过侧边栏切换）${session?.mobilePaired ? ' · 手机端已绑定' : ''}`
+                  : `开启后将开放已注册的 ${projects.length} 个项目，手机端可通过侧边栏自由切换独立工作区。`}
               </span>
               <div className="remote-actions-buttons">
                 {session?.mobilePaired && (
