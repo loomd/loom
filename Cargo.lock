@@ -2521,7 +2521,7 @@ checksum = "f9f8bd3e56ce4dfc153cf470fffbfa98c7620958b312ca5c3a4b8d5181fd13c6"
 
 [[package]]
 name = "loom-cli"
-version = "0.8.4"
+version = "0.8.5"
 dependencies = [
  "clap",
  "loom-core",
@@ -2533,7 +2533,7 @@ dependencies = [
 
 [[package]]
 name = "loom-core"
-version = "0.8.4"
+version = "0.8.5"
 dependencies = [
  "directories",
  "dirs 5.0.1",
@@ -2551,7 +2551,7 @@ dependencies = [
 
 [[package]]
 name = "loom-gui"
-version = "0.8.4"
+version = "0.8.5"
 dependencies = [
  "crash-handler",
  "loom-core",

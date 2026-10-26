@@ -50,6 +50,8 @@ enum Phase {
     Initializing,
     /// `initialize` 已完成，已发出 `session/new`，等待响应。
     CreatingSession,
+    /// 已发出 `session/set_config_option` 设置会话模型，等待响应。
+    ConfiguringSession,
     /// 会话就绪，可以接受 prompt。
     Ready,
     /// 握手失败。
@@ -97,6 +99,8 @@ pub struct AcpBridge {
     session_id: Option<String>,
     next_request_id: i64,
     session_new_request_id: Option<i64>,
+    session_config_request_id: Option<i64>,
+    target_model: Option<String>,
     active_prompt_id: Option<i64>,
     prompt_queue: VecDeque<String>,
     pending_permissions: HashMap<String, PendingPermission>,
@@ -111,13 +115,21 @@ pub struct AcpBridge {
 
 impl AcpBridge {
     /// 创建适配器。`workspace_dir` 为 `session/new` 的工作目录。
+    #[allow(dead_code)]
     pub fn new(workspace_dir: String) -> Self {
+        Self::with_model(workspace_dir, None)
+    }
+
+    /// 创建带目标模型的适配器。
+    pub fn with_model(workspace_dir: String, target_model: Option<String>) -> Self {
         Self {
             phase: Phase::Initializing,
             workspace_dir,
             session_id: None,
             next_request_id: 1,
             session_new_request_id: None,
+            session_config_request_id: None,
+            target_model,
             active_prompt_id: None,
             prompt_queue: VecDeque::new(),
             pending_permissions: HashMap::new(),
@@ -201,6 +213,48 @@ impl AcpBridge {
                 match value.pointer("/result/sessionId").and_then(|v| v.as_str()) {
                     Some(sid) => {
                         self.session_id = Some(sid.to_string());
+
+                        // 若指定了目标模型，尝试在 ACP options 中匹配并设置
+                        let mut model_to_set: Option<String> = None;
+                        if let Some(ref target) = self.target_model {
+                            if let Some(config_options) = value.pointer("/result/configOptions").and_then(|v| v.as_array()) {
+                                for opt_cfg in config_options {
+                                    if opt_cfg.get("id").and_then(|v| v.as_str()) == Some("model") {
+                                        let current_val = opt_cfg.get("currentValue").and_then(|v| v.as_str()).unwrap_or("");
+                                        if let Some(opts) = opt_cfg.get("options").and_then(|v| v.as_array()) {
+                                            if let Some(matched_val) = match_model_option(target, opts) {
+                                                if matched_val != current_val {
+                                                    model_to_set = Some(matched_val);
+                                                }
+                                            }
+                                        }
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+
+                        if let Some(val) = model_to_set {
+                            let cfg_id = self.alloc_id();
+                            self.session_config_request_id = Some(cfg_id);
+                            self.phase = Phase::ConfiguringSession;
+                            eprintln!("[ACP] 🎯 正在配置会话模型 -> {}", val);
+                            actions.to_agent.push(
+                                json!({
+                                    "jsonrpc": "2.0",
+                                    "id": cfg_id,
+                                    "method": "session/set_config_option",
+                                    "params": {
+                                        "sessionId": sid,
+                                        "configId": "model",
+                                        "value": val
+                                    }
+                                })
+                                .to_string(),
+                            );
+                            return actions;
+                        }
+
                         self.phase = Phase::Ready;
                     }
                     None => {
@@ -210,6 +264,20 @@ impl AcpBridge {
                             .push(error_frame("创建 Agent 会话失败，未返回 sessionId"));
                     }
                 }
+                actions.to_agent.extend(self.pump_prompts());
+                return actions;
+            }
+            Phase::ConfiguringSession => {
+                if self.session_config_request_id != Some(id) {
+                    return actions;
+                }
+                self.session_config_request_id = None;
+                if let Some(err) = value.get("error") {
+                    eprintln!("[ACP] ⚠️ 配置模型返回错误: {:?}", err);
+                } else {
+                    eprintln!("[ACP] ✅ 会话模型配置生效！");
+                }
+                self.phase = Phase::Ready;
                 actions.to_agent.extend(self.pump_prompts());
                 return actions;
             }
@@ -541,6 +609,9 @@ impl AcpBridge {
     /// 派发队列中的 prompt。同一时刻只允许一个 `session/prompt` 在途。
     fn pump_prompts(&mut self) -> Vec<String> {
         let mut out = Vec::new();
+        if self.phase != Phase::Ready {
+            return out;
+        }
         if self.active_prompt_id.is_some() {
             return out;
         }
@@ -572,6 +643,97 @@ impl AcpBridge {
         self.next_request_id += 1;
         id
     }
+}
+
+/// 在 ACP 返回的 model 选项列表中匹配目标模型。
+///
+/// 选项形如：`{"value": "m:custom_provider%3Aloom:claude-sonnet-4-6:v:thinking", "name": "claude-sonnet-4-6 · thinking"}`
+/// 目标模型形如：`custom_provider:loom/claude-sonnet-4-6`、`claude-sonnet-4-6` 或全值。
+pub fn match_model_option(target: &str, options: &[Value]) -> Option<String> {
+    let target_clean = target.trim();
+    if target_clean.is_empty() || target_clean.eq_ignore_ascii_case("default") {
+        return None;
+    }
+
+    // 1. 完全精确匹配 value 或 name
+    for opt in options {
+        if let Some(val) = opt.get("value").and_then(|v| v.as_str()) {
+            if val == target_clean {
+                return Some(val.to_string());
+            }
+        }
+        if let Some(name) = opt.get("name").and_then(|v| v.as_str()) {
+            if name.eq_ignore_ascii_case(target_clean) {
+                if let Some(val) = opt.get("value").and_then(|v| v.as_str()) {
+                    return Some(val.to_string());
+                }
+            }
+        }
+    }
+
+    // 2. 结构化拆解：针对形如 "custom_provider:loom/claude-sonnet-4-6" 或 "provider/model"
+    let (target_provider, target_model) = if let Some(slash_idx) = target_clean.find('/') {
+        let (p, m) = target_clean.split_at(slash_idx);
+        (Some(p.trim()), m[1..].trim())
+    } else {
+        (None, target_clean)
+    };
+
+    let target_provider_encoded = target_provider.map(|p| p.replace(':', "%3A").to_lowercase());
+    let target_provider_raw = target_provider.map(|p| p.to_lowercase());
+    let target_model_lower = target_model.to_lowercase();
+
+    let mut best_val: Option<String> = None;
+    let mut best_score: i32 = -1;
+
+    for opt in options {
+        let val = opt.get("value").and_then(|v| v.as_str()).unwrap_or("");
+        let name = opt.get("name").and_then(|v| v.as_str()).unwrap_or("");
+        let val_lower = val.to_lowercase();
+        let name_lower = name.to_lowercase();
+
+        // ACP 模型 value 结构约定为冒号分隔：m : provider : model : ...
+        let parts: Vec<&str> = val.split(':').collect();
+        let opt_provider = if parts.len() > 1 { parts[1].to_lowercase() } else { String::new() };
+        let opt_model = if parts.len() > 2 { parts[2].to_lowercase() } else { String::new() };
+
+        let mut score: i32 = 0;
+
+        // 匹配 model
+        if !target_model_lower.is_empty() {
+            if opt_model == target_model_lower {
+                score += 30;
+            } else if opt_model.contains(&target_model_lower)
+                || val_lower.contains(&target_model_lower)
+                || name_lower.contains(&target_model_lower)
+            {
+                score += 15;
+            }
+        }
+
+        // 匹配 provider
+        if let Some(ref tp_enc) = target_provider_encoded {
+            if opt_provider == *tp_enc {
+                score += 40;
+            } else if let Some(ref tp_raw) = target_provider_raw {
+                if opt_provider == *tp_raw || val_lower.contains(tp_enc) {
+                    score += 25;
+                }
+            }
+        }
+
+        // 倾向带有 thinking 变体的选项
+        if val.contains(":v:thinking") {
+            score += 1;
+        }
+
+        if score > best_score && score >= 15 {
+            best_score = score;
+            best_val = Some(val.to_string());
+        }
+    }
+
+    best_val
 }
 
 /// 构造一条下发手机端的帧。
@@ -1037,5 +1199,84 @@ mod tests {
             "回复内容不符: {:?}",
             text
         );
+    }
+
+    #[test]
+    fn test_match_model_option() {
+        let options = json!([
+            {"value": "m:minimax:MiniMax-M3.1-Flash:v:thinking", "name": "M3.1-Flash · thinking"},
+            {"value": "m:custom_provider%3Aloom2:gemini-3.8-flash-tiered:v:thinking", "name": "gemini-3.8-flash-tiered · thinking"},
+            {"value": "m:custom_provider%3Aloom:gemini-3.8-flash-tiered:v:thinking", "name": "gemini-3.8-flash-tiered · thinking"},
+            {"value": "m:custom_provider%3Aloom:claude-sonnet-4-6:v:thinking", "name": "claude-sonnet-4-6 · thinking"}
+        ]);
+        let arr = options.as_array().unwrap();
+
+        // 1. 精确区分不同 provider
+        assert_eq!(
+            match_model_option("custom_provider:loom/gemini-3.8-flash-tiered", arr),
+            Some("m:custom_provider%3Aloom:gemini-3.8-flash-tiered:v:thinking".to_string())
+        );
+        assert_eq!(
+            match_model_option("custom_provider:loom2/gemini-3.8-flash-tiered", arr),
+            Some("m:custom_provider%3Aloom2:gemini-3.8-flash-tiered:v:thinking".to_string())
+        );
+
+        // 2. 匹配唯一模型
+        assert_eq!(
+            match_model_option("claude-sonnet-4-6", arr),
+            Some("m:custom_provider%3Aloom:claude-sonnet-4-6:v:thinking".to_string())
+        );
+
+        // 3. default 返回 None
+        assert_eq!(match_model_option("default", arr), None);
+    }
+
+    #[test]
+    fn test_session_new_triggers_set_config_option() {
+        let mut b = AcpBridge::with_model("D:/workspace".to_string(), Some("custom_provider:loom/claude-sonnet-4-6".to_string()));
+        b.start();
+        b.on_agent_line(r#"{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":1}}"#);
+
+        // 先排队一个提问
+        let prompt_actions = b.on_mobile_frame(r#"{"type":"chat","payload":"你好"}"#);
+        assert!(prompt_actions.to_agent.is_empty(), "握手完成前 prompt 应排队");
+
+        // session/new 响应携带 options
+        let session_new_res = json!({
+            "jsonrpc": "2.0",
+            "id": 2,
+            "result": {
+                "sessionId": "mvs_test",
+                "configOptions": [{
+                    "type": "select",
+                    "id": "model",
+                    "currentValue": "m:minimax:MiniMax-M3.1-Flash:v:thinking",
+                    "options": [
+                        {"value": "m:minimax:MiniMax-M3.1-Flash:v:thinking", "name": "M3.1-Flash · thinking"},
+                        {"value": "m:custom_provider%3Aloom:claude-sonnet-4-6:v:thinking", "name": "claude-sonnet-4-6 · thinking"}
+                    ]
+                }]
+            }
+        });
+        let actions = b.on_agent_line(&session_new_res.to_string());
+
+        // 应发出 session/set_config_option，并且此时 prompt 仍然在队中，不提前派发
+        assert_eq!(actions.to_agent.len(), 1);
+        let req: Value = serde_json::from_str(&actions.to_agent[0]).unwrap();
+        assert_eq!(req["method"], "session/set_config_option");
+        assert_eq!(req["params"]["configId"], "model");
+        assert_eq!(req["params"]["value"], "m:custom_provider%3Aloom:claude-sonnet-4-6:v:thinking");
+        let config_id = req["id"].as_i64().unwrap();
+
+        // 收到 set_config_option 响应后，进入 Ready 并派发 prompt
+        let config_res = json!({
+            "jsonrpc": "2.0",
+            "id": config_id,
+            "result": {}
+        });
+        let actions = b.on_agent_line(&config_res.to_string());
+        assert_eq!(actions.to_agent.len(), 1);
+        let prompt_req: Value = serde_json::from_str(&actions.to_agent[0]).unwrap();
+        assert_eq!(prompt_req["method"], "session/prompt");
     }
 }

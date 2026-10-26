@@ -83,22 +83,98 @@ pub fn get_available_remote_models() -> Vec<RemoteModelItem> {
         args: vec![],
     }];
 
+    let cli_tools = cstore::get_cli_tools().unwrap_or_default();
+    let mcode_tool_ids: std::collections::HashSet<String> = cli_tools
+        .iter()
+        .filter(|t| {
+            let n = t.name.to_lowercase();
+            let c = t
+                .path
+                .file_name()
+                .and_then(|f| f.to_str())
+                .unwrap_or("")
+                .to_lowercase();
+            n == "mcode" || c.starts_with("mcode") || n.contains("mcode")
+        })
+        .map(|t| t.id.clone())
+        .collect();
+
+    let opencode_tool_ids: std::collections::HashSet<String> = cli_tools
+        .iter()
+        .filter(|t| {
+            let n = t.name.to_lowercase();
+            let c = t
+                .path
+                .file_name()
+                .and_then(|f| f.to_str())
+                .unwrap_or("")
+                .to_lowercase();
+            n == "opencode" || c.starts_with("opencode") || n.contains("opencode")
+        })
+        .map(|t| t.id.clone())
+        .collect();
+
     if let Ok(templates) = cstore::get_templates() {
         for t in templates {
-            if t.args.iter().any(|arg| arg == "--model" || arg.starts_with("--model="))
-                || t.name.to_lowercase().contains("mcode")
-                || t.name.to_lowercase().contains("mc")
+            let name_lower = t.name.to_lowercase();
+
+            // 1. 严格过滤 OpenCode (oc) 相关的模板，不向手机端传递
+            if opencode_tool_ids.contains(&t.cli_id)
+                || name_lower.contains("opencode")
+                || name_lower.starts_with("oc ")
+                || name_lower.starts_with("oc-")
+                || name_lower.starts_with("oc:")
+                || name_lower == "oc"
             {
-                list.push(RemoteModelItem {
-                    id: t.id,
-                    name: t.name,
-                    args: t.args,
-                });
+                continue;
             }
+
+            // 2. 必须是明确属于 mcode 的模板
+            let is_mcode = mcode_tool_ids.contains(&t.cli_id)
+                || name_lower.contains("mcode")
+                || name_lower.starts_with("mc ")
+                || name_lower.starts_with("mc-");
+
+            if !is_mcode {
+                continue;
+            }
+
+            // 3. 必须包含具体的模型指定参数，排除无参数的重复项
+            let has_model_arg = t.args.iter().any(|arg| {
+                arg == "--model"
+                    || arg == "-m"
+                    || arg.starts_with("--model=")
+                    || arg.starts_with("-m=")
+            });
+            if !has_model_arg {
+                continue;
+            }
+
+            list.push(RemoteModelItem {
+                id: t.id,
+                name: t.name,
+                args: t.args,
+            });
         }
     }
 
     list
+}
+
+/// 从命令行参数序列中提取指定的模型参数值
+pub fn extract_model_from_args(args: &[String]) -> Option<String> {
+    for (i, arg) in args.iter().enumerate() {
+        if arg == "--model" || arg == "-m" {
+            if let Some(val) = args.get(i + 1) {
+                return Some(val.clone());
+            }
+        } else if let Some(val) = arg.strip_prefix("--model=") {
+            return Some(val.to_string());
+        } else if let Some(val) = arg.strip_prefix("-m=") {
+            return Some(val.to_string());
+        }
+    }
+    None
 }
 
 // ── Types ──────────────────────────────────────────────────────────────────
@@ -1033,7 +1109,12 @@ impl ActiveAgentSession {
             }
         });
 
-        let mut bridge = AcpBridge::new(workspace_dir.clone());
+        let target_model = extract_model_from_args(&model_args);
+        eprintln!(
+            "[ACP] 🚀 正在启动专属 ACP 会话 (项目: {}, 目标模型: {:?})...",
+            project_id, target_model
+        );
+        let mut bridge = AcpBridge::with_model(workspace_dir.clone(), target_model);
         for req in bridge.start() {
             let _ = writeln!(stdin, "{}", req);
             let _ = stdin.flush();
@@ -1470,6 +1551,27 @@ mod tests {
     fn test_tag_project_keeps_non_json_frame() {
         let frame = "not a json frame";
         assert_eq!(tag_project(frame, "proj-a"), frame);
+    }
+
+    #[test]
+    fn test_extract_model_from_args() {
+        let args1 = vec!["--model".to_string(), "custom_provider:loom/glm".to_string()];
+        assert_eq!(
+            extract_model_from_args(&args1),
+            Some("custom_provider:loom/glm".to_string())
+        );
+
+        let args2 = vec!["--model=custom_provider:loom/glm".to_string()];
+        assert_eq!(
+            extract_model_from_args(&args2),
+            Some("custom_provider:loom/glm".to_string())
+        );
+
+        let args3 = vec!["-m".to_string(), "glm-4".to_string()];
+        assert_eq!(extract_model_from_args(&args3), Some("glm-4".to_string()));
+
+        let args4 = vec!["--mode".to_string(), "lightweight".to_string()];
+        assert_eq!(extract_model_from_args(&args4), None);
     }
 }
 
