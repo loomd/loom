@@ -6,18 +6,74 @@ on:
       - 'v*'
 
 jobs:
+  build-mobile:
+    name: Build Mobile APK (Android)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+          cache-dependency-path: mobile/package-lock.json
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Mobile dependencies
+        run: npm ci
+        working-directory: mobile
+
+      - name: Prebuild Android project
+        run: npx expo prebuild --platform android --no-install
+        working-directory: mobile
+
+      - name: Build Android Release APK
+        run: |
+          chmod +x android/gradlew
+          npm run build:apk:local
+        working-directory: mobile
+        env:
+          CI: true
+
+      - name: Prepare APK release asset
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          mkdir -p release-apk
+          # 拷贝产物并重命名为统一规范名称：Loom-${VERSION}.apk
+          cp mobile/dist/loom-remote-release.apk release-apk/Loom-${VERSION}.apk
+          echo "Built APK: release-apk/Loom-${VERSION}.apk"
+
+      - name: Upload Mobile APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: mobile-apk
+          path: release-apk/Loom-*.apk
+          if-no-files-found: error
+
   release:
     name: Build & Release
     runs-on: windows-latest
+    needs: build-mobile
     permissions:
       contents: write
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@v4
 
       - name: Set up Node.js
-        uses: actions/setup-node@v5
+        uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: 'npm'
@@ -89,6 +145,12 @@ jobs:
               Write-Error "EXE bundle not found"
           }
 
+      - name: Download Mobile APK
+        uses: actions/download-artifact@v4
+        with:
+          name: mobile-apk
+          path: target/release/mobile
+
       - name: Upload Release Assets
         uses: softprops/action-gh-release@v3
         with:
@@ -96,6 +158,7 @@ jobs:
             target/release/bundle/nsis/*.exe
             target/release/Loom-*-portable-x64.zip
             target/release/latest.json
+            target/release/mobile/*.apk
           draft: false
           prerelease: false
         env:

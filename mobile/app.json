@@ -15,7 +15,7 @@
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#0a0a0f"
       },
-      "package": "com.loom.remote",
+      "package": "loom.ccxcc.cn",
       "versionCode": 12,
       "usesCleartextTraffic": true
     },

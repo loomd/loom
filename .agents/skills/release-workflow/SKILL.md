@@ -160,7 +160,9 @@ node scripts/bump-version.mjs --check
    # 输出应为空。若还有文件未提交，则回到第 1 步重新添加提交
    ```
 
-4. **工作区必须干净**之后，才能建立版本 Tag 并推送至 GitHub（此操作会触发 `.github/workflows/release.yml` 自动编译构建 NSIS Windows 安装包并发布到 GitHub Release）：
+4. **工作区必须干净**之后，才能建立版本 Tag 并推送至 GitHub（此操作会触发 `.github/workflows/release.yml` 自动编译构建 Windows 桌面端安装包/绿色包以及 Android 移动端 APK `Loom-${version}.apk`，并自动发布到 GitHub Release）：
+   - Windows 产物：`Loom_${version}_x64-setup.exe`、`Loom-${version}-portable-x64.zip`、`latest.json`
+   - Android 产物：`Loom-${version}.apk`（包名：`loom.ccxcc.cn`）
    ```bash
    # 先确认默认分支（很多仓库已从 master 迁移到 main）
    gh repo view --json defaultBranchRef | jq -r .defaultBranchRef.name

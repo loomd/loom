@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import WindowControlButtons from '../components/WindowControlButtons';
 import WorkspaceSelect from '../components/WorkspaceSelect';
+import ApkDownloadQrBadge from '../components/ApkDownloadQrBadge';
 import {
   getRelayStatus,
   setRelayUrl as apiSetRelayUrl,
@@ -365,6 +366,7 @@ export const RemoteConnectionPage: React.FC<RemoteConnectionPageProps> = ({
             <p className="remote-subtitle" data-tauri-drag-region>自建中继手机端远程控制与配对管理</p>
           </div>
           <div className="remote-header-badges">
+            <ApkDownloadQrBadge />
             <span className={`badge ${loggedIn ? 'badge-emerald' : 'badge-gray'}`}>
               <span className={`dot ${loggedIn ? 'dot-green' : 'dot-gray'}`} />
               {loggedIn ? `已登录 ${session?.username ?? ''}`.trim() : '未登录'}
@@ -679,7 +681,7 @@ export const RemoteConnectionPage: React.FC<RemoteConnectionPageProps> = ({
             <ol className="remote-guide">
               <li>确保公网或本地自建 Relay 中继服务正在正常运行。</li>
               <li>电脑端与手机端登录同一 Relay 账号。</li>
-              <li>首次配对：点击「开启远程会话」，将生成的 4 位配对码输入手机端 App。</li>
+              <li>首次配对：点击「开启远程会话」，将生成的 4 位配对码输入手机端 App（尚未安装 App？可悬停右上角「扫码下载 APK」快速下载）。</li>
               <li>绑定只做一次：此后手机端启动或断线重连都会自动建联，不再需要配对码。</li>
               <li>需要换手机时点击「解绑手机端」，再重新输入新的配对码即可。</li>
               <li>通信全程由中继透明转发，本地代码不落盘中继服务器，安全高效。</li>

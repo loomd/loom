@@ -112,6 +112,28 @@ if (updated !== original) {
   );
 }
 
+const manifestPath = path.join(
+  mobileRoot,
+  "android",
+  "app",
+  "src",
+  "main",
+  "AndroidManifest.xml",
+);
+if (fs.existsSync(manifestPath)) {
+  const manifestContent = fs.readFileSync(manifestPath, "utf8");
+  if (!manifestContent.includes("android:usesCleartextTraffic")) {
+    const patched = manifestContent.replace(
+      "<application ",
+      '<application android:usesCleartextTraffic="true" ',
+    );
+    if (patched !== manifestContent) {
+      fs.writeFileSync(manifestPath, patched, "utf8");
+      console.log('[sync-version] 已为 AndroidManifest.xml 补全 android:usesCleartextTraffic="true"');
+    }
+  }
+}
+
 if (problems.length > 0) {
   console.error(
     `[sync-version] 版本号不一致：\n  - ${problems.join("\n  - ")}\n` +

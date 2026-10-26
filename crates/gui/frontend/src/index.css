@@ -2390,4 +2390,203 @@ body.theme-day select.input option {
   to { opacity: 1; transform: none; }
 }
 
+/* ─────────────────────────────────────────────────────────────────────────────
+   APK 二维码扫码下载悬浮卡片 (ApkDownloadQrBadge)
+   ───────────────────────────────────────────────────────────────────────────── */
+.apk-qr-badge-container {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  outline: none;
+}
+
+.apk-qr-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-card);
+  border: 1px solid var(--border-mid);
+  color: var(--text-secondary);
+  font-size: var(--fs-12);
+  font-weight: 500;
+  cursor: pointer;
+  user-select: none;
+  transition: all 160ms ease;
+}
+
+.apk-qr-badge:hover,
+.apk-qr-badge.active {
+  border-color: var(--accent-purple);
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  box-shadow: 0 0 0 1px var(--accent-purple-dim);
+}
+
+.apk-qr-icon {
+  width: 14px;
+  height: 14px;
+  color: var(--accent-purple);
+  flex-shrink: 0;
+}
+
+.apk-qr-mini-code {
+  width: 13px;
+  height: 13px;
+  opacity: 0.65;
+  flex-shrink: 0;
+}
+
+.apk-qr-badge:hover .apk-qr-mini-code,
+.apk-qr-badge.active .apk-qr-mini-code {
+  opacity: 1;
+  color: var(--accent-purple);
+}
+
+.apk-qr-popover {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 100;
+  width: 236px;
+  padding: 14px;
+  background: var(--bg-modal, #18181b);
+  border: 1px solid var(--border-mid, #27272a);
+  border-radius: var(--radius-md, 10px);
+  box-shadow: 0 20px 44px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.05);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  animation: apkQrPopoverIn 180ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes apkQrPopoverIn {
+  from {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.apk-qr-popover-header {
+  width: 100%;
+  text-align: center;
+  margin-bottom: 6px;
+}
+
+.apk-qr-popover-title {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.apk-qr-popover-name {
+  font-size: var(--fs-13);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.apk-qr-version {
+  font-size: 10px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  padding: 1px 5px;
+}
+
+.apk-qr-popover-subtitle {
+  font-size: var(--fs-11);
+  color: var(--text-tertiary);
+  margin-top: 2px;
+}
+
+.apk-qr-image-wrapper {
+  background: #ffffff;
+  padding: 8px;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+  margin: 6px 0 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.apk-qr-image {
+  display: block;
+  width: 170px;
+  height: 170px;
+  image-rendering: pixelated;
+}
+
+.apk-qr-placeholder {
+  width: 170px;
+  height: 170px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--fs-11);
+  color: #64748b;
+}
+
+.apk-qr-meta {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  background: var(--bg-card);
+  padding: 6px 8px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-subtle);
+  margin-bottom: 8px;
+}
+
+.apk-qr-meta-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 11px;
+}
+
+.apk-qr-meta-label {
+  color: var(--text-tertiary);
+}
+
+.apk-qr-meta-value {
+  color: var(--text-secondary);
+  font-weight: 500;
+  max-width: 130px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.apk-qr-mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.apk-qr-popover-tip {
+  font-size: 11px;
+  color: var(--text-tertiary);
+  text-align: center;
+  margin-bottom: 10px;
+  line-height: 1.4;
+}
+
+.apk-qr-popover-actions {
+  display: flex;
+  width: 100%;
+  gap: 8px;
+}
+
+.apk-qr-popover-actions .btn {
+  flex: 1;
+  font-size: 11px;
+  padding: 4px 8px;
+  justify-content: center;
+}
+
+
 
