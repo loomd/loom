@@ -23,7 +23,9 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["nsis"],
+    "targets": [
+      "nsis"
+    ],
     "publisher": "Loomd",
     "createUpdaterArtifacts": true,
     "resources": {

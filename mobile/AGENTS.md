@@ -116,9 +116,15 @@ mobile/
 
 ## 3. 易踩的坑（务必先读）
 
-### 3.1 版本号：单一来源 + 打包前强制对齐
+### 3.1 版本号：跨端统一管理 + 打包前强制对齐
 
-版本号在三处出现，**只有 `mobile/app.json` 是事实来源**：
+仓库采用**全端版本强对齐（统一管理方案）**，通常直接在仓库根目录执行：
+```powershell
+node scripts/bump-version.mjs <new_version>  # 统一对齐 Loom/Mobile/Relay 版本
+node scripts/bump-version.mjs --check        # 校验全端版本一致性
+```
+
+移动端内部版本号在三处出现，其中 **`mobile/app.json` 是移动端的事实来源**：
 
 | 位置 | 字段 | 是否入库 |
 |---|---|---|
@@ -130,7 +136,8 @@ mobile/
   `build.gradle`；但**沿用旧原生目录**（不重新 prebuild）直接打包时，
   `build.gradle` 里的值会停留在旧版本号 → 打出来的包 versionCode 没变 →
   Android 拒绝覆盖安装 → 用户手机上的旧包继续生效（现场就是这么复现的）。
-- 因此**改版本号只改 `app.json` 一处**，其余由脚本对齐：
+- 根目录脚本 `scripts/bump-version.mjs` 会自动调用 `mobile/scripts/sync-version.mjs`，确保三处同步；
+- 若仅调试移动端，改动 `app.json` 后可单独在 `mobile/` 目录对齐：
 
 ```powershell
 cd mobile

@@ -1,6 +1,6 @@
 {
   "name": "loom-mobile",
-  "version": "0.2.9",
+  "version": "0.8.3",
   "private": true,
   "main": "expo-router/entry",
   "scripts": {

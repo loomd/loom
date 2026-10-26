@@ -85,33 +85,35 @@ gh run view <RUN_ID> --log-failed
    cargo test --workspace
    ```
 
-### 第四步：更新版本配置信息
+### 第四步：更新版本配置信息（全端统一管理）
 
-在本地验证一切正常后，依照当前的语义化版本号，在以下四个核心位置提升版本号（例如从 `v0.3.4` 提升至 `v0.3.5`）：
-1. 根目录的 **`Cargo.toml`** 中的 `[workspace.package]` 部分：
-   ```toml
-   version = "0.3.5"
-   ```
-2. Frontend 目录的 **`crates/gui/frontend/package.json`**：
-   ```json
-   "version": "0.3.5"
-   ```
-3. Tauri 配置的 **`crates/gui/src-tauri/tauri.conf.json`**：
-   ```json
-   "version": "0.3.5"
-   ```
-4. Frontend Agent 管理页默认 Skill 版本 State **`crates/gui/frontend/src/pages/AgentManagementPage.tsx`**：
-   ```tsx
-   const [skillVersion, setSkillVersion] = useState<string>('0.3.5');
-   ```
+本项目采用**全端版本强对齐（统一管理方案）**，Loom 主体（CLI + GUI）、Mobile 移动端、Relay 中继端以及内置模版统一使用同一套版本号。
 
-5. **`Cargo.lock` 本地 crate 版本同步**：提升根目录 `Cargo.toml` 版本后，`Cargo.lock` 中 `loom-core` / `loom-cli` / `loom-gui` 的 `version` **不会自动更新**，需执行一次 `cargo check --workspace`（或 `cargo build`）刷新 lockfile，并把 `Cargo.lock` 与版本配置一起提交（勿遗漏，否则提交的 lockfile 仍为旧版本）。
+使用根目录统一版本管理脚本一键更新全端版本（例如从 `v0.8.3` 提升至 `v0.8.4`）：
+```powershell
+# 统一修改全端所有配置文件的版本号（自动处理 Cargo.toml / tauri / frontend / mobile / relay）
+node scripts/bump-version.mjs 0.8.4
 
-6. **`loom` skill 与 `loom` CLI 的版本自动联动机制说明**：
-   - **`loom` CLI 版本**直接绑定 workspace 版本（`crates/cli/Cargo.toml` 中定义 `version.workspace = true`），只要更新根目录 `Cargo.toml`，`loom --version` 即可自动同步最新版本。
-   - **`loom` skill 后端模版版本**在 `crates/core/src/skills.rs` 中使用 `LOOM_SKILL_VERSION = env!("CARGO_PKG_VERSION")`，在编译阶段自动获取 `Cargo.toml` 的版本，因此生成的 Skill YAML 标头也会自动更新。
-   - **前端静态 Fallback 版本**：`AgentManagementPage.tsx` 中的 `skillVersion` 默认初始值须一并更改，避免未完成后端通信前显示旧版本。
-   - **发版前校验**：确认注入的 `~/.claude/skills/loom/SKILL.md` / `~/.config/opencode/skills/loom/SKILL.md` 中的 `version` 字段与 `loom --version` 输出一致（均为目标版本号）。
+# 刷新 Cargo.lock（提升根目录 Cargo.toml 版本后必须执行，确保 lockfile crate 版本同步）
+cargo check --workspace
+
+# 验证全端模块版本号对齐状态
+node scripts/bump-version.mjs --check
+```
+
+**脚本自动更新的范围说明**：
+1. 根目录 **`Cargo.toml`** 中的 `[workspace.package]` 部分（`loom-core` / `loom-cli` / `loom-gui` 均继承自此）。
+2. Tauri 配置 **`crates/gui/src-tauri/tauri.conf.json`**（Windows 安装包与运行时版本）。
+3. Frontend **`crates/gui/frontend/package.json`**。
+4. Frontend Agent 管理页默认 Skill 版本 State **`crates/gui/frontend/src/pages/AgentManagementPage.tsx`**。
+5. Mobile 端 **`mobile/app.json`**（`expo.version` 更新，`expo.android.versionCode` 自动自增 +1）。
+6. Mobile 端 **`mobile/package.json`**、**`mobile/package-lock.json`**，并自动调用 `mobile/scripts/sync-version.mjs` 同步至 Android 原生 `build.gradle`。
+7. Relay 中继端 **`relay/package.json`** 与 **`relay/package-lock.json`**。
+
+**关键联动机制说明**：
+- **`loom` CLI 版本**直接绑定 workspace 版本（`crates/cli/Cargo.toml` 中定义 `version.workspace = true`），只要更新根目录 `Cargo.toml`，`loom --version` 即可自动同步最新版本。
+- **`loom` skill 后端模版版本**在 `crates/core/src/skills.rs` 中使用 `LOOM_SKILL_VERSION = env!("CARGO_PKG_VERSION")`，在编译阶段自动获取 `Cargo.toml` 的版本，因此生成的 Skill YAML 标头也会自动更新。
+- **发版前校验**：执行 `node scripts/bump-version.mjs --check` 必须全绿（OK）。同时确认注入的 `~/.claude/skills/loom/SKILL.md` / `~/.config/opencode/skills/loom/SKILL.md` 中的 `version` 字段与目标版本号一致。
 
 ### 第五步：编写更新日志（whats-new）
 
@@ -135,7 +137,7 @@ gh run view <RUN_ID> --log-failed
 
 1. 添加所有有变更的修正文件、版本配置文件和更新日志：
    ```bash
-   git add Cargo.toml crates/gui/frontend/package.json crates/gui/src-tauri/tauri.conf.json crates/gui/src-tauri/whats-new/v0.X.Y.md [其他被修改的文件]
+   git add Cargo.toml Cargo.lock package.json scripts/bump-version.mjs crates/gui/frontend/package.json crates/gui/src-tauri/tauri.conf.json crates/gui/frontend/src/pages/AgentManagementPage.tsx mobile/app.json mobile/package.json mobile/package-lock.json relay/package.json relay/package-lock.json crates/gui/src-tauri/whats-new/v0.X.Y.md [其他被修改的文件]
    ```
 
 2. 创建合规的 Git提交信息，**必须先提交**，提交信息应包含更新日志变更：
@@ -148,12 +150,10 @@ gh run view <RUN_ID> --log-failed
    '@
    ```
 
-3. **【强制校验】** 检查已提交的版本号是否与目标 tag 一致，确认版本文件在已提交的内容中而不是仅仅在暂存区：
+3. **【强制校验】** 运行校验脚本，确认已提交的版本与目标一致：
    ```powershell
-   # 检查已提交的版本号（而非工作区/暂存区）
-   git show HEAD:Cargo.toml | Select-String 'version = "'
-   git show HEAD:crates/gui/src-tauri/tauri.conf.json | Select-String '"version"'
-   git show HEAD:crates/gui/frontend/package.json | Select-String '"version"'
+   # 运行全端版本号对齐校验（输出必须全为 OK）
+   node scripts/bump-version.mjs --check
 
    # 确认没有未提交的版本变更残留
    git diff --name-only

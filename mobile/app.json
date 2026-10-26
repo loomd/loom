@@ -2,7 +2,7 @@
   "expo": {
     "name": "Loom Remote",
     "slug": "loom-remote",
-    "version": "0.2.9",
+    "version": "0.8.3",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
@@ -16,7 +16,7 @@
         "backgroundColor": "#0a0a0f"
       },
       "package": "com.loom.remote",
-      "versionCode": 11,
+      "versionCode": 12,
       "usesCleartextTraffic": true
     },
     "plugins": [
