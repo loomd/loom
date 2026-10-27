@@ -418,14 +418,14 @@ const closeActiveByShortcut = useCallback(() => {
   useEffect(() => {
     const activeShells: Record<string, CompositeState> = {};
     for (const term of terminals) {
-      if (term.isOpencode) {
+      if (isAgentTerminal(term)) {
         activeShells[term.id] = (agentStateMap[term.id]?.state as CompositeState) || 'waiting';
       } else {
         activeShells[term.id] = 'active';
       }
     }
     syncProjectShells(project.id, activeShells);
-  }, [terminals, agentStateMap, project.id]);
+  }, [terminals, agentStateMap, project.id, isAgentTerminal]);
 
   // 3. 组件卸载时清空该项目状态
   useEffect(() => {

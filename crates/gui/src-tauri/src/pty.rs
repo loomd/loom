@@ -621,6 +621,7 @@ pub fn pty_spawn(
     rows: u16,
 ) -> Result<(), String> {
     crate::agent_monitor::record_pty_spawn(&session_id);
+    crate::agent_monitor::mark_pty_active(&session_id);
     spawn_pty_session(app, state.inner(), session_id, command, args, env, cwd, cols, rows)
 }
 

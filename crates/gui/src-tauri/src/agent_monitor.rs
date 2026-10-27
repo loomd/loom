@@ -749,7 +749,7 @@ impl AgentMonitor {
                  OR LOWER(project_workspace_dir) LIKE ?4 \
              ) \
              AND (parent_session_id IS NULL OR parent_session_id = '') \
-             ORDER BY updated_at_ms DESC LIMIT 1"
+             ORDER BY CASE WHEN status = 'started' THEN 1 ELSE 0 END DESC, updated_at_ms DESC LIMIT 1"
         ).ok()?;
 
         stmt.query_row(
@@ -1031,17 +1031,29 @@ impl AgentMonitor {
                     eprintln!("[AgentPoll:pty={}] cached session {} unchanged", pty_session_id, cached);
                     return poll_by_sid(cached);
                 }
+                // If the currently cached session is still active/working, retain it and do not preempt.
+                if let Some(cached_state) = poll_by_sid(cached) {
+                    if is_working_state(&cached_state.state) {
+                        eprintln!("[AgentPoll:pty={}] cached session {} is still working ({:?}), keeping it", pty_session_id, cached, cached_state.state);
+                        return Some(cached_state);
+                    }
+                }
                 eprintln!("[AgentPoll:pty={}] latest session changed (was {}, now {}), trying to claim new session", pty_session_id, cached, latest_sid);
             }
         }
 
-        // 4. Session inactive before PTY spawn? Don't claim it.
+        // 4. Session inactive before PTY spawn? Don't claim it unless it is currently in a working state.
+        let candidate_info = poll_by_sid(&latest_sid);
+        let is_candidate_working = candidate_info.as_ref().map(|info| is_working_state(&info.state)).unwrap_or(false);
+
         let spawn_time_opt = spawns.lock().unwrap().get(pty_session_id).copied();
-        eprintln!("[AgentPoll:pty={}] spawn_time={:?} last_active_time={}", pty_session_id, spawn_time_opt, last_active_time);
-        if let Some(spawn_time) = spawn_time_opt {
-            if last_active_time < spawn_time {
-                eprintln!("[AgentPoll:pty={}] session {} last active before PTY spawn ({} < {}), not claiming", pty_session_id, latest_sid, last_active_time, spawn_time);
-                return Some(waiting());
+        eprintln!("[AgentPoll:pty={}] spawn_time={:?} last_active_time={} is_candidate_working={}", pty_session_id, spawn_time_opt, last_active_time, is_candidate_working);
+        if !is_candidate_working {
+            if let Some(spawn_time) = spawn_time_opt {
+                if last_active_time < spawn_time {
+                    eprintln!("[AgentPoll:pty={}] session {} last active before PTY spawn ({} < {}), not claiming", pty_session_id, latest_sid, last_active_time, spawn_time);
+                    return Some(waiting());
+                }
             }
         }
 
@@ -1060,6 +1072,10 @@ impl AgentMonitor {
         }
 
         cache.lock().unwrap().insert(pty_session_id.to_string(), (latest_sid.clone(), now));
+
+        if let Some(info) = candidate_info {
+            return Some(info);
+        }
 
         match latest_source {
             SessionSource::OpenCode => {
@@ -1806,5 +1822,69 @@ mod tests {
 
         cleanup_pty(pty_opencode);
         cleanup_pty(pty_mcode);
+    }
+
+    #[test]
+    fn test_mcode_running_session_prioritized_over_newer_idle() {
+        let _lock = TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+        let mcode_conn = setup_test_mcode_db();
+        let monitor = AgentMonitor::new();
+        let ws_dir = "C:/test/workspace_priority";
+        let pty_id = "pty_mcode_priority";
+
+        PTY_SPAWNS.get_or_init(|| Mutex::new(HashMap::new()))
+            .lock().unwrap()
+            .insert(pty_id.to_string(), 1000);
+        mark_pty_active(pty_id);
+
+        // 1. 插入一个较旧但在 running (started) 中的会话 (ts: 2000)
+        mcode_conn.execute(
+            "INSERT INTO local_runtime_sessions (session_id, workspace_dir, project_workspace_dir, parent_session_id, status, error_message, updated_at_ms) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            rusqlite::params!["mvs_running_old", ws_dir, ws_dir, "", "started", "", 2000],
+        ).unwrap();
+
+        // 2. 插入一个较新但已处于 idle (waiting) 的会话 (ts: 3000 > 2000)
+        mcode_conn.execute(
+            "INSERT INTO local_runtime_sessions (session_id, workspace_dir, project_workspace_dir, parent_session_id, status, error_message, updated_at_ms) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            rusqlite::params!["mvs_idle_new", ws_dir, ws_dir, "", "idle", "", 3000],
+        ).unwrap();
+
+        // 3. 轮询 -> 应优先认领 running 中的会话 mvs_running_old，状态为 Running
+        let state = monitor.poll_state_for_pty_with_conns(None, Some(&mcode_conn), ws_dir, pty_id, Some("mcode")).unwrap();
+        assert_eq!(state.state, AgentState::Running);
+        assert_eq!(state.session_id, "mvs_running_old");
+
+        cleanup_pty(pty_id);
+    }
+
+    #[test]
+    fn test_mcode_running_session_claimed_despite_spawn_after_update() {
+        let _lock = TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+        let mcode_conn = setup_test_mcode_db();
+        let monitor = AgentMonitor::new();
+        let ws_dir = "C:/test/workspace_spawn_after";
+        let pty_id = "pty_spawn_after";
+
+        // 1. 插入运行中会话 (ts: 2000)
+        mcode_conn.execute(
+            "INSERT INTO local_runtime_sessions (session_id, workspace_dir, project_workspace_dir, parent_session_id, status, error_message, updated_at_ms) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            rusqlite::params!["mvs_spawn_after", ws_dir, ws_dir, "", "started", "", 2000],
+        ).unwrap();
+
+        // 2. PTY 刷新/创建时间晚于会话更新时间 (spawn: 2500 > 2000)
+        PTY_SPAWNS.get_or_init(|| Mutex::new(HashMap::new()))
+            .lock().unwrap()
+            .insert(pty_id.to_string(), 2500);
+        mark_pty_active(pty_id);
+
+        // 3. 轮询 -> 因为该会话正在运行，应放行认领，状态仍为 Running，而不应被拦截为 Waiting
+        let state = monitor.poll_state_for_pty_with_conns(None, Some(&mcode_conn), ws_dir, pty_id, Some("mcode")).unwrap();
+        assert_eq!(state.state, AgentState::Running);
+        assert_eq!(state.session_id, "mvs_spawn_after");
+
+        cleanup_pty(pty_id);
     }
 }
