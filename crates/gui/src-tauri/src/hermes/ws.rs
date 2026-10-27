@@ -1,5 +1,6 @@
+use std::collections::HashSet;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 use prost::Message as ProstMessage;
@@ -30,6 +31,7 @@ pub struct LarkWsClient {
     client: Arc<LarkClient>,
     handler: Arc<dyn LarkEventHandler>,
     stop_signal: Arc<AtomicBool>,
+    processed_ids: Arc<Mutex<HashSet<String>>>,
 }
 
 impl LarkWsClient {
@@ -42,6 +44,7 @@ impl LarkWsClient {
             client,
             handler,
             stop_signal,
+            processed_ids: Arc::new(Mutex::new(HashSet::new())),
         }
     }
 
@@ -183,6 +186,25 @@ impl LarkWsClient {
     }
 
     fn dispatch_event(&self, root: serde_json::Value) {
+        // 1. 根据 header.event_id 进行事件级去重，杜绝飞书服务端重发导致的重复触发
+        if let Some(event_id) = root
+            .get("header")
+            .and_then(|h| h.get("event_id"))
+            .and_then(|e| e.as_str())
+        {
+            if !event_id.is_empty() {
+                let mut processed = self.processed_ids.lock().unwrap();
+                if processed.contains(event_id) {
+                    println!("[Hermes WS] 收到重复 event_id，已忽略: {}", event_id);
+                    return;
+                }
+                if processed.len() >= 2000 {
+                    processed.clear();
+                }
+                processed.insert(event_id.to_string());
+            }
+        }
+
         let event_type = root
             .get("header")
             .and_then(|h| h.get("event_type"))
@@ -215,6 +237,19 @@ impl LarkWsClient {
                     .and_then(|v| v.as_str())
                     .unwrap_or_default()
                     .to_string();
+
+                // 2. 根据 message_id 进行消息级去重
+                if !message_id.is_empty() {
+                    let mut processed = self.processed_ids.lock().unwrap();
+                    if processed.contains(&message_id) {
+                        println!("[Hermes WS] 收到重复 message_id，已忽略: {}", message_id);
+                        return;
+                    }
+                    if processed.len() >= 2000 {
+                        processed.clear();
+                    }
+                    processed.insert(message_id.clone());
+                }
                 let sender_open_id = event
                     .get("sender")
                     .and_then(|s| s.get("sender_id"))
@@ -234,9 +269,10 @@ impl LarkWsClient {
                         .get("content")
                         .and_then(|v| v.as_str())
                         .unwrap_or_default();
+                    let mentions = message.get("mentions").and_then(|m| m.as_array());
                     if let Ok(content_obj) = serde_json::from_str::<serde_json::Value>(content_str) {
                         if let Some(text) = content_obj.get("text").and_then(|t| t.as_str()) {
-                            let cleaned_text = clean_text_mentions(text);
+                            let cleaned_text = clean_text_mentions(text, mentions.map(|v| v.as_slice()));
                             if !cleaned_text.trim().is_empty() {
                                 self.handler.on_text_message(
                                     chat_id,
@@ -270,23 +306,41 @@ impl LarkWsClient {
     }
 }
 
-/// 清洗群聊中的 @机器人 文本（如 `@_user_1 你好` -> `你好`）
-fn clean_text_mentions(raw: &str) -> String {
-    let mut result = String::new();
-    let mut in_mention = false;
-    for ch in raw.chars() {
-        if ch == '@' {
-            in_mention = true;
-            continue;
-        }
-        if in_mention {
-            if ch.is_whitespace() {
-                in_mention = false;
+/// 清洗群聊中的 @机器人 文本（如飞书占位符 `@_user_1 你好` -> `你好`）
+/// 注意：绝对不能粗暴吞掉用户输入的指令（如 `@models`、`@new`）
+pub fn clean_text_mentions(raw: &str, mentions: Option<&[serde_json::Value]>) -> String {
+    let mut cleaned = raw.to_string();
+
+    // 1. 如果有飞书 mentions 数组，精确剔除各 mention 的 key（如 "@_user_1"）
+    if let Some(mention_list) = mentions {
+        for m in mention_list {
+            if let Some(key) = m.get("key").and_then(|k| k.as_str()) {
+                if !key.is_empty() {
+                    cleaned = cleaned.replace(key, "");
+                }
             }
-            continue;
         }
-        result.push(ch);
     }
+
+    // 2. 兜底清洗飞书标准占位符格式: @_user_1, @_user_2 等
+    let mut result = String::new();
+    let chars: Vec<char> = cleaned.chars().collect();
+    let mut i = 0;
+    while i < chars.len() {
+        if chars[i] == '@' && i + 6 < chars.len() {
+            let slice: String = chars[i..i + 7].iter().collect();
+            if slice == "@_user_" {
+                i += 7;
+                while i < chars.len() && chars[i].is_ascii_digit() {
+                    i += 1;
+                }
+                continue;
+            }
+        }
+        result.push(chars[i]);
+        i += 1;
+    }
+
     result.trim().to_string()
 }
 
@@ -296,8 +350,23 @@ mod tests {
 
     #[test]
     fn test_clean_text_mentions() {
-        assert_eq!(clean_text_mentions("@_user_1 你好，世界"), "你好，世界");
-        assert_eq!(clean_text_mentions("@bot 帮我写一段代码"), "帮我写一段代码");
-        assert_eq!(clean_text_mentions("没有mention的消息"), "没有mention的消息");
+        // 飞书占位符被剔除
+        assert_eq!(clean_text_mentions("@_user_1 你好，世界", None), "你好，世界");
+        assert_eq!(clean_text_mentions("@_user_1 /models", None), "/models");
+        assert_eq!(clean_text_mentions("@_user_1 @models", None), "@models");
+
+        // 用户输入的 @ 指令必须完整保留，不能被误吞
+        assert_eq!(clean_text_mentions("@models", None), "@models");
+        assert_eq!(clean_text_mentions("@new", None), "@new");
+        assert_eq!(clean_text_mentions("/models", None), "/models");
+        assert_eq!(clean_text_mentions("/help", None), "/help");
+        assert_eq!(clean_text_mentions("没有mention的消息", None), "没有mention的消息");
+
+        // 通过 mentions key 精确清洗
+        let mentions = vec![serde_json::json!({
+            "key": "@_user_1",
+            "name": "机器人"
+        })];
+        assert_eq!(clean_text_mentions("@_user_1 @models", Some(&mentions)), "@models");
     }
 }

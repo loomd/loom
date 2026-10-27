@@ -18,6 +18,7 @@ use crate::acp::match_model_option;
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum HermesCommand {
+    Help,
     NewSession,
     ListModels,
     SwitchModel(String),
@@ -26,27 +27,38 @@ pub enum HermesCommand {
 pub fn parse_hermes_command(text: &str) -> Option<HermesCommand> {
     let trimmed = text.trim();
 
-    // 匹配 @new / /new / new
-    if trimmed.eq_ignore_ascii_case("@new")
-        || trimmed.eq_ignore_ascii_case("/new")
+    // 匹配 /help / @help / help
+    if trimmed.eq_ignore_ascii_case("/help")
+        || trimmed.eq_ignore_ascii_case("@help")
+        || trimmed.eq_ignore_ascii_case("help")
+    {
+        return Some(HermesCommand::Help);
+    }
+
+    // 匹配 /new / @new / new
+    if trimmed.eq_ignore_ascii_case("/new")
+        || trimmed.eq_ignore_ascii_case("@new")
         || trimmed.eq_ignore_ascii_case("new")
     {
         return Some(HermesCommand::NewSession);
     }
 
-    // 匹配 @model-list / /model-list / model-list / @models / /models / models
-    if trimmed.eq_ignore_ascii_case("@model-list")
-        || trimmed.eq_ignore_ascii_case("/model-list")
-        || trimmed.eq_ignore_ascii_case("model-list")
+    // 匹配单纯的 /models / @models / models / /model-list / @model-list / model-list
+    if trimmed.eq_ignore_ascii_case("/models")
         || trimmed.eq_ignore_ascii_case("@models")
-        || trimmed.eq_ignore_ascii_case("/models")
         || trimmed.eq_ignore_ascii_case("models")
+        || trimmed.eq_ignore_ascii_case("/model-list")
+        || trimmed.eq_ignore_ascii_case("@model-list")
+        || trimmed.eq_ignore_ascii_case("model-list")
+        || trimmed.eq_ignore_ascii_case("/model")
+        || trimmed.eq_ignore_ascii_case("@model")
+        || trimmed.eq_ignore_ascii_case("model")
     {
         return Some(HermesCommand::ListModels);
     }
 
-    // 匹配 @model <model> / /model <model> / model <model>
-    for prefix in ["@model", "/model", "model"] {
+    // 匹配带参数的 /models <model> / /model <model> / @models <model> / @model <model>
+    for prefix in ["/models", "/model", "@models", "@model", "models", "model"] {
         if trimmed.to_lowercase().starts_with(prefix) {
             let remainder = trimmed[prefix.len()..].trim();
             if remainder.starts_with("-list") {
@@ -99,6 +111,7 @@ struct ActiveChatSession {
     accumulated_content: String,
     last_updated: Instant,
     is_finished: bool,
+    chat_type: String,
 }
 
 pub struct HermesBridge {
@@ -489,7 +502,8 @@ impl HermesBridge {
                 };
                 let _ = self.client.send_text_message("chat_id", chat_id, &reply_text);
             }
-            self.add_log("out", "Hermes Agent", "chat", &format!("回答完成: {}", truncate_str(&session.accumulated_content, 40)));
+            let c_type = session.chat_type.clone();
+            self.add_log("out", "Hermes Agent", &c_type, &format!("回答完成: {}", truncate_str(&session.accumulated_content, 40)));
         }
     }
 
@@ -534,6 +548,18 @@ impl HermesBridge {
         );
 
         self.add_log("out", "Hermes", "p2p", &format!("请求权限确认: {}", tool_name));
+    }
+
+    fn handle_command_help(&self, chat_id: &str, chat_type: &str) {
+        let reply = "🤖 **Hermes 指令帮助**\n\n\
+                     支持的快捷指令如下：\n\
+                     - `/help` : 查看指令帮助说明\n\
+                     - `/new` : 重置当前会话，开启全新的上下文对话\n\
+                     - `/models` : 查看当前生效模型及支持切换的模型列表\n\
+                     - `/model <模型名称>` (或 `/models <名称>`) : 切换指定模型并自动开启新会话\n\n\
+                     💡 **使用提示:** 在群聊中可直接 `@机器人 /help` 或在私聊中直接发送。";
+        let _ = self.client.send_text_message("chat_id", chat_id, reply);
+        self.add_log("out", "Hermes", chat_type, "已返回指令帮助指南");
     }
 
     fn handle_command_new(&self, chat_id: &str, chat_type: &str) {
@@ -589,7 +615,7 @@ impl HermesBridge {
             }
         }
 
-        reply.push_str("\n💡 **切换方式:** 发送 `@model <模型名称>` 即可切换并自动启动新对话。");
+        reply.push_str("\n💡 **切换方式:** 发送 `/model <模型名称>` (或 `/models <名称>`) 即可切换并自动启动新对话。");
         let _ = self.client.send_text_message("chat_id", chat_id, &reply);
         self.add_log("out", "Hermes", chat_type, "已返回支持的模型列表");
     }
@@ -634,7 +660,7 @@ impl HermesBridge {
             }
             None => {
                 let reply = format!(
-                    "⚠️ 未找到匹配的模型: `{}`\n💡 请发送 `@model-list` 查看支持的模型名称列表。",
+                    "⚠️ 未找到匹配的模型: `{}`\n💡 请发送 `/models` 查看支持的模型名称列表。",
                     target
                 );
                 let _ = self.client.send_text_message("chat_id", chat_id, &reply);
@@ -676,9 +702,13 @@ impl LarkEventHandler for HermesBridge {
     ) {
         self.add_log("in", &sender_open_id, &chat_type, &text);
 
-        // 指令判断：@new / @model-list / @model <name>
+        // 指令判断：/help / /new / /models / /model <name>
         if let Some(cmd) = parse_hermes_command(&text) {
             match cmd {
+                HermesCommand::Help => {
+                    self.handle_command_help(&chat_id, &chat_type);
+                    return;
+                }
                 HermesCommand::NewSession => {
                     self.handle_command_new(&chat_id, &chat_type);
                     return;
@@ -720,6 +750,7 @@ impl LarkEventHandler for HermesBridge {
                     accumulated_content: String::new(),
                     last_updated: Instant::now(),
                     is_finished: false,
+                    chat_type: chat_type.clone(),
                 },
             );
         }
@@ -840,15 +871,26 @@ fn resolve_acp_executable() -> Result<String, String> {
 fn extract_content_chunk(params: &serde_json::Value) -> String {
     let mut chunk = String::new();
     if let Some(update) = params.get("update") {
-        if let Some(text) = update.pointer("/content/text").and_then(|t| t.as_str()) {
-            chunk.push_str(text);
-        } else if let Some(content) = update.get("content") {
-            if let Some(text) = content.get("text").and_then(|t| t.as_str()) {
+        let session_update = update
+            .get("sessionUpdate")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+
+        // 核心过滤：只提取正式回复消息 (agent_message_chunk)，严禁提取思考过程 (agent_thought_chunk)
+        // 与工具调用 (tool_call / tool_call_update) 发送给飞书用户。
+        if session_update == "agent_message_chunk" {
+            if let Some(text) = update.pointer("/content/text").and_then(|t| t.as_str()) {
                 chunk.push_str(text);
             }
-        }
-        if let Some(text) = update.pointer("/thought/text").and_then(|t| t.as_str()) {
-            chunk.push_str(text);
+        } else if session_update.is_empty() {
+            // 兜底无 sessionUpdate 标识的情况：严格排除包含 thought 或 tool 的内容
+            if update.get("thought").is_none() && update.get("toolCall").is_none() {
+                if let Some(content) = update.get("content") {
+                    if let Some(text) = content.get("text").and_then(|t| t.as_str()) {
+                        chunk.push_str(text);
+                    }
+                }
+            }
         }
     }
     chunk
@@ -880,17 +922,22 @@ mod tests {
 
     #[test]
     fn test_parse_hermes_command() {
-        assert_eq!(parse_hermes_command("@new"), Some(HermesCommand::NewSession));
+        assert_eq!(parse_hermes_command("/help"), Some(HermesCommand::Help));
+        assert_eq!(parse_hermes_command("@help"), Some(HermesCommand::Help));
+        assert_eq!(parse_hermes_command("help"), Some(HermesCommand::Help));
+
         assert_eq!(parse_hermes_command("/new"), Some(HermesCommand::NewSession));
+        assert_eq!(parse_hermes_command("@new"), Some(HermesCommand::NewSession));
         assert_eq!(parse_hermes_command("new"), Some(HermesCommand::NewSession));
 
-        assert_eq!(parse_hermes_command("@model-list"), Some(HermesCommand::ListModels));
-        assert_eq!(parse_hermes_command("/model-list"), Some(HermesCommand::ListModels));
-        assert_eq!(parse_hermes_command("model-list"), Some(HermesCommand::ListModels));
+        assert_eq!(parse_hermes_command("/models"), Some(HermesCommand::ListModels));
         assert_eq!(parse_hermes_command("@models"), Some(HermesCommand::ListModels));
+        assert_eq!(parse_hermes_command("models"), Some(HermesCommand::ListModels));
+        assert_eq!(parse_hermes_command("/model"), Some(HermesCommand::ListModels));
+        assert_eq!(parse_hermes_command("@model-list"), Some(HermesCommand::ListModels));
 
         assert_eq!(
-            parse_hermes_command("@model M3.1-Flash"),
+            parse_hermes_command("/models M3.1-Flash"),
             Some(HermesCommand::SwitchModel("M3.1-Flash".to_string()))
         );
         assert_eq!(
@@ -898,11 +945,60 @@ mod tests {
             Some(HermesCommand::SwitchModel("claude-sonnet-4-6".to_string()))
         );
         assert_eq!(
-            parse_hermes_command("model gemini-3.8-flash-tiered"),
+            parse_hermes_command("@model gemini-3.8-flash-tiered"),
             Some(HermesCommand::SwitchModel("gemini-3.8-flash-tiered".to_string()))
         );
 
         assert_eq!(parse_hermes_command("你好，请帮我写个脚本"), None);
         assert_eq!(parse_hermes_command(""), None);
+    }
+
+    #[test]
+    fn test_extract_content_chunk_filters_thought_and_tools() {
+        // 1. 正式回答内容应当被提取
+        let msg_update = json!({
+            "update": {
+                "sessionUpdate": "agent_message_chunk",
+                "content": {
+                    "type": "text",
+                    "text": "你好！这是回答正文"
+                }
+            }
+        });
+        assert_eq!(extract_content_chunk(&msg_update), "你好！这是回答正文");
+
+        // 2. 思考过程 (thought) 必须被完全过滤
+        let thought_update1 = json!({
+            "update": {
+                "sessionUpdate": "agent_thought_chunk",
+                "content": {
+                    "type": "text",
+                    "text": "正在深入思考中..."
+                }
+            }
+        });
+        assert_eq!(extract_content_chunk(&thought_update1), "");
+
+        let thought_update2 = json!({
+            "update": {
+                "sessionUpdate": "agent_thought_chunk",
+                "thought": {
+                    "text": "思考链细节"
+                }
+            }
+        });
+        assert_eq!(extract_content_chunk(&thought_update2), "");
+
+        // 3. 工具调用 (tool_call) 必须被完全过滤
+        let tool_update = json!({
+            "update": {
+                "sessionUpdate": "tool_call",
+                "toolCall": {
+                    "name": "bash",
+                    "content": "ls -la"
+                }
+            }
+        });
+        assert_eq!(extract_content_chunk(&tool_update), "");
     }
 }
