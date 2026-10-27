@@ -2418,6 +2418,9 @@ fn main() {
 
             println!("[Startup] setup complete t=+{}ms", startup_elapsed_ms());
 
+            // 若上次 Hermes 服务处于运行状态，自动拉起服务
+            hermes::try_autostart_hermes_service(app.handle().clone());
+
             Ok(())
         })
         .on_window_event(|window, event| match event {
@@ -2613,7 +2616,10 @@ fn main() {
             hermes::save_hermes_config,
             hermes::start_hermes_service,
             hermes::stop_hermes_service,
-            hermes::get_hermes_status
+            hermes::get_hermes_status,
+            hermes::get_hermes_audit_dir,
+            hermes::open_hermes_audit_dir,
+            hermes::get_hermes_audit_records
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

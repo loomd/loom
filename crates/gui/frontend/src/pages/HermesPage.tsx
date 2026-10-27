@@ -11,6 +11,7 @@ interface HermesConfig {
   app_id: string;
   app_secret: string;
   default_project_id: string;
+  auto_start?: boolean;
 }
 
 interface HermesLogEntry {
@@ -464,9 +465,29 @@ export default function HermesPage({
           flex: 1,
           minHeight: '160px',
         }}>
-          <h3 style={{ margin: 0, fontSize: '0.9rem', fontWeight: 600, color: 'var(--text-primary)' }}>
-            消息日志
-          </h3>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <h3 style={{ margin: 0, fontSize: '0.9rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+              消息日志
+            </h3>
+            <button
+              onClick={() => {
+                invoke('open_hermes_audit_dir').catch(() => {
+                  toast.error('无法打开审计日志目录');
+                });
+              }}
+              style={{
+                fontSize: '0.75rem',
+                padding: '3px 8px',
+                backgroundColor: 'var(--bg-elevated)',
+                border: '1px solid var(--border-subtle)',
+                borderRadius: 'var(--radius-sm)',
+                color: 'var(--text-secondary)',
+                cursor: 'pointer',
+              }}
+            >
+              打开审计归档目录
+            </button>
+          </div>
           <div
             ref={logContainerRef}
             style={{

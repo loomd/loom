@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tauri::{AppHandle, Emitter};
 
+use super::audit::{current_date_str, current_timestamp_str, AuditLogger, AuditRecord};
 use super::client::{
     build_agent_stream_card, build_permission_request_card, build_permission_resolved_card,
     LarkClient,
@@ -95,6 +96,8 @@ pub struct HermesConfig {
     pub app_id: String,
     pub app_secret: String,
     pub default_project_id: String,
+    #[serde(default)]
+    pub auto_start: bool,
 }
 
 struct PendingPermission {
@@ -132,6 +135,7 @@ pub struct HermesBridge {
     current_model: Arc<Mutex<String>>,
     pending_model_configs: Arc<Mutex<HashMap<String, String>>>,
     pending_new_chat_commands: Arc<Mutex<HashMap<i64, String>>>,
+    pub audit_logger: Arc<AuditLogger>,
 }
 
 impl HermesBridge {
@@ -167,6 +171,7 @@ impl HermesBridge {
             current_model: Arc::new(Mutex::new(String::new())),
             pending_model_configs: Arc::new(Mutex::new(HashMap::new())),
             pending_new_chat_commands: Arc::new(Mutex::new(HashMap::new())),
+            audit_logger: Arc::new(AuditLogger::new()),
         }
     }
 
@@ -504,6 +509,24 @@ impl HermesBridge {
             }
             let c_type = session.chat_type.clone();
             self.add_log("out", "Hermes Agent", &c_type, &format!("回答完成: {}", truncate_str(&session.accumulated_content, 40)));
+
+            // 审计落盘：回答完成
+            let cur_m = self.current_model.lock().unwrap().clone();
+            self.audit_logger.record(&AuditRecord {
+                timestamp: current_timestamp_str(),
+                date: current_date_str(),
+                direction: "out".to_string(),
+                event_type: "agent_reply".to_string(),
+                chat_id: chat_id.clone(),
+                chat_type: c_type,
+                sender_id: "Hermes Agent".to_string(),
+                model: if cur_m.is_empty() { None } else { Some(cur_m) },
+                content: session.accumulated_content.clone(),
+                meta: json!({
+                    "card_message_id": session.card_message_id,
+                    "fallback_text_mode": session.fallback_text_mode
+                }),
+            });
         }
     }
 
@@ -701,6 +724,21 @@ impl LarkEventHandler for HermesBridge {
         text: String,
     ) {
         self.add_log("in", &sender_open_id, &chat_type, &text);
+
+        // 审计落盘：记录每一条用户消息
+        let cur_m = self.current_model.lock().unwrap().clone();
+        self.audit_logger.record(&AuditRecord {
+            timestamp: current_timestamp_str(),
+            date: current_date_str(),
+            direction: "in".to_string(),
+            event_type: "user_message".to_string(),
+            chat_id: chat_id.clone(),
+            chat_type: chat_type.clone(),
+            sender_id: sender_open_id.clone(),
+            model: if cur_m.is_empty() { None } else { Some(cur_m) },
+            content: text.clone(),
+            meta: json!({ "message_id": _message_id }),
+        });
 
         // 指令判断：/help / /new / /models / /model <name>
         if let Some(cmd) = parse_hermes_command(&text) {
