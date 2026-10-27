@@ -14,6 +14,52 @@ use super::client::{
     LarkClient,
 };
 use super::ws::{LarkEventHandler, LarkWsClient};
+use crate::acp::match_model_option;
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum HermesCommand {
+    NewSession,
+    ListModels,
+    SwitchModel(String),
+}
+
+pub fn parse_hermes_command(text: &str) -> Option<HermesCommand> {
+    let trimmed = text.trim();
+
+    // 匹配 @new / /new / new
+    if trimmed.eq_ignore_ascii_case("@new")
+        || trimmed.eq_ignore_ascii_case("/new")
+        || trimmed.eq_ignore_ascii_case("new")
+    {
+        return Some(HermesCommand::NewSession);
+    }
+
+    // 匹配 @model-list / /model-list / model-list / @models / /models / models
+    if trimmed.eq_ignore_ascii_case("@model-list")
+        || trimmed.eq_ignore_ascii_case("/model-list")
+        || trimmed.eq_ignore_ascii_case("model-list")
+        || trimmed.eq_ignore_ascii_case("@models")
+        || trimmed.eq_ignore_ascii_case("/models")
+        || trimmed.eq_ignore_ascii_case("models")
+    {
+        return Some(HermesCommand::ListModels);
+    }
+
+    // 匹配 @model <model> / /model <model> / model <model>
+    for prefix in ["@model", "/model", "model"] {
+        if trimmed.to_lowercase().starts_with(prefix) {
+            let remainder = trimmed[prefix.len()..].trim();
+            if remainder.starts_with("-list") {
+                return Some(HermesCommand::ListModels);
+            }
+            if !remainder.is_empty() {
+                return Some(HermesCommand::SwitchModel(remainder.to_string()));
+            }
+        }
+    }
+
+    None
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HermesLogEntry {
@@ -67,6 +113,12 @@ pub struct HermesBridge {
     active_chats: Arc<Mutex<HashMap<String, ActiveChatSession>>>,
     pending_permissions: Arc<Mutex<HashMap<String, PendingPermission>>>,
     current_acp_session_id: Arc<Mutex<Option<String>>>,
+    chat_to_session: Arc<Mutex<HashMap<String, String>>>,
+    session_to_chat: Arc<Mutex<HashMap<String, String>>>,
+    model_options: Arc<Mutex<Vec<serde_json::Value>>>,
+    current_model: Arc<Mutex<String>>,
+    pending_model_configs: Arc<Mutex<HashMap<String, String>>>,
+    pending_new_chat_commands: Arc<Mutex<HashMap<i64, String>>>,
 }
 
 impl HermesBridge {
@@ -96,6 +148,12 @@ impl HermesBridge {
             active_chats: Arc::new(Mutex::new(HashMap::new())),
             pending_permissions: Arc::new(Mutex::new(HashMap::new())),
             current_acp_session_id: Arc::new(Mutex::new(None)),
+            chat_to_session: Arc::new(Mutex::new(HashMap::new())),
+            session_to_chat: Arc::new(Mutex::new(HashMap::new())),
+            model_options: Arc::new(Mutex::new(Vec::new())),
+            current_model: Arc::new(Mutex::new(String::new())),
+            pending_model_configs: Arc::new(Mutex::new(HashMap::new())),
+            pending_new_chat_commands: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -298,7 +356,56 @@ impl HermesBridge {
             // 如果是 session/new 的响应
             if let Some(res) = parsed.get("result") {
                 if let Some(sid) = res.get("sessionId").and_then(|s| s.as_str()) {
-                    *self.current_acp_session_id.lock().unwrap() = Some(sid.to_string());
+                    // 1. 缓存可用模型列表及当前模型
+                    if let Some(config_options) = res.get("configOptions").and_then(|v| v.as_array()) {
+                        for opt_cfg in config_options {
+                            if opt_cfg.get("id").and_then(|v| v.as_str()) == Some("model") {
+                                if let Some(cur) = opt_cfg.get("currentValue").and_then(|v| v.as_str()) {
+                                    let mut cur_guard = self.current_model.lock().unwrap();
+                                    if cur_guard.is_empty() {
+                                        *cur_guard = cur.to_string();
+                                    }
+                                }
+                                if let Some(opts) = opt_cfg.get("options").and_then(|v| v.as_array()) {
+                                    *self.model_options.lock().unwrap() = opts.clone();
+                                }
+                                break;
+                            }
+                        }
+                    }
+
+                    // 2. 检查是否为指定群聊/用户发起的 session/new 指令
+                    let maybe_chat_id = self.pending_new_chat_commands.lock().unwrap().remove(&id);
+                    if let Some(chat_id) = maybe_chat_id {
+                        self.chat_to_session.lock().unwrap().insert(chat_id.clone(), sid.to_string());
+                        self.session_to_chat.lock().unwrap().insert(sid.to_string(), chat_id.clone());
+
+                        // 若该会话有待配置的目标模型，立即发送 session/set_config_option
+                        let pending_model = self.pending_model_configs.lock().unwrap().remove(&chat_id);
+                        if let Some(model_val) = pending_model {
+                            let cfg_id = self.next_rpc_id.fetch_add(1, Ordering::SeqCst);
+                            let _ = self.send_to_acp(&json!({
+                                "jsonrpc": "2.0",
+                                "id": cfg_id,
+                                "method": "session/set_config_option",
+                                "params": {
+                                    "sessionId": sid,
+                                    "configId": "model",
+                                    "value": model_val
+                                }
+                            }));
+                        }
+
+                        let _ = self.client.send_text_message(
+                            "chat_id",
+                            &chat_id,
+                            &format!("🎉 [Hermes] 新对话就绪！Session ID: `{}`", sid),
+                        );
+                    } else {
+                        // 首次启动默认 session
+                        *self.current_acp_session_id.lock().unwrap() = Some(sid.to_string());
+                    }
+
                     println!("[Hermes] ACP Session 创建成功: {}", sid);
                     return;
                 }
@@ -337,10 +444,18 @@ impl HermesBridge {
             return;
         }
 
+        let sid = params.get("sessionId").and_then(|s| s.as_str());
+        let target_chat_id = sid.and_then(|s| self.session_to_chat.lock().unwrap().get(s).cloned());
+
         let mut chats = self.active_chats.lock().unwrap();
-        for (_chat_id, session) in chats.iter_mut() {
+        for (chat_id, session) in chats.iter_mut() {
             if session.is_finished {
                 continue;
+            }
+            if let Some(ref target) = target_chat_id {
+                if chat_id != target {
+                    continue;
+                }
             }
             session.accumulated_content.push_str(&content_chunk);
 
@@ -420,6 +535,113 @@ impl HermesBridge {
 
         self.add_log("out", "Hermes", "p2p", &format!("请求权限确认: {}", tool_name));
     }
+
+    fn handle_command_new(&self, chat_id: &str, chat_type: &str) {
+        let req_id = self.next_rpc_id.fetch_add(1, Ordering::SeqCst);
+        self.pending_new_chat_commands.lock().unwrap().insert(req_id, chat_id.to_string());
+
+        // 清理当前会话进行中的卡片状态
+        self.active_chats.lock().unwrap().remove(chat_id);
+
+        let _ = self.send_to_acp(&json!({
+            "jsonrpc": "2.0",
+            "id": req_id,
+            "method": "session/new",
+            "params": {
+                "cwd": self.project_path,
+                "mcpServers": []
+            }
+        }));
+
+        let reply = "🎉 **Hermes 新会话启动中**\n已请求重置当前会话，正在为你建立全新上下文...";
+        let _ = self.client.send_text_message("chat_id", chat_id, reply);
+        self.add_log("out", "Hermes", chat_type, "已请求开启全新会话");
+    }
+
+    fn handle_command_model_list(&self, chat_id: &str, chat_type: &str) {
+        let opts = self.model_options.lock().unwrap().clone();
+        let cur = self.current_model.lock().unwrap().clone();
+
+        let mut reply = String::new();
+        reply.push_str("🤖 **Hermes 模型列表**\n\n");
+        if !cur.is_empty() {
+            reply.push_str(&format!("**当前生效模型:** `{}`\n\n", cur));
+        }
+
+        if opts.is_empty() {
+            reply.push_str("当前正在连接 Agent，暂未获取到动态模型列表。常用支持模型:\n");
+            reply.push_str("- `M3.1-Flash · thinking` (默认)\n");
+            reply.push_str("- `M3.1-Flash`\n");
+            reply.push_str("- `M3 · thinking`\n");
+            reply.push_str("- `gemini-3.8-flash-tiered`\n");
+            reply.push_str("- `claude-sonnet-4-6`\n");
+        } else {
+            reply.push_str("**支持切换的模型列表:**\n");
+            for (idx, opt) in opts.iter().enumerate() {
+                let name = opt.get("name").and_then(|v| v.as_str()).unwrap_or("");
+                let val = opt.get("value").and_then(|v| v.as_str()).unwrap_or("");
+                let is_cur = if !cur.is_empty() && (val == cur || name == cur) {
+                    " *(当前)*"
+                } else {
+                    ""
+                };
+                reply.push_str(&format!("{}. `{}`{}\n", idx + 1, name, is_cur));
+            }
+        }
+
+        reply.push_str("\n💡 **切换方式:** 发送 `@model <模型名称>` 即可切换并自动启动新对话。");
+        let _ = self.client.send_text_message("chat_id", chat_id, &reply);
+        self.add_log("out", "Hermes", chat_type, "已返回支持的模型列表");
+    }
+
+    fn handle_command_switch_model(&self, chat_id: &str, chat_type: &str, target: &str) {
+        let opts = self.model_options.lock().unwrap().clone();
+        let matched = match_model_option(target, &opts);
+        match matched {
+            Some(matched_val) => {
+                let display_name = opts
+                    .iter()
+                    .find(|o| o.get("value").and_then(|v| v.as_str()) == Some(&matched_val))
+                    .and_then(|o| o.get("name").and_then(|v| v.as_str()))
+                    .unwrap_or(&matched_val)
+                    .to_string();
+
+                *self.current_model.lock().unwrap() = matched_val.clone();
+
+                let req_id = self.next_rpc_id.fetch_add(1, Ordering::SeqCst);
+                self.pending_new_chat_commands.lock().unwrap().insert(req_id, chat_id.to_string());
+                self.pending_model_configs.lock().unwrap().insert(chat_id.to_string(), matched_val);
+
+                // 清理旧状态
+                self.active_chats.lock().unwrap().remove(chat_id);
+
+                let _ = self.send_to_acp(&json!({
+                    "jsonrpc": "2.0",
+                    "id": req_id,
+                    "method": "session/new",
+                    "params": {
+                        "cwd": self.project_path,
+                        "mcpServers": []
+                    }
+                }));
+
+                let reply = format!(
+                    "✅ **Hermes 模型已切换**\n已将模型切换为: `{}`\n正在自动为您启动全新会话...",
+                    display_name
+                );
+                let _ = self.client.send_text_message("chat_id", chat_id, &reply);
+                self.add_log("out", "Hermes", chat_type, &format!("已切换模型至: {}", display_name));
+            }
+            None => {
+                let reply = format!(
+                    "⚠️ 未找到匹配的模型: `{}`\n💡 请发送 `@model-list` 查看支持的模型名称列表。",
+                    target
+                );
+                let _ = self.client.send_text_message("chat_id", chat_id, &reply);
+                self.add_log("out", "Hermes", chat_type, &format!("未匹配到模型: {}", target));
+            }
+        }
+    }
 }
 
 // ─── LarkEventHandler 实现 ──────────────────────────────────────────────────
@@ -454,6 +676,24 @@ impl LarkEventHandler for HermesBridge {
     ) {
         self.add_log("in", &sender_open_id, &chat_type, &text);
 
+        // 指令判断：@new / @model-list / @model <name>
+        if let Some(cmd) = parse_hermes_command(&text) {
+            match cmd {
+                HermesCommand::NewSession => {
+                    self.handle_command_new(&chat_id, &chat_type);
+                    return;
+                }
+                HermesCommand::ListModels => {
+                    self.handle_command_model_list(&chat_id, &chat_type);
+                    return;
+                }
+                HermesCommand::SwitchModel(target) => {
+                    self.handle_command_switch_model(&chat_id, &chat_type, &target);
+                    return;
+                }
+            }
+        }
+
         // 1. 尝试发送思考中占位卡片，失败则降级为纯文本提示
         let init_card = build_agent_stream_card("Hermes Agent", "正在分析任务...", false);
         let (card_msg_id, fallback_text_mode) = match self.client.send_card_message("chat_id", &chat_id, &init_card) {
@@ -484,13 +724,22 @@ impl LarkEventHandler for HermesBridge {
             );
         }
 
-        // 3. 向 ACP 发起 prompt
-        let current_sid = self.current_acp_session_id.lock().unwrap().clone();
-        let session_id_str = match current_sid {
-            Some(sid) => sid,
-            None => {
-                // 若 session_id 还未就绪，使用临时占位
-                "default".to_string()
+        // 3. 向 ACP 发起 prompt（使用绑定到当前 chat 的 session_id）
+        let session_id_str = {
+            let chat_sid = self.chat_to_session.lock().unwrap().get(&chat_id).cloned();
+            match chat_sid {
+                Some(sid) => sid,
+                None => {
+                    let default_sid = self.current_acp_session_id.lock().unwrap().clone();
+                    match default_sid {
+                        Some(sid) => {
+                            self.chat_to_session.lock().unwrap().insert(chat_id.clone(), sid.clone());
+                            self.session_to_chat.lock().unwrap().insert(sid.clone(), chat_id.clone());
+                            sid
+                        }
+                        None => "default".to_string(),
+                    }
+                }
             }
         };
 
@@ -622,5 +871,38 @@ fn truncate_str(s: &str, max_len: usize) -> String {
         s.to_string()
     } else {
         format!("{}...", s.chars().take(max_len).collect::<String>())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_hermes_command() {
+        assert_eq!(parse_hermes_command("@new"), Some(HermesCommand::NewSession));
+        assert_eq!(parse_hermes_command("/new"), Some(HermesCommand::NewSession));
+        assert_eq!(parse_hermes_command("new"), Some(HermesCommand::NewSession));
+
+        assert_eq!(parse_hermes_command("@model-list"), Some(HermesCommand::ListModels));
+        assert_eq!(parse_hermes_command("/model-list"), Some(HermesCommand::ListModels));
+        assert_eq!(parse_hermes_command("model-list"), Some(HermesCommand::ListModels));
+        assert_eq!(parse_hermes_command("@models"), Some(HermesCommand::ListModels));
+
+        assert_eq!(
+            parse_hermes_command("@model M3.1-Flash"),
+            Some(HermesCommand::SwitchModel("M3.1-Flash".to_string()))
+        );
+        assert_eq!(
+            parse_hermes_command("/model claude-sonnet-4-6"),
+            Some(HermesCommand::SwitchModel("claude-sonnet-4-6".to_string()))
+        );
+        assert_eq!(
+            parse_hermes_command("model gemini-3.8-flash-tiered"),
+            Some(HermesCommand::SwitchModel("gemini-3.8-flash-tiered".to_string()))
+        );
+
+        assert_eq!(parse_hermes_command("你好，请帮我写个脚本"), None);
+        assert_eq!(parse_hermes_command(""), None);
     }
 }
