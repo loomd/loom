@@ -4,7 +4,7 @@ use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tauri::{AppHandle, Emitter};
@@ -112,6 +112,7 @@ struct ActiveChatSession {
     card_message_id: Option<String>,
     fallback_text_mode: bool,
     accumulated_content: String,
+    #[allow(dead_code)]
     last_updated: Instant,
     is_finished: bool,
     chat_type: String,
@@ -455,7 +456,7 @@ impl HermesBridge {
         }
     }
 
-    /// 处理流式内容更新
+    /// 处理流式内容更新（仅在内存累积文本，不实时请求飞书更新卡片，彻底规避飞书 API 频控限制）
     fn handle_session_update(&self, params: &serde_json::Value) {
         let content_chunk = extract_content_chunk(params);
         if content_chunk.is_empty() {
@@ -476,19 +477,10 @@ impl HermesBridge {
                 }
             }
             session.accumulated_content.push_str(&content_chunk);
-
-            // 节流：至少间隔 1.2 秒更新一次飞书卡片，避免被频控
-            if !session.fallback_text_mode && session.last_updated.elapsed() >= Duration::from_millis(1200) {
-                if let Some(ref card_msg_id) = session.card_message_id {
-                    let card = build_agent_stream_card("Hermes Agent", &session.accumulated_content, false);
-                    let _ = self.client.update_card_message(card_msg_id, &card);
-                    session.last_updated = Instant::now();
-                }
-            }
         }
     }
 
-    /// 将所有进行中的会话卡片标记为已完成
+    /// 在文本输出完毕后，一次性将最终结果更新到飞书卡片（或纯文本发送），彻底规避飞书频控
     fn flush_all_active_chats_finish(&self) {
         let mut chats = self.active_chats.lock().unwrap();
         for (chat_id, session) in chats.iter_mut() {
@@ -498,7 +490,15 @@ impl HermesBridge {
             session.is_finished = true;
             if let Some(ref card_msg_id) = session.card_message_id {
                 let card = build_agent_stream_card("Hermes Agent", &session.accumulated_content, true);
-                let _ = self.client.update_card_message(card_msg_id, &card);
+                if let Err(e) = self.client.update_card_message(card_msg_id, &card) {
+                    eprintln!("[Hermes] 完成态更新卡片失败: {}，尝试降级发送纯文本", e);
+                    let reply_text = if session.accumulated_content.trim().is_empty() {
+                        "🤖 [Hermes] 任务已执行完毕。".to_string()
+                    } else {
+                        format!("🤖 [Hermes]\n{}", session.accumulated_content)
+                    };
+                    let _ = self.client.send_text_message("chat_id", chat_id, &reply_text);
+                }
             } else if session.fallback_text_mode {
                 let reply_text = if session.accumulated_content.trim().is_empty() {
                     "🤖 [Hermes] 任务已执行完毕。".to_string()
@@ -723,6 +723,17 @@ impl LarkEventHandler for HermesBridge {
         sender_open_id: String,
         text: String,
     ) {
+        // 会话在途互斥保护：若当前会话上一条任务还在执行中，忽略并发重发消息，避免并发冲突与双重回复
+        {
+            let chats = self.active_chats.lock().unwrap();
+            if let Some(existing) = chats.get(&chat_id) {
+                if !existing.is_finished {
+                    println!("[Hermes] 会话 {} 正在执行上一条任务，忽略并发输入: {}", chat_id, text);
+                    return;
+                }
+            }
+        }
+
         self.add_log("in", &sender_open_id, &chat_type, &text);
 
         // 审计落盘：记录每一条用户消息

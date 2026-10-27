@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::thread;
 use std::time::Duration;
 use prost::Message as ProstMessage;
@@ -8,6 +8,12 @@ use tungstenite::{connect, Message};
 
 use super::client::LarkClient;
 use super::proto::{Frame, Header};
+
+static GLOBAL_PROCESSED_IDS: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
+
+fn get_processed_ids() -> &'static Mutex<HashSet<String>> {
+    GLOBAL_PROCESSED_IDS.get_or_init(|| Mutex::new(HashSet::new()))
+}
 
 pub trait LarkEventHandler: Send + Sync + 'static {
     fn on_connected(&self);
@@ -31,7 +37,6 @@ pub struct LarkWsClient {
     client: Arc<LarkClient>,
     handler: Arc<dyn LarkEventHandler>,
     stop_signal: Arc<AtomicBool>,
-    processed_ids: Arc<Mutex<HashSet<String>>>,
 }
 
 impl LarkWsClient {
@@ -44,7 +49,6 @@ impl LarkWsClient {
             client,
             handler,
             stop_signal,
-            processed_ids: Arc::new(Mutex::new(HashSet::new())),
         }
     }
 
@@ -193,12 +197,12 @@ impl LarkWsClient {
             .and_then(|e| e.as_str())
         {
             if !event_id.is_empty() {
-                let mut processed = self.processed_ids.lock().unwrap();
+                let mut processed = get_processed_ids().lock().unwrap();
                 if processed.contains(event_id) {
                     println!("[Hermes WS] 收到重复 event_id，已忽略: {}", event_id);
                     return;
                 }
-                if processed.len() >= 2000 {
+                if processed.len() >= 5000 {
                     processed.clear();
                 }
                 processed.insert(event_id.to_string());
@@ -217,6 +221,17 @@ impl LarkWsClient {
                     Some(e) => e,
                     None => return,
                 };
+
+                // 过滤机器人/应用自身发出的消息，防止群聊自循环
+                let sender_type = event
+                    .get("sender")
+                    .and_then(|s| s.get("sender_type"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("user");
+                if sender_type == "app" || sender_type == "bot" {
+                    return;
+                }
+
                 let message = match event.get("message") {
                     Some(m) => m,
                     None => return,
@@ -238,14 +253,14 @@ impl LarkWsClient {
                     .unwrap_or_default()
                     .to_string();
 
-                // 2. 根据 message_id 进行消息级去重
+                // 2. 根据 message_id 进行全局消息级去重
                 if !message_id.is_empty() {
-                    let mut processed = self.processed_ids.lock().unwrap();
+                    let mut processed = get_processed_ids().lock().unwrap();
                     if processed.contains(&message_id) {
                         println!("[Hermes WS] 收到重复 message_id，已忽略: {}", message_id);
                         return;
                     }
-                    if processed.len() >= 2000 {
+                    if processed.len() >= 5000 {
                         processed.clear();
                     }
                     processed.insert(message_id.clone());
@@ -272,6 +287,13 @@ impl LarkWsClient {
                     let mentions = message.get("mentions").and_then(|m| m.as_array());
                     if let Ok(content_obj) = serde_json::from_str::<serde_json::Value>(content_str) {
                         if let Some(text) = content_obj.get("text").and_then(|t| t.as_str()) {
+                            // 群聊场景过滤：若群消息未 @ 机器人且不是斜杠指令，忽略群内普通闲聊
+                            let has_mentions = mentions.map(|arr| !arr.is_empty()).unwrap_or(false);
+                            let is_cmd = text.trim_start().starts_with('/') || text.trim_start().starts_with('@');
+                            if chat_type == "group" && !has_mentions && !is_cmd {
+                                return;
+                            }
+
                             let cleaned_text = clean_text_mentions(text, mentions.map(|v| v.as_slice()));
                             if !cleaned_text.trim().is_empty() {
                                 self.handler.on_text_message(
