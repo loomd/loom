@@ -1,9 +1,12 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import WindowControlButtons from '../components/WindowControlButtons';
+import WorkspaceSelect from '../components/WorkspaceSelect';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import type { Project } from '../types';
 import { useToast } from '../ToastContext';
+import { useI18n } from '../I18nContext';
 
 // ─── Types ──────────────────────────────────────────────
 
@@ -77,12 +80,22 @@ export default function HermesPage({
   onToggleSidebar,
 }: HermesPageProps) {
   const toast = useToast();
+  const { t } = useI18n();
 
   // ─── Config state ───────────────────────────────────
   const [appId, setAppId] = useState('');
   const [appSecret, setAppSecret] = useState('');
   const [showSecret, setShowSecret] = useState(false);
-  const [selectedProjectId, setSelectedProjectId] = useState(defaultProjectId ?? '');
+  const [selectedWorkspace, setSelectedWorkspace] = useState('');
+
+  // 默认/兜底的工作区路径：优先使用传入的 defaultProjectId，其次取项目列表首项
+  const fallbackWorkspace =
+    projects.find((p) => p.id === defaultProjectId)?.root_path ??
+    (projects.length > 0 ? projects[0].root_path : '');
+  const resolvedProject = projects.find(
+    (p) => p.root_path === selectedWorkspace || p.id === selectedWorkspace
+  );
+  const activeWorkspace = resolvedProject?.root_path || selectedWorkspace || fallbackWorkspace;
 
   // ─── Service state ──────────────────────────────────
   const [status, setStatus] = useState<HermesStatus>({ state: 'stopped', log_entries: [] });
@@ -97,13 +110,19 @@ export default function HermesPage({
         setAppId(cfg.app_id || '');
         setAppSecret(cfg.app_secret || '');
         if (cfg.default_project_id) {
-          setSelectedProjectId(cfg.default_project_id);
+          const matched = projects.find(
+            (p) => p.root_path === cfg.default_project_id || p.id === cfg.default_project_id
+          );
+          setSelectedWorkspace(matched ? matched.root_path : cfg.default_project_id);
         } else if (defaultProjectId) {
-          setSelectedProjectId(defaultProjectId);
+          const matched = projects.find((p) => p.id === defaultProjectId);
+          if (matched) {
+            setSelectedWorkspace(matched.root_path);
+          }
         }
       })
       .catch(() => {});
-  }, [defaultProjectId]);
+  }, [defaultProjectId, projects]);
 
   // Poll status while active
   useEffect(() => {
@@ -139,25 +158,27 @@ export default function HermesPage({
   // ─── Handlers ───────────────────────────────────────
 
   const handleSaveConfig = useCallback(async () => {
+    const proj = projects.find((p) => p.root_path === activeWorkspace || p.id === activeWorkspace);
     try {
       await saveHermesConfig({
         app_id: appId,
         app_secret: appSecret,
-        default_project_id: selectedProjectId,
+        default_project_id: proj?.id || activeWorkspace,
       });
       toast.success('配置已保存');
     } catch (err) {
       toast.error(`保存失败: ${err}`);
     }
-  }, [appId, appSecret, selectedProjectId, toast]);
+  }, [appId, appSecret, activeWorkspace, projects, toast]);
 
   const handleStart = useCallback(async () => {
     if (!appId || !appSecret) {
       toast.error('请先填写飞书 App ID 和 App Secret');
       return;
     }
-    const proj = projects.find((p) => p.id === selectedProjectId);
-    if (!proj) {
+    const proj = projects.find((p) => p.root_path === activeWorkspace || p.id === activeWorkspace);
+    const projectPath = proj?.root_path || activeWorkspace;
+    if (!projectPath) {
       toast.error('请选择一个工作区');
       return;
     }
@@ -174,9 +195,9 @@ export default function HermesPage({
       await saveHermesConfig({
         app_id: appId,
         app_secret: appSecret,
-        default_project_id: selectedProjectId,
+        default_project_id: proj?.id || projectPath,
       });
-      await startHermesService(appId, appSecret, proj.root_path);
+      await startHermesService(appId, appSecret, projectPath);
       toast.success('Hermes 服务已启动');
     } catch (err) {
       setStatus((prev) => ({
@@ -188,7 +209,7 @@ export default function HermesPage({
     } finally {
       setStarting(false);
     }
-  }, [appId, appSecret, selectedProjectId, projects, toast]);
+  }, [appId, appSecret, activeWorkspace, projects, toast]);
 
   const handleStop = useCallback(async () => {
     setStopping(true);
@@ -211,358 +232,246 @@ export default function HermesPage({
   const meta = getStatusMeta(status.state);
 
   return (
-    <div style={{
-      display: 'flex',
-      flexDirection: 'column',
-      height: '100%',
-      overflow: 'hidden',
-    }}>
-      {/* Title bar */}
-      <div
-        data-tauri-drag-region
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          padding: '8px 12px',
-          borderBottom: '1px solid var(--border-subtle)',
-          flexShrink: 0,
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+    <div className="hermes-page">
+      {/* 顶部窗口拖拽栏：左侧为侧边栏折叠开关，右侧为窗口控制按钮（与远程连接页一致） */}
+      <div className="remote-topbar" data-tauri-drag-region>
+        <div className="remote-topbar-left">
           {onToggleSidebar && (
             <button
-              className="nav-item"
               onClick={onToggleSidebar}
-              style={{
-                padding: '4px 6px',
-                cursor: 'pointer',
-                fontSize: '0.85rem',
-                border: '1px solid transparent',
-                borderRadius: 'var(--radius-sm)',
-              }}
+              className="sidebar-toggle-mini-btn"
+              title={isSidebarCollapsed ? t('proj.sidebar.expand') : t('proj.sidebar.collapse')}
+              style={{ marginLeft: '0px', marginRight: '0px' }}
             >
-              {isSidebarCollapsed ? '\u25b6' : '\u25c0'}
+              {isSidebarCollapsed ? "▶" : "◀"}
             </button>
           )}
-          <h2 style={{ margin: 0, fontSize: '1rem', fontWeight: 600, color: 'var(--text-primary)' }}>
-            Hermes
-          </h2>
-          <span style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)' }}>
-            飞书机器人 Agent 桥接
-          </span>
         </div>
-        <WindowControlButtons />
+        <div className="remote-topbar-right">
+          <WindowControlButtons />
+        </div>
       </div>
 
-      {/* Main content */}
-      <div style={{
-        flex: 1,
-        overflowY: 'auto',
-        padding: '20px 24px',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: '20px',
-      }}>
-        {/* Status indicator */}
-        <div style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: '12px',
-          padding: '12px 16px',
-          backgroundColor: 'var(--bg-card)',
-          borderRadius: 'var(--radius-md)',
-          border: '1px solid var(--border-subtle)',
-        }}>
-          <div style={{
-            width: '10px',
-            height: '10px',
-            borderRadius: '50%',
-            backgroundColor: meta.tone === 'green' ? '#10b981'
-              : meta.tone === 'blue' ? '#3b82f6'
-              : meta.tone === 'red' ? '#ef4444'
-              : meta.tone === 'amber' ? '#f59e0b'
-              : '#6b7280',
-            boxShadow: meta.tone === 'green' ? '0 0 6px rgba(16, 185, 129, 0.5)'
-              : meta.tone === 'blue' ? '0 0 6px rgba(59, 130, 246, 0.5)'
-              : 'none',
-          }} />
-          <span style={{ fontWeight: 500, color: 'var(--text-primary)' }}>
-            {meta.label}
-          </span>
-          {status.error_message && (
-            <span style={{ fontSize: '0.8rem', color: '#ef4444', marginLeft: '8px' }}>
-              {status.error_message}
+      {/* 主体 */}
+      <div className="hermes-body">
+        {/* 标题区：左侧标题块 + 右侧状态徽章（与远程连接页同构） */}
+        <div className="remote-title-row" data-tauri-drag-region>
+          <div className="remote-header-text">
+            <h1
+              className="remote-title hermes-gradient-title"
+              data-tauri-drag-region
+              onMouseDown={(e) => {
+                if (e.button === 0) {
+                  getCurrentWindow().startDragging();
+                }
+              }}
+            >
+              Hermes
+            </h1>
+            <p className="remote-subtitle" data-tauri-drag-region>
+              飞书机器人 Agent 桥接
+            </p>
+          </div>
+          <div className="remote-header-badges">
+            <span className={`badge ${meta.badge}`}>
+              <span className={`dot ${meta.dot}`} />
+              {meta.label}
             </span>
-          )}
-          {status.connected_since && status.state === 'connected' && (
-            <span style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)', marginLeft: 'auto' }}>
-              {status.connected_since}
-            </span>
-          )}
+          </div>
         </div>
 
-        {/* Config section */}
-        <div style={{
-          padding: '16px',
-          backgroundColor: 'var(--bg-card)',
-          borderRadius: 'var(--radius-md)',
-          border: '1px solid var(--border-subtle)',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: '12px',
-        }}>
-          <h3 style={{ margin: 0, fontSize: '0.9rem', fontWeight: 600, color: 'var(--text-primary)' }}>
-            飞书应用凭证
-          </h3>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            <label style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>App ID</label>
-            <input
-              type="text"
-              value={appId}
-              onChange={(e) => setAppId(e.target.value)}
-              placeholder="cli_xxxxxxxxxxxxxxxx"
-              disabled={isRunning}
-              style={{
-                padding: '8px 10px',
-                backgroundColor: 'var(--bg-input)',
-                border: '1px solid var(--border-subtle)',
-                borderRadius: 'var(--radius-sm)',
-                color: 'var(--text-primary)',
-                fontSize: '0.85rem',
-                outline: 'none',
-              }}
-            />
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            <label style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>App Secret</label>
-            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-              <input
-                type={showSecret ? 'text' : 'password'}
-                value={appSecret}
-                onChange={(e) => setAppSecret(e.target.value)}
-                placeholder="xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+        {/* 主内容区域 */}
+        <div className="hermes-main">
+          {/* 卡片 1: 凭证与工作区配置 */}
+          <section className="card remote-card">
+            <div className="remote-card-head">
+              <div className="remote-card-heading">
+                <h2 className="remote-card-title">飞书应用凭证与工作区</h2>
+                <p className="remote-card-desc">
+                  配置飞书开放平台企业自建应用凭据与 mcode ACP 运行时的工作区目录。
+                </p>
+              </div>
+            </div>
+
+            <div className="remote-form-grid">
+              <div className="remote-field">
+                <label className="form-label">App ID</label>
+                <input
+                  type="text"
+                  className="input"
+                  value={appId}
+                  onChange={(e) => setAppId(e.target.value)}
+                  placeholder="cli_xxxxxxxxxxxxxxxx"
+                  disabled={isRunning}
+                  spellCheck={false}
+                />
+              </div>
+              <div className="remote-field">
+                <label className="form-label">App Secret</label>
+                <div className="remote-inline">
+                  <input
+                    type={showSecret ? 'text' : 'password'}
+                    className="input"
+                    value={appSecret}
+                    onChange={(e) => setAppSecret(e.target.value)}
+                    placeholder="xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+                    disabled={isRunning}
+                    spellCheck={false}
+                  />
+                  <button
+                    type="button"
+                    className="btn btn-ghost"
+                    onClick={() => setShowSecret(!showSecret)}
+                  >
+                    {showSecret ? '隐藏' : '显示'}
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div className="remote-field">
+              <label className="form-label">工作区项目 (CWD)</label>
+              <WorkspaceSelect
+                projects={projects}
+                value={activeWorkspace}
+                onChange={setSelectedWorkspace}
                 disabled={isRunning}
-                style={{
-                  flex: 1,
-                  padding: '8px 10px',
-                  backgroundColor: 'var(--bg-input)',
-                  border: '1px solid var(--border-subtle)',
-                  borderRadius: 'var(--radius-sm)',
-                  color: 'var(--text-primary)',
-                  fontSize: '0.85rem',
-                  outline: 'none',
-                }}
+                placeholder={projects.length === 0 ? '暂无工作区项目' : '选择工作区项目'}
               />
+              <span className="remote-hint">指定 mcode acp 子进程的工作目录</span>
+            </div>
+
+            <div className="remote-actions">
+              <div className="remote-hint">
+                {status.error_message && (
+                  <span className="danger">{status.error_message}</span>
+                )}
+              </div>
+              <div className="remote-actions-buttons">
+                {!isRunning ? (
+                  <>
+                    <button
+                      type="button"
+                      className="btn btn-ghost"
+                      onClick={handleSaveConfig}
+                      disabled={isRunning}
+                    >
+                      仅保存配置
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-primary"
+                      onClick={handleStart}
+                      disabled={starting || !appId || !appSecret || !activeWorkspace}
+                    >
+                      {starting ? '启动中...' : '启动 Hermes 服务'}
+                    </button>
+                  </>
+                ) : (
+                  <button
+                    type="button"
+                    className="btn btn-danger"
+                    onClick={handleStop}
+                    disabled={stopping}
+                  >
+                    {stopping ? '停止中...' : '停止 Hermes 服务'}
+                  </button>
+                )}
+              </div>
+            </div>
+          </section>
+
+          {/* 卡片 2: 消息日志 */}
+          <section className="card remote-card">
+            <div className="remote-card-head">
+              <div className="remote-card-heading">
+                <h2 className="remote-card-title">消息日志</h2>
+                <p className="remote-card-desc">
+                  展示近期的飞书群聊及私聊交互消息与转发摘要。
+                </p>
+              </div>
               <button
-                onClick={() => setShowSecret(!showSecret)}
-                style={{
-                  padding: '6px 10px',
-                  backgroundColor: 'var(--bg-elevated)',
-                  border: '1px solid var(--border-subtle)',
-                  borderRadius: 'var(--radius-sm)',
-                  cursor: 'pointer',
-                  fontSize: '0.75rem',
-                  color: 'var(--text-secondary)',
+                type="button"
+                className="btn btn-ghost btn-sm"
+                onClick={() => {
+                  invoke('open_hermes_audit_dir').catch(() => {
+                    toast.error('无法打开审计日志目录');
+                  });
                 }}
               >
-                {showSecret ? '隐藏' : '显示'}
+                打开审计归档目录
               </button>
             </div>
-          </div>
-        </div>
 
-        {/* Workspace selection */}
-        <div style={{
-          padding: '16px',
-          backgroundColor: 'var(--bg-card)',
-          borderRadius: 'var(--radius-md)',
-          border: '1px solid var(--border-subtle)',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: '12px',
-        }}>
-          <h3 style={{ margin: 0, fontSize: '0.9rem', fontWeight: 600, color: 'var(--text-primary)' }}>
-            工作区
-          </h3>
-          <select
-            value={selectedProjectId}
-            onChange={(e) => setSelectedProjectId(e.target.value)}
-            disabled={isRunning}
-            style={{
-              padding: '8px 10px',
-              backgroundColor: 'var(--bg-input)',
-              border: '1px solid var(--border-subtle)',
-              borderRadius: 'var(--radius-sm)',
-              color: 'var(--text-primary)',
-              fontSize: '0.85rem',
-              outline: 'none',
-              cursor: isRunning ? 'not-allowed' : 'pointer',
-            }}
-          >
-            <option value="">选择工作区...</option>
-            {projects.map((proj) => (
-              <option key={proj.id} value={proj.id}>
-                {proj.name} - {proj.root_path}
-              </option>
-            ))}
-          </select>
-          <p style={{ margin: 0, fontSize: '0.75rem', color: 'var(--text-tertiary)' }}>
-            指定 mcode acp 子进程的工作目录 (cwd)
-          </p>
-        </div>
-
-        {/* Start/Stop buttons */}
-        <div style={{ display: 'flex', gap: '12px' }}>
-          {!isRunning ? (
-            <>
-              <button
-                className="btn-primary"
-                onClick={handleStart}
-                disabled={starting || !appId || !appSecret || !selectedProjectId}
-                style={{
-                  flex: 1,
-                  padding: '10px 16px',
-                  fontSize: '0.9rem',
-                  fontWeight: 600,
-                  cursor: starting ? 'wait' : 'pointer',
-                  opacity: (starting || !appId || !appSecret || !selectedProjectId) ? 0.5 : 1,
-                }}
-              >
-                {starting ? '启动中...' : '启动 Hermes 服务'}
-              </button>
-              <button
-                onClick={handleSaveConfig}
-                disabled={isRunning}
-                style={{
-                  padding: '10px 16px',
-                  fontSize: '0.85rem',
-                  backgroundColor: 'var(--bg-elevated)',
-                  border: '1px solid var(--border-subtle)',
-                  borderRadius: 'var(--radius-sm)',
-                  cursor: 'pointer',
-                  color: 'var(--text-secondary)',
-                }}
-              >
-                仅保存配置
-              </button>
-            </>
-          ) : (
-            <button
-              onClick={handleStop}
-              disabled={stopping}
-              style={{
-                flex: 1,
-                padding: '10px 16px',
-                fontSize: '0.9rem',
-                fontWeight: 600,
-                backgroundColor: '#dc2626',
-                color: '#fff',
-                border: 'none',
-                borderRadius: 'var(--radius-sm)',
-                cursor: stopping ? 'wait' : 'pointer',
-                opacity: stopping ? 0.5 : 1,
-              }}
-            >
-              {stopping ? '停止中...' : '停止 Hermes 服务'}
-            </button>
-          )}
-        </div>
-
-        {/* Message log */}
-        <div style={{
-          padding: '16px',
-          backgroundColor: 'var(--bg-card)',
-          borderRadius: 'var(--radius-md)',
-          border: '1px solid var(--border-subtle)',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: '8px',
-          flex: 1,
-          minHeight: '160px',
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <h3 style={{ margin: 0, fontSize: '0.9rem', fontWeight: 600, color: 'var(--text-primary)' }}>
-              消息日志
-            </h3>
-            <button
-              onClick={() => {
-                invoke('open_hermes_audit_dir').catch(() => {
-                  toast.error('无法打开审计日志目录');
-                });
-              }}
-              style={{
-                fontSize: '0.75rem',
-                padding: '3px 8px',
-                backgroundColor: 'var(--bg-elevated)',
-                border: '1px solid var(--border-subtle)',
-                borderRadius: 'var(--radius-sm)',
-                color: 'var(--text-secondary)',
-                cursor: 'pointer',
-              }}
-            >
-              打开审计归档目录
-            </button>
-          </div>
-          <div
-            ref={logContainerRef}
-            style={{
-              flex: 1,
-              overflowY: 'auto',
-              fontSize: '0.8rem',
-              fontFamily: 'var(--font-mono, monospace)',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: '4px',
-              scrollbarWidth: 'thin',
-            }}
-          >
-            {status.log_entries.length === 0 ? (
-              <div style={{ color: 'var(--text-tertiary)', padding: '16px 0', textAlign: 'center', fontStyle: 'italic' }}>
-                暂无消息记录
-              </div>
-            ) : (
-              status.log_entries.map((entry, i) => (
-                <div
-                  key={i}
-                  style={{
-                    display: 'flex',
-                    gap: '8px',
-                    alignItems: 'baseline',
-                    padding: '4px 8px',
-                    borderRadius: 'var(--radius-sm)',
-                    backgroundColor: entry.direction === 'in'
-                      ? 'rgba(59, 130, 246, 0.05)'
-                      : 'rgba(16, 185, 129, 0.05)',
-                  }}
-                >
-                  <span style={{ color: 'var(--text-tertiary)', flexShrink: 0, fontSize: '0.7rem' }}>
-                    {entry.timestamp}
-                  </span>
-                  <span style={{
-                    flexShrink: 0,
-                    fontWeight: 600,
-                    color: entry.direction === 'in' ? '#3b82f6' : '#10b981',
-                    fontSize: '0.7rem',
-                  }}>
-                    {entry.direction === 'in' ? '\u2190 IN' : '\u2192 OUT'}
-                  </span>
-                  <span style={{ color: 'var(--text-secondary)', flexShrink: 0 }}>
-                    [{entry.chat_type === 'group' ? '\u7fa4' : '\u79c1'}] {entry.user_name}
-                  </span>
-                  <span style={{
-                    color: 'var(--text-primary)',
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap',
-                  }}>
-                    {entry.summary}
-                  </span>
+            <div ref={logContainerRef} className="hermes-log-box">
+              {status.log_entries.length === 0 ? (
+                <div style={{ color: 'var(--text-tertiary)', padding: '24px 0', textAlign: 'center', fontStyle: 'italic' }}>
+                  暂无消息记录
                 </div>
-              ))
-            )}
-          </div>
+              ) : (
+                status.log_entries.map((entry, i) => (
+                  <div key={i} className={`hermes-log-item ${entry.direction}`}>
+                    <span className="hermes-log-time">{entry.timestamp}</span>
+                    <span className={`hermes-log-dir ${entry.direction}`}>
+                      {entry.direction === 'in' ? '← IN' : '→ OUT'}
+                    </span>
+                    <span className="hermes-log-sender">
+                      [{entry.chat_type === 'group' ? '群' : '私'}] {entry.user_name}
+                    </span>
+                    <span className="hermes-log-summary">{entry.summary}</span>
+                  </div>
+                ))
+              )}
+            </div>
+          </section>
         </div>
+
+        {/* 右侧辅助栏：状态信息与操作指引（与远程连接页布局一致） */}
+        <aside className="hermes-side">
+          <section className="card remote-card">
+            <div className="remote-card-head">
+              <div className="remote-card-heading">
+                <h2 className="remote-card-title">运行状态</h2>
+              </div>
+            </div>
+            <ul className="remote-status-list">
+              <li>
+                <span className="remote-status-label">服务状态</span>
+                <span className="remote-status-value">
+                  <span className={`badge ${meta.badge}`}>
+                    <span className={`dot ${meta.dot}`} />
+                    {meta.label}
+                  </span>
+                </span>
+              </li>
+              <li>
+                <span className="remote-status-label">连接时长</span>
+                <span className="remote-status-value">
+                  {status.connected_since && status.state === 'connected' ? status.connected_since : '--'}
+                </span>
+              </li>
+              <li>
+                <span className="remote-status-label">消息总数</span>
+                <span className="remote-status-value">
+                  {status.log_entries.length} 条
+                </span>
+              </li>
+            </ul>
+          </section>
+
+          <section className="card remote-card">
+            <div className="remote-card-head">
+              <div className="remote-card-heading">
+                <h2 className="remote-card-title">使用说明</h2>
+              </div>
+            </div>
+            <ol className="remote-guide">
+              <li>在飞书开放平台创建企业自建应用，开启机器人功能并获取 App ID / Secret。</li>
+              <li>确保已授予机器人必要权限（如读取和发送消息），并选择对应的项目工作区。</li>
+              <li>点击「启动 Hermes 服务」，随后可在飞书内与机器人直接对话，触发本地 ACP 任务。</li>
+            </ol>
+          </section>
+        </aside>
       </div>
     </div>
   );

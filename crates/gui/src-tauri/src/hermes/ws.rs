@@ -48,6 +48,7 @@ pub struct LarkWsClient {
     client: Arc<LarkClient>,
     handler: Arc<dyn LarkEventHandler>,
     stop_signal: Arc<AtomicBool>,
+    start_time_ms: u64,
 }
 
 impl LarkWsClient {
@@ -56,10 +57,15 @@ impl LarkWsClient {
         handler: Arc<dyn LarkEventHandler>,
         stop_signal: Arc<AtomicBool>,
     ) -> Self {
+        let start_time_ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as u64;
         Self {
             client,
             handler,
             stop_signal,
+            start_time_ms,
         }
     }
 
@@ -283,6 +289,28 @@ impl LarkWsClient {
     }
 
     fn dispatch_event(&self, root: serde_json::Value) {
+        // 0. 过滤 Hermes 本次启动前产生的历史离线事件，防止重启时旧消息被重复处理
+        let event_time_ms = root
+            .get("event")
+            .and_then(|e| e.get("message"))
+            .and_then(|m| m.get("create_time"))
+            .and_then(parse_timestamp_ms)
+            .or_else(|| {
+                root.get("header")
+                    .and_then(|h| h.get("create_time"))
+                    .and_then(parse_timestamp_ms)
+            });
+
+        if let Some(create_time) = event_time_ms {
+            if create_time < self.start_time_ms {
+                println!(
+                    "[Hermes WS] 过滤启动前的历史离线事件 (event_time: {}, start_time: {})",
+                    create_time, self.start_time_ms
+                );
+                return;
+            }
+        }
+
         // 1. 根据 header.event_id 进行事件级去重，杜绝飞书服务端重发导致的重复触发
         if let Some(event_id) = root
             .get("header")
@@ -459,6 +487,29 @@ pub fn clean_text_mentions(raw: &str, mentions: Option<&[serde_json::Value]>) ->
     result.trim().to_string()
 }
 
+/// 解析飞书事件时间戳（支持毫秒字符串、秒字符串、数值毫秒及数值秒），统一返回毫秒
+fn parse_timestamp_ms(val: &serde_json::Value) -> Option<u64> {
+    let raw = if let Some(s) = val.as_str() {
+        s.parse::<u64>().ok()?
+    } else if let Some(n) = val.as_u64() {
+        n
+    } else if let Some(i) = val.as_i64() {
+        if i >= 0 {
+            i as u64
+        } else {
+            return None;
+        }
+    } else {
+        return None;
+    };
+
+    if raw < 10_000_000_000 {
+        Some(raw * 1000)
+    } else {
+        Some(raw)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -492,5 +543,25 @@ mod tests {
 
         let url_no_sid = "wss://msg-frontier.feishu.cn/ws/v2?fpid=493";
         assert_eq!(extract_service_id(url_no_sid), 0);
+    }
+
+    #[test]
+    fn test_parse_timestamp_ms() {
+        // 毫秒时间戳字符串
+        assert_eq!(
+            parse_timestamp_ms(&serde_json::json!("1700000000000")),
+            Some(1700000000000)
+        );
+        // 秒时间戳字符串，转为毫秒
+        assert_eq!(
+            parse_timestamp_ms(&serde_json::json!("1700000000")),
+            Some(1700000000000)
+        );
+        // 数值型
+        assert_eq!(
+            parse_timestamp_ms(&serde_json::json!(1700000000000u64)),
+            Some(1700000000000)
+        );
+        assert_eq!(parse_timestamp_ms(&serde_json::json!("invalid")), None);
     }
 }

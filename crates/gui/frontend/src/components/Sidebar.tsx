@@ -41,8 +41,8 @@ export default function Sidebar({
 	onAgentsClick,
 	onRemoteClick,
 	onHermesClick,
-	hermesEnabled = true,
-	remoteEnabled = true,
+	hermesEnabled = false,
+	remoteEnabled = false,
 	agentsEnabled = true,
 	onAddClick,
 	onDragStart,
@@ -209,12 +209,12 @@ export default function Sidebar({
 						}}
 					>
 						<span
+							className="hermes-nav-text"
 							style={{
 								overflow: "hidden",
 								textOverflow: "ellipsis",
 								whiteSpace: "nowrap",
 								flexGrow: 1,
-								fontWeight: 400,
 								display: "inline-flex",
 								alignItems: "center",
 								lineHeight: "1.2",

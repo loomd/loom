@@ -321,11 +321,73 @@ impl LarkClient {
 
         Ok(())
     }
+
+    /// 对消息添加表情回复 (Reaction)
+    pub fn add_reaction(&self, message_id: &str, emoji_type: &str) -> Result<(), String> {
+        let token = self.get_tenant_access_token()?;
+        let url = format!("{}/open-apis/im/v1/messages/{}/reactions", LARK_HOST, message_id);
+
+        let resp = self
+            .http_client
+            .post(&url)
+            .bearer_auth(token)
+            .json(&json!({
+                "reaction_type": {
+                    "emoji_type": emoji_type
+                }
+            }))
+            .send()
+            .map_err(|e| format!("添加表情回复网络错误: {}", e))?;
+
+        let body: serde_json::Value = resp
+            .json()
+            .map_err(|e| format!("解析添加表情回复响应失败: {}", e))?;
+
+        let code = body.get("code").and_then(|c| c.as_i64()).unwrap_or(-1);
+        if code != 0 {
+            let msg = body.get("msg").and_then(|m| m.as_str()).unwrap_or("未知错误");
+            return Err(format!("添加表情回复失败 ({}): {}", code, msg));
+        }
+
+        Ok(())
+    }
+    /// 发送 Markdown 卡片消息（无标题栏纯净排版，失败时自动降级为纯文本）
+    pub fn send_markdown_message(
+        &self,
+        receive_id_type: &str,
+        receive_id: &str,
+        markdown: &str,
+    ) -> Result<String, String> {
+        let card = build_clean_markdown_card(markdown);
+        match self.send_card_message(receive_id_type, receive_id, &card) {
+            Ok(msg_id) => Ok(msg_id),
+            Err(e) => {
+                eprintln!("[Hermes] 发送纯净 Markdown 卡片失败: {}，降级为纯文本发送", e);
+                self.send_text_message(receive_id_type, receive_id, markdown)
+            }
+        }
+    }
 }
 
 // ─── 卡片构建工具函数 ────────────────────────────────────────────────────────
 
+/// 构建无头部横幅的纯净 Markdown 卡片
+pub fn build_clean_markdown_card(markdown_content: &str) -> serde_json::Value {
+    json!({
+        "schema": "2.0",
+        "body": {
+            "elements": [
+                {
+                    "tag": "markdown",
+                    "content": markdown_content
+                }
+            ]
+        }
+    })
+}
+
 /// 构建 Agent 思考中/流式回答卡片
+#[allow(dead_code)]
 pub fn build_agent_stream_card(title: &str, markdown_content: &str, is_finished: bool) -> serde_json::Value {
     let status_tag = if is_finished {
         "已完成"
@@ -476,6 +538,16 @@ mod tests {
         let content = resolved_card["body"]["elements"][0]["content"].as_str().unwrap();
         assert!(content.contains("已批准"));
         assert!(content.contains("ou_123"));
+    }
+
+    #[test]
+    fn test_build_clean_markdown_card() {
+        let card = build_clean_markdown_card("## 标题\n- 列表项\n```rust\nlet x = 1;\n```");
+        assert_eq!(card["schema"], "2.0");
+        assert!(card.get("header").is_none(), "纯净卡片不应包含彩色头部横幅");
+        let body_elements = card["body"]["elements"].as_array().unwrap();
+        assert_eq!(body_elements[0]["tag"], "markdown");
+        assert!(body_elements[0]["content"].as_str().unwrap().contains("## 标题"));
     }
 
     #[test]

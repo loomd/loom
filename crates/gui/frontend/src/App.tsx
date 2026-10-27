@@ -151,11 +151,11 @@ function App() {
 
 	const [hermesEnabled, setHermesEnabled] = useState<boolean>(() => {
 		const saved = safeGetItem("loom_hermes_enabled");
-		return saved !== null ? saved === "true" : true;
+		return saved === "true";
 	});
 	const [remoteEnabled, setRemoteEnabled] = useState<boolean>(() => {
 		const saved = safeGetItem("loom_remote_enabled");
-		return saved !== null ? saved === "true" : true;
+		return saved === "true";
 	});
 	const [agentsGuideEnabled, setAgentsGuideEnabled] = useState<boolean>(() => {
 		const saved = safeGetItem("loom_agents_guide_enabled");

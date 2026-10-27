@@ -2588,5 +2588,190 @@ body.theme-day select.input option {
   justify-content: center;
 }
 
+/* ─── Hermes Page ─────────────────────────────────────────── */
+.hermes-page {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  width: 100%;
+  background: var(--bg-base);
+  color: var(--text-primary);
+  overflow: hidden;
+}
+
+.hermes-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 24px 24px 28px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 300px;
+  gap: 20px;
+  align-items: start;
+  max-width: 1180px;
+  margin: 0 auto;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.hermes-main {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+
+.hermes-side {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+
+.hermes-log-box {
+  padding: 10px 12px;
+  background: var(--bg-base);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  min-height: 200px;
+  max-height: 340px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: var(--fs-12);
+  scrollbar-width: thin;
+}
+
+.hermes-log-item {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+}
+
+.hermes-log-item.in {
+  background: rgba(59, 130, 246, 0.08);
+}
+
+.hermes-log-item.out {
+  background: rgba(16, 185, 129, 0.08);
+}
+
+.hermes-log-time {
+  font-size: 10px;
+  color: var(--text-tertiary);
+  flex-shrink: 0;
+}
+
+.hermes-log-dir {
+  font-size: 10px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.hermes-log-dir.in {
+  color: var(--accent-blue);
+}
+
+.hermes-log-dir.out {
+  color: var(--accent-emerald);
+}
+
+.hermes-log-sender {
+  font-size: var(--fs-11);
+  color: var(--text-secondary);
+  flex-shrink: 0;
+}
+
+.hermes-log-summary {
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 1080px) {
+  .hermes-body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* ─── Hermes Gradient Accents ────────────────────────────── */
+@keyframes hermes-aurora-flow {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+.remote-title.hermes-gradient-title {
+  background: linear-gradient(
+    135deg,
+    #c084fc 0%,
+    #818cf8 25%,
+    #38bdf8 50%,
+    #2dd4bf 75%,
+    #c084fc 100%
+  );
+  background-size: 240% 240%;
+  animation: hermes-aurora-flow 7s ease-in-out infinite;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+  display: inline-block;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  filter: drop-shadow(0 2px 10px rgba(192, 132, 252, 0.16));
+}
+
+.nav-item .hermes-nav-text {
+  background: linear-gradient(
+    135deg,
+    #c084fc 0%,
+    #818cf8 25%,
+    #38bdf8 50%,
+    #2dd4bf 75%,
+    #c084fc 100%
+  );
+  background-size: 220% 220%;
+  animation: hermes-aurora-flow 6s ease-in-out infinite;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+  display: inline-flex;
+  font-weight: 500;
+  letter-spacing: 0.2px;
+  transition: opacity 0.2s ease, filter 0.2s ease;
+  opacity: 0.85;
+}
+
+.nav-item:hover .hermes-nav-text {
+  opacity: 1;
+}
+
+.nav-item.active .hermes-nav-text {
+  opacity: 1;
+  font-weight: 600;
+  filter: drop-shadow(0 0 6px rgba(192, 132, 252, 0.22));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .remote-title.hermes-gradient-title,
+  .nav-item .hermes-nav-text {
+    animation: none;
+    background-size: 100% 100%;
+  }
+}
+
+
 
 

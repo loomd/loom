@@ -55,8 +55,8 @@ export default function RightSidebar({
   onDragEnd,
   onRemoteClick,
   onHermesClick,
-  hermesEnabled = true,
-  remoteEnabled = true,
+  hermesEnabled = false,
+  remoteEnabled = false,
   agentsEnabled = true,
 }: RightSidebarProps) {
   const { t } = useI18n();
@@ -239,12 +239,12 @@ export default function RightSidebar({
             }}
           >
             <span
+              className="hermes-nav-text"
               style={{
                 overflow: "hidden",
                 textOverflow: "ellipsis",
                 whiteSpace: "nowrap",
                 flexGrow: 1,
-                fontWeight: 400,
                 display: "inline-flex",
                 alignItems: "center",
                 lineHeight: "1.2",

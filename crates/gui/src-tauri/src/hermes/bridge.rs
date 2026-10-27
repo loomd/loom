@@ -11,8 +11,7 @@ use tauri::{AppHandle, Emitter};
 
 use super::audit::{current_date_str, current_timestamp_str, AuditLogger, AuditRecord};
 use super::client::{
-    build_agent_stream_card, build_permission_request_card, build_permission_resolved_card,
-    LarkClient,
+    build_permission_request_card, build_permission_resolved_card, LarkClient,
 };
 use super::ws::{LarkEventHandler, LarkWsClient};
 use crate::acp::match_model_option;
@@ -23,6 +22,7 @@ pub enum HermesCommand {
     NewSession,
     ListModels,
     SwitchModel(String),
+    Stop,
 }
 
 pub fn parse_hermes_command(text: &str) -> Option<HermesCommand> {
@@ -34,6 +34,14 @@ pub fn parse_hermes_command(text: &str) -> Option<HermesCommand> {
         || trimmed.eq_ignore_ascii_case("help")
     {
         return Some(HermesCommand::Help);
+    }
+
+    // 匹配 /stop / @stop / stop
+    if trimmed.eq_ignore_ascii_case("/stop")
+        || trimmed.eq_ignore_ascii_case("@stop")
+        || trimmed.eq_ignore_ascii_case("stop")
+    {
+        return Some(HermesCommand::Stop);
     }
 
     // 匹配 /new / @new / new
@@ -109,13 +117,13 @@ struct PendingPermission {
 }
 
 struct ActiveChatSession {
-    card_message_id: Option<String>,
-    fallback_text_mode: bool,
+    current_chunk_buffer: String,
     accumulated_content: String,
     #[allow(dead_code)]
     last_updated: Instant,
     is_finished: bool,
     chat_type: String,
+    current_message_id: Option<String>,
 }
 
 struct PendingSessionRequest {
@@ -337,6 +345,21 @@ impl HermesBridge {
                     }
                 }
             }
+
+            // 若非主动停止且有在途任务，向所有在途会话发送异常终止通知并收尾
+            if !self_clone.stop_signal.load(Ordering::Relaxed) {
+                let mut chats = self_clone.active_chats.lock().unwrap();
+                for (cid, s) in chats.iter_mut() {
+                    if !s.is_finished {
+                        s.is_finished = true;
+                        let _ = self_clone.client.send_text_message(
+                            "chat_id",
+                            cid,
+                            "❌ [Hermes] Agent 后台进程异常断开，当前任务已中断。",
+                        );
+                    }
+                }
+            }
         });
 
         Ok(())
@@ -454,6 +477,15 @@ impl HermesBridge {
                             if let Err(e) = self.send_to_acp(&prompt_req) {
                                 eprintln!("[Hermes] 向 ACP 发送初始 prompt 失败: {}", e);
                                 self.add_log("out", "Hermes", &chat_type, &format!("向 ACP 发送初始 prompt 失败: {}", e));
+                                let _ = self.client.send_text_message(
+                                    "chat_id",
+                                    &chat_id,
+                                    &format!("❌ [Hermes] 发送初始指令至 Agent 失败: {}", e),
+                                );
+                                let mut chats = self.active_chats.lock().unwrap();
+                                if let Some(s) = chats.get_mut(&chat_id) {
+                                    s.is_finished = true;
+                                }
                             }
                         } else {
                             let _ = self.client.send_text_message(
@@ -472,12 +504,52 @@ impl HermesBridge {
                 }
             }
 
+            // 检查是否有 pending_session_requests 出错
+            if let Some(err) = parsed.get("error") {
+                if let Some(pending) = self.pending_session_requests.lock().unwrap().remove(&id) {
+                    let err_msg = err.get("message").and_then(|m| m.as_str()).unwrap_or("创建会话失败");
+                    let _ = self.client.send_text_message(
+                        "chat_id",
+                        &pending.chat_id,
+                        &format!("❌ [Hermes] 启动新会话失败: {}", err_msg),
+                    );
+                    let mut chats = self.active_chats.lock().unwrap();
+                    if let Some(s) = chats.get_mut(&pending.chat_id) {
+                        s.is_finished = true;
+                    }
+                }
+            }
+
             // 如果是 session/prompt 的完成响应
             if parsed.get("result").is_some() || parsed.get("error").is_some() {
                 let target_chat_id = parsed
                     .get("id")
                     .and_then(|i| i.as_i64())
                     .and_then(|req_id| self.pending_prompt_to_chat.lock().unwrap().remove(&req_id));
+
+                if let Some(err) = parsed.get("error") {
+                    let err_msg = err
+                        .get("message")
+                        .and_then(|m| m.as_str())
+                        .unwrap_or("ACP 返回执行错误");
+                    eprintln!("[Hermes] ACP 回复错误: {}", err);
+                    if let Some(ref cid) = target_chat_id {
+                        let _ = self.client.send_text_message(
+                            "chat_id",
+                            cid,
+                            &format!("❌ [Hermes] 任务执行出错: {}", err_msg),
+                        );
+                    } else {
+                        let chats = self.active_chats.lock().unwrap();
+                        for cid in chats.keys() {
+                            let _ = self.client.send_text_message(
+                                "chat_id",
+                                cid,
+                                &format!("❌ [Hermes] 任务执行出错: {}", err_msg),
+                            );
+                        }
+                    }
+                }
 
                 if let Some(chat_id) = target_chat_id {
                     self.flush_chat_finish(&chat_id);
@@ -507,127 +579,191 @@ impl HermesBridge {
         }
     }
 
-    /// 处理流式内容更新（仅在内存累积文本，不实时请求飞书更新卡片，彻底规避飞书 API 频控限制）
-    fn handle_session_update(&self, params: &serde_json::Value) {
-        let content_chunk = extract_content_chunk(params);
-        if content_chunk.is_empty() {
+    /// 发送单段回复文本（采用纯净 Markdown 卡片排版，异常时自动降级纯文本）
+    fn send_segment(&self, chat_id: &str, chat_type: &str, segment: &str) {
+        if segment.trim().is_empty() {
             return;
         }
+        if let Err(e) = self.client.send_markdown_message("chat_id", chat_id, segment) {
+            eprintln!("[Hermes] 发送回复文本段落失败: {}", e);
+        }
+        self.add_log(
+            "out",
+            "Hermes Agent",
+            chat_type,
+            &format!("发送回复: {}", truncate_str(segment, 40)),
+        );
+    }
 
+    /// 提取并清空指定会话的当前文本缓冲，将其累加至总回复内容中
+    fn flush_chat_buffer(&self, target_chat_id: &str) -> Option<(String, String)> {
+        let mut chats = self.active_chats.lock().unwrap();
+        let session = chats.get_mut(target_chat_id)?;
+        let segment = session.current_chunk_buffer.trim().to_string();
+        if segment.is_empty() {
+            return None;
+        }
+        if !session.accumulated_content.is_empty() {
+            session.accumulated_content.push_str("\n\n");
+        }
+        session.accumulated_content.push_str(&segment);
+        session.current_chunk_buffer.clear();
+        session.current_message_id = None;
+        Some((session.chat_type.clone(), segment))
+    }
+
+    /// 处理流式内容更新：
+    /// - 收到正式回复增量 (agent_message_chunk) 时在内存缓冲
+    /// - 遇到工具调用、工具更新或思考过程时，立即将当前已缓冲文本作为独立段落发出
+    /// - 彻底忽略思考过程和工具调用本身，不向飞书用户展示中间过程
+    fn handle_session_update(&self, params: &serde_json::Value) {
         let sid = params.get("sessionId").and_then(|s| s.as_str());
         let target_chat_id = sid.and_then(|s| self.session_to_chat.lock().unwrap().get(s).cloned());
 
-        let mut chats = self.active_chats.lock().unwrap();
-        for (chat_id, session) in chats.iter_mut() {
-            if session.is_finished {
-                continue;
-            }
-            if let Some(ref target) = target_chat_id {
-                if chat_id != target {
-                    continue;
-                }
-            }
-            session.accumulated_content.push_str(&content_chunk);
-        }
-    }
+        let update = match params.get("update") {
+            Some(u) => u,
+            None => return,
+        };
 
-    /// 在单会话任务执行完毕后，将该群聊/单聊的卡片状态更新为最终内容
-    fn flush_chat_finish(&self, target_chat_id: &str) {
-        let mut chats = self.active_chats.lock().unwrap();
-        if let Some(session) = chats.get_mut(target_chat_id) {
-            if session.is_finished {
+        let session_update = update
+            .get("sessionUpdate")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+
+        if session_update == "agent_message_chunk" {
+            let chunk = update
+                .pointer("/content/text")
+                .and_then(|t| t.as_str())
+                .unwrap_or("");
+            if chunk.is_empty() {
                 return;
             }
-            session.is_finished = true;
-            if let Some(ref card_msg_id) = session.card_message_id {
-                let card = build_agent_stream_card("Hermes Agent", &session.accumulated_content, true);
-                if let Err(e) = self.client.update_card_message(card_msg_id, &card) {
-                    eprintln!("[Hermes] 完成态更新卡片失败: {}，尝试降级发送纯文本", e);
-                    let reply_text = if session.accumulated_content.trim().is_empty() {
-                        "🤖 [Hermes] 任务已执行完毕。".to_string()
-                    } else {
-                        format!("🤖 [Hermes]\n{}", session.accumulated_content)
-                    };
-                    let _ = self.client.send_text_message("chat_id", target_chat_id, &reply_text);
-                }
-            } else if session.fallback_text_mode {
-                let reply_text = if session.accumulated_content.trim().is_empty() {
-                    "🤖 [Hermes] 任务已执行完毕。".to_string()
-                } else {
-                    format!("🤖 [Hermes]\n{}", session.accumulated_content)
-                };
-                let _ = self.client.send_text_message("chat_id", target_chat_id, &reply_text);
-            }
-            let c_type = session.chat_type.clone();
-            self.add_log("out", "Hermes Agent", &c_type, &format!("回答完成: {}", truncate_str(&session.accumulated_content, 40)));
 
-            // 审计落盘：回答完成
-            let cur_m = self.current_model.lock().unwrap().clone();
-            self.audit_logger.record(&AuditRecord {
-                timestamp: current_timestamp_str(),
-                date: current_date_str(),
-                direction: "out".to_string(),
-                event_type: "agent_reply".to_string(),
-                chat_id: target_chat_id.to_string(),
-                chat_type: c_type,
-                sender_id: "Hermes Agent".to_string(),
-                model: if cur_m.is_empty() { None } else { Some(cur_m) },
-                content: session.accumulated_content.clone(),
-                meta: json!({
-                    "card_message_id": session.card_message_id,
-                    "fallback_text_mode": session.fallback_text_mode
-                }),
-            });
+            let msg_id = update
+                .get("messageId")
+                .and_then(|m| m.as_str())
+                .map(|s| s.to_string());
+
+            let mut to_flush = Vec::new();
+            {
+                let mut chats = self.active_chats.lock().unwrap();
+                for (chat_id, session) in chats.iter_mut() {
+                    if session.is_finished {
+                        continue;
+                    }
+                    if let Some(ref target) = target_chat_id {
+                        if chat_id != target {
+                            continue;
+                        }
+                    }
+
+                    // 若 messageId 发生变化且当前缓冲非空，先冲刷上一条消息段落
+                    if let Some(ref mid) = msg_id {
+                        if let Some(ref cur_mid) = session.current_message_id {
+                            if cur_mid != mid {
+                                let segment = session.current_chunk_buffer.trim().to_string();
+                                if !segment.is_empty() {
+                                    if !session.accumulated_content.is_empty() {
+                                        session.accumulated_content.push_str("\n\n");
+                                    }
+                                    session.accumulated_content.push_str(&segment);
+                                    session.current_chunk_buffer.clear();
+                                    to_flush.push((chat_id.clone(), session.chat_type.clone(), segment));
+                                }
+                            }
+                        }
+                        session.current_message_id = Some(mid.clone());
+                    }
+
+                    session.current_chunk_buffer.push_str(chunk);
+                    session.last_updated = Instant::now();
+                }
+            }
+
+            for (cid, ctype, seg) in to_flush {
+                self.send_segment(&cid, &ctype, &seg);
+            }
+        } else if session_update == "tool_call"
+            || session_update == "tool_call_update"
+            || session_update == "agent_thought_chunk"
+        {
+            // 当 Agent 转向工具调用或思考过程时：
+            // 若当前段落存在已缓冲的正式文本，立即将其作为独立段落发出；
+            // 严格忽略思考过程和工具调用本身，不向群里发送任何思考或工具状态。
+            let mut to_flush = Vec::new();
+            {
+                let mut chats = self.active_chats.lock().unwrap();
+                for (chat_id, session) in chats.iter_mut() {
+                    if session.is_finished {
+                        continue;
+                    }
+                    if let Some(ref target) = target_chat_id {
+                        if chat_id != target {
+                            continue;
+                        }
+                    }
+                    let segment = session.current_chunk_buffer.trim().to_string();
+                    if !segment.is_empty() {
+                        if !session.accumulated_content.is_empty() {
+                            session.accumulated_content.push_str("\n\n");
+                        }
+                        session.accumulated_content.push_str(&segment);
+                        session.current_chunk_buffer.clear();
+                        session.current_message_id = None;
+                        to_flush.push((chat_id.clone(), session.chat_type.clone(), segment));
+                    }
+                }
+            }
+
+            for (cid, ctype, seg) in to_flush {
+                self.send_segment(&cid, &ctype, &seg);
+            }
         }
     }
 
-    /// 在文本输出完毕后，一次性将最终结果更新到飞书卡片（或纯文本发送），彻底规避飞书频控
-    fn flush_all_active_chats_finish(&self) {
-        let mut chats = self.active_chats.lock().unwrap();
-        for (chat_id, session) in chats.iter_mut() {
-            if session.is_finished {
-                continue;
-            }
-            session.is_finished = true;
-            if let Some(ref card_msg_id) = session.card_message_id {
-                let card = build_agent_stream_card("Hermes Agent", &session.accumulated_content, true);
-                if let Err(e) = self.client.update_card_message(card_msg_id, &card) {
-                    eprintln!("[Hermes] 完成态更新卡片失败: {}，尝试降级发送纯文本", e);
-                    let reply_text = if session.accumulated_content.trim().is_empty() {
-                        "🤖 [Hermes] 任务已执行完毕。".to_string()
-                    } else {
-                        format!("🤖 [Hermes]\n{}", session.accumulated_content)
-                    };
-                    let _ = self.client.send_text_message("chat_id", chat_id, &reply_text);
-                }
-            } else if session.fallback_text_mode {
-                let reply_text = if session.accumulated_content.trim().is_empty() {
-                    "🤖 [Hermes] 任务已执行完毕。".to_string()
-                } else {
-                    format!("🤖 [Hermes]\n{}", session.accumulated_content)
-                };
-                let _ = self.client.send_text_message("chat_id", chat_id, &reply_text);
-            }
-            let c_type = session.chat_type.clone();
-            self.add_log("out", "Hermes Agent", &c_type, &format!("回答完成: {}", truncate_str(&session.accumulated_content, 40)));
+    /// 在任务执行完毕后，冲刷剩余文本段落，并落盘审计日志
+    fn flush_chat_finish(&self, target_chat_id: &str) {
+        if let Some((chat_type, segment)) = self.flush_chat_buffer(target_chat_id) {
+            self.send_segment(target_chat_id, &chat_type, &segment);
+        }
 
-            // 审计落盘：回答完成
-            let cur_m = self.current_model.lock().unwrap().clone();
-            self.audit_logger.record(&AuditRecord {
-                timestamp: current_timestamp_str(),
-                date: current_date_str(),
-                direction: "out".to_string(),
-                event_type: "agent_reply".to_string(),
-                chat_id: chat_id.clone(),
-                chat_type: c_type,
-                sender_id: "Hermes Agent".to_string(),
-                model: if cur_m.is_empty() { None } else { Some(cur_m) },
-                content: session.accumulated_content.clone(),
-                meta: json!({
-                    "card_message_id": session.card_message_id,
-                    "fallback_text_mode": session.fallback_text_mode
-                }),
-            });
+        let (c_type, total_content) = {
+            let mut chats = self.active_chats.lock().unwrap();
+            if let Some(session) = chats.get_mut(target_chat_id) {
+                if session.is_finished {
+                    return;
+                }
+                session.is_finished = true;
+                (session.chat_type.clone(), session.accumulated_content.clone())
+            } else {
+                return;
+            }
+        };
+
+        // 审计落盘：回答完成
+        let cur_m = self.current_model.lock().unwrap().clone();
+        self.audit_logger.record(&AuditRecord {
+            timestamp: current_timestamp_str(),
+            date: current_date_str(),
+            direction: "out".to_string(),
+            event_type: "agent_reply".to_string(),
+            chat_id: target_chat_id.to_string(),
+            chat_type: c_type,
+            sender_id: "Hermes Agent".to_string(),
+            model: if cur_m.is_empty() { None } else { Some(cur_m) },
+            content: total_content,
+            meta: json!({}),
+        });
+    }
+
+    /// 冲刷所有活跃会话的剩余文本
+    fn flush_all_active_chats_finish(&self) {
+        let chat_ids: Vec<String> = {
+            let chats = self.active_chats.lock().unwrap();
+            chats.keys().cloned().collect()
+        };
+        for cid in chat_ids {
+            self.flush_chat_finish(&cid);
         }
     }
 
@@ -659,6 +795,11 @@ impl HermesBridge {
             None => return,
         };
 
+        // 在发送权限卡片前，先冲刷前面已生成的说明文本段落
+        if let Some((chat_type, segment)) = self.flush_chat_buffer(&target_chat_id) {
+            self.send_segment(&target_chat_id, &chat_type, &segment);
+        }
+
         let perm_card = build_permission_request_card(&uuid_str, tool_name, description);
         let msg_id = match self.client.send_card_message("chat_id", &target_chat_id, &perm_card) {
             Ok(id) => Some(id),
@@ -685,12 +826,54 @@ impl HermesBridge {
         let reply = "🤖 **Hermes 指令帮助**\n\n\
                      支持的快捷指令如下：\n\
                      - `/help` : 查看指令帮助说明\n\
+                     - `/stop` : 强制停止当前正在回答的任务\n\
                      - `/new` : 重置当前会话，开启全新的上下文对话\n\
                      - `/models` : 查看当前生效模型及支持切换的模型列表\n\
                      - `/model <模型名称>` (或 `/models <名称>`) : 切换指定模型并自动开启新会话\n\n\
                      💡 **使用提示:** 在群聊中可直接 `@机器人 /help` 或在私聊中直接发送。";
         let _ = self.client.send_text_message("chat_id", chat_id, reply);
         self.add_log("out", "Hermes", chat_type, "已返回指令帮助指南");
+    }
+
+    fn handle_command_stop(&self, chat_id: &str, chat_type: &str) {
+        let sid_opt = self.chat_to_session.lock().unwrap().get(chat_id).cloned();
+
+        let mut was_running = false;
+
+        {
+            let mut chats = self.active_chats.lock().unwrap();
+            if let Some(session) = chats.get_mut(chat_id) {
+                if !session.is_finished {
+                    was_running = true;
+                    session.is_finished = true;
+                }
+            }
+        }
+
+        if was_running {
+            // 向 ACP 发送 session/cancel
+            if let Some(ref sid) = sid_opt {
+                let cancel_notify = json!({
+                    "jsonrpc": "2.0",
+                    "method": "session/cancel",
+                    "params": {
+                        "sessionId": sid
+                    }
+                });
+                let _ = self.send_to_acp(&cancel_notify);
+            }
+
+            // 冲刷中止前已产生的部分文本段落
+            if let Some((c_type, segment)) = self.flush_chat_buffer(chat_id) {
+                self.send_segment(chat_id, &c_type, &segment);
+            }
+
+            let _ = self.client.send_text_message("chat_id", chat_id, "🛑 [Hermes] 任务已手动中止。");
+            self.add_log("out", "Hermes", chat_type, "任务已手动强制停止");
+        } else {
+            let _ = self.client.send_text_message("chat_id", chat_id, "ℹ️ [Hermes] 当前没有正在执行的任务。");
+            self.add_log("out", "Hermes", chat_type, "当前无正在执行任务，忽略 /stop");
+        }
     }
 
     fn handle_command_new(&self, chat_id: &str, chat_type: &str) {
@@ -854,11 +1037,27 @@ impl LarkEventHandler for HermesBridge {
         &self,
         chat_id: String,
         chat_type: String,
-        _message_id: String,
+        message_id: String,
         sender_open_id: String,
         text: String,
     ) {
-        // 会话在途互斥保护：若当前会话上一条任务还在执行中，忽略并发重发消息，避免并发冲突与双重回复
+        let maybe_cmd = parse_hermes_command(&text);
+
+        // 1. /stop 指令优先响应，绕过在途互斥拦截以强制中止当前任务
+        if let Some(HermesCommand::Stop) = maybe_cmd {
+            if !message_id.is_empty() {
+                let client = self.client.clone();
+                let mid = message_id.clone();
+                thread::spawn(move || {
+                    let _ = client.add_reaction(&mid, "OK");
+                });
+            }
+            self.add_log("in", &sender_open_id, &chat_type, &text);
+            self.handle_command_stop(&chat_id, &chat_type);
+            return;
+        }
+
+        // 2. 会话在途互斥保护：若当前会话上一条任务还在执行中，忽略并发重发消息，避免并发冲突与双重回复
         {
             let chats = self.active_chats.lock().unwrap();
             if let Some(existing) = chats.get(&chat_id) {
@@ -867,6 +1066,15 @@ impl LarkEventHandler for HermesBridge {
                     return;
                 }
             }
+        }
+
+        // 3. 开始处理消息：第一时间对用户消息添加表情回复 (Reaction)
+        if !message_id.is_empty() {
+            let client = self.client.clone();
+            let mid = message_id.clone();
+            thread::spawn(move || {
+                let _ = client.add_reaction(&mid, "OK");
+            });
         }
 
         self.add_log("in", &sender_open_id, &chat_type, &text);
@@ -883,11 +1091,11 @@ impl LarkEventHandler for HermesBridge {
             sender_id: sender_open_id.clone(),
             model: if cur_m.is_empty() { None } else { Some(cur_m) },
             content: text.clone(),
-            meta: json!({ "message_id": _message_id }),
+            meta: json!({ "message_id": message_id }),
         });
 
-        // 指令判断：/help / /new / /models / /model <name>
-        if let Some(cmd) = parse_hermes_command(&text) {
+        // 4. 其他指令判断：/help / /new / /models / /model <name>
+        if let Some(cmd) = maybe_cmd {
             match cmd {
                 HermesCommand::Help => {
                     self.handle_command_help(&chat_id, &chat_type);
@@ -905,41 +1113,27 @@ impl LarkEventHandler for HermesBridge {
                     self.handle_command_switch_model(&chat_id, &chat_type, &target);
                     return;
                 }
+                HermesCommand::Stop => unreachable!(),
             }
         }
 
-        // 1. 尝试发送思考中占位卡片，失败则降级为纯文本提示
-        let init_card = build_agent_stream_card("Hermes Agent", "正在分析任务...", false);
-        let (card_msg_id, fallback_text_mode) = match self.client.send_card_message("chat_id", &chat_id, &init_card) {
-            Ok(id) => {
-                self.add_log("out", "Hermes", &chat_type, "已发送交互卡片: 正在分析任务...");
-                (Some(id), false)
-            }
-            Err(e) => {
-                eprintln!("[Hermes] 发送初始卡片失败: {}，尝试降级为纯文本", e);
-                self.add_log("out", "Hermes", &chat_type, &format!("发送卡片失败 ({})，降级为纯文本", e));
-                let _ = self.client.send_text_message("chat_id", &chat_id, "🤖 [Hermes] 收到消息，正在分析任务...");
-                (None, true)
-            }
-        };
-
-        // 2. 注册为当前活跃会话
+        // 5. 注册为当前活跃会话（无占位卡片，待收到 Agent 正式文本段落时直接发送）
         {
             let mut chats = self.active_chats.lock().unwrap();
             chats.insert(
                 chat_id.clone(),
                 ActiveChatSession {
-                    card_message_id: card_msg_id,
-                    fallback_text_mode,
+                    current_chunk_buffer: String::new(),
                     accumulated_content: String::new(),
                     last_updated: Instant::now(),
                     is_finished: false,
                     chat_type: chat_type.clone(),
+                    current_message_id: None,
                 },
             );
         }
 
-        // 3. 检查当前 chat_id 是否已有绑定的独立 Session
+        // 7. 检查当前 chat_id 是否已有绑定的独立 Session
         let session_id_opt = {
             let mut chat_to_sess = self.chat_to_session.lock().unwrap();
             if let Some(sid) = chat_to_sess.get(&chat_id).cloned() {
@@ -979,6 +1173,15 @@ impl LarkEventHandler for HermesBridge {
                 if let Err(e) = self.send_to_acp(&prompt_req) {
                     eprintln!("[Hermes] 向 ACP 发送 prompt 失败: {}", e);
                     self.add_log("out", "Hermes", &chat_type, &format!("向 ACP 发送 prompt 失败: {}", e));
+                    let _ = self.client.send_text_message(
+                        "chat_id",
+                        &chat_id,
+                        &format!("❌ [Hermes] 发送指令至 Agent 失败: {}", e),
+                    );
+                    let mut chats = self.active_chats.lock().unwrap();
+                    if let Some(s) = chats.get_mut(&chat_id) {
+                        s.is_finished = true;
+                    }
                 }
             }
             None => {
@@ -1087,6 +1290,7 @@ fn resolve_acp_executable() -> Result<String, String> {
     Ok("mcode".to_string())
 }
 
+#[cfg(test)]
 fn extract_content_chunk(params: &serde_json::Value) -> String {
     let mut chunk = String::new();
     if let Some(update) = params.get("update") {
@@ -1144,6 +1348,10 @@ mod tests {
         assert_eq!(parse_hermes_command("/help"), Some(HermesCommand::Help));
         assert_eq!(parse_hermes_command("@help"), Some(HermesCommand::Help));
         assert_eq!(parse_hermes_command("help"), Some(HermesCommand::Help));
+
+        assert_eq!(parse_hermes_command("/stop"), Some(HermesCommand::Stop));
+        assert_eq!(parse_hermes_command("@stop"), Some(HermesCommand::Stop));
+        assert_eq!(parse_hermes_command("stop"), Some(HermesCommand::Stop));
 
         assert_eq!(parse_hermes_command("/new"), Some(HermesCommand::NewSession));
         assert_eq!(parse_hermes_command("@new"), Some(HermesCommand::NewSession));

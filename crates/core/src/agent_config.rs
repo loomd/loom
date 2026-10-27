@@ -154,7 +154,7 @@ fn detect_opencode_version(executable_path: Option<&str>) -> Option<String> {
     None
 }
 
-/// 联网查询 Agent 最新发布版本（优先国内 npmmirror，回退至 npmjs 官方 registry）
+/// 联网查询 Agent 最新发布版本（查询 npmjs 官方 registry）
 pub fn fetch_agent_latest_version(agent_name: &str) -> Result<String, String> {
     let pkg_name = match agent_name.to_lowercase().as_str() {
         "opencode" => "opencode-ai",
@@ -168,36 +168,23 @@ pub fn fetch_agent_latest_version(agent_name: &str) -> Result<String, String> {
         .build()
         .map_err(|e| format!("Failed to build HTTP client: {}", e))?;
 
-    let urls = [
-        format!("https://registry.npmmirror.com/{}/latest", pkg_name),
-        format!("https://registry.npmjs.org/{}/latest", pkg_name),
-    ];
+    let url = format!("https://registry.npmjs.org/{}/latest", pkg_name);
 
-    let mut last_err = String::new();
-    for url in urls {
-        match client.get(&url).header("User-Agent", "loom").send() {
-            Ok(resp) => {
-                if resp.status().is_success() {
-                    if let Ok(json) = resp.json::<serde_json::Value>() {
-                        if let Some(ver) = json.get("version").and_then(|v| v.as_str()) {
-                            return Ok(ver.to_string());
-                        }
+    match client.get(&url).header("User-Agent", "loom").send() {
+        Ok(resp) => {
+            if resp.status().is_success() {
+                if let Ok(json) = resp.json::<serde_json::Value>() {
+                    if let Some(ver) = json.get("version").and_then(|v| v.as_str()) {
+                        return Ok(ver.to_string());
                     }
-                } else {
-                    last_err = format!("HTTP {}", resp.status());
                 }
-            }
-            Err(e) => {
-                last_err = e.to_string();
+                Err("Failed to parse version from response".to_string())
+            } else {
+                Err(format!("HTTP {}", resp.status()))
             }
         }
+        Err(e) => Err(e.to_string()),
     }
-
-    Err(if last_err.is_empty() {
-        "Failed to fetch latest version".to_string()
-    } else {
-        last_err
-    })
 }
 
 pub fn discover_agents() -> DiscoveryOverview {
