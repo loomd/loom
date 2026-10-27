@@ -54,6 +54,12 @@ interface Props {
 	onShellBorderColorChange?: (color: string) => void;
 	shellBorderWidth?: string;
 	onShellBorderWidthChange?: (width: string) => void;
+	hermesEnabled?: boolean;
+	onHermesEnabledChange?: (enabled: boolean) => void;
+	remoteEnabled?: boolean;
+	onRemoteEnabledChange?: (enabled: boolean) => void;
+	agentsGuideEnabled?: boolean;
+	onAgentsGuideEnabledChange?: (enabled: boolean) => void;
 }
 
 const PRESETS = [
@@ -123,8 +129,6 @@ export default function GeneralSettingsTab({
 	onCheckUpdate,
 	onInstallUpdate,
 	onSkipVersion,
-	leftPanelEnabled = true,
-	onLeftPanelEnabledChange,
 	rightPanelEnabled = false,
 	onRightPanelEnabledChange,
 	topPanelEnabled = false,
@@ -137,6 +141,12 @@ export default function GeneralSettingsTab({
 	onShellBorderColorChange,
 	shellBorderWidth = "1px",
 	onShellBorderWidthChange,
+	hermesEnabled = true,
+	onHermesEnabledChange,
+	remoteEnabled = true,
+	onRemoteEnabledChange,
+	agentsGuideEnabled = true,
+	onAgentsGuideEnabledChange,
 }: Props) {
 	const { t, language, setLanguage } = useI18n();
 	const toast = useToast();
@@ -1203,7 +1213,7 @@ export default function GeneralSettingsTab({
 					</div>
 
 					{/* Fixed Docked Project Panels (Left, Right, Top, Bottom) */}
-					{/* Left Panel Toggle */}
+					{/* Left Panel - 固定打开，关闭调节按钮 */}
 					<div
 						style={{
 							display: "flex",
@@ -1231,41 +1241,21 @@ export default function GeneralSettingsTab({
 									marginTop: "4px",
 								}}
 							>
-								{t("proj.panel.left.desc") || "在窗口左侧固定显示垂直项目导航栏，支持拖拽调整宽度与折叠"}
+								{t("proj.panel.left.desc") || "在窗口左侧固定显示垂直项目导航栏（固定开启）"}
 							</div>
 						</div>
-						<button
-							onClick={() => onLeftPanelEnabledChange?.(!leftPanelEnabled)}
+						<span
 							style={{
-								background: leftPanelEnabled
-									? "var(--accent-purple)"
-									: "var(--bg-elevated)",
-								border: leftPanelEnabled
-									? "1px solid var(--accent-purple)"
-									: "1px solid var(--border-mid)",
-								borderRadius: "20px",
-								width: "48px",
-								height: "24px",
-								position: "relative",
-								cursor: "pointer",
-								transition: "all 200ms ease",
-								padding: 0,
+								fontSize: "12px",
+								color: "var(--accent-purple)",
+								padding: "4px 8px",
+								borderRadius: "var(--radius-sm)",
+								backgroundColor: "var(--bg-elevated)",
+								fontWeight: 500,
 							}}
 						>
-							<span
-								style={{
-									position: "absolute",
-									top: "2px",
-									left: leftPanelEnabled ? "26px" : "2px",
-									width: "18px",
-									height: "18px",
-									borderRadius: "50%",
-									background: "#fff",
-									transition: "all 200ms ease",
-									boxShadow: "0 1px 3px rgba(0,0,0,0.2)",
-								}}
-							/>
-						</button>
+							固定打开
+						</span>
 					</div>
 
 					{/* Right Panel Toggle */}
@@ -1857,6 +1847,216 @@ export default function GeneralSettingsTab({
 					</div>
 
 					</div>
+			</div>
+
+			{/* Feature Navigation Switch */}
+			<div className="card-outer">
+				<div className="card-inner" style={{ padding: "24px" }}>
+					<div
+						style={{
+							fontSize: "15px",
+							fontWeight: 600,
+							color: "var(--text-primary)",
+							marginBottom: "16px",
+						}}
+					>
+						功能导航开关
+					</div>
+
+					{/* Hermes Toggle */}
+					<div
+						style={{
+							display: "flex",
+							alignItems: "center",
+							justifyContent: "space-between",
+							paddingTop: "16px",
+							borderTop: "1px solid var(--border-subtle)",
+						}}
+					>
+						<div>
+							<div
+								style={{
+									fontSize: "14px",
+									fontWeight: 500,
+									color: "var(--text-primary)",
+								}}
+							>
+								Hermes
+							</div>
+							<div
+								style={{
+									fontSize: "12px",
+									color: "var(--text-secondary)",
+									marginTop: "4px",
+								}}
+							>
+								在侧边栏显示 Hermes 飞书机器人 Agent 桥接服务入口
+							</div>
+						</div>
+						<button
+							onClick={() => onHermesEnabledChange?.(!hermesEnabled)}
+							style={{
+								background: hermesEnabled
+									? "var(--accent-purple)"
+									: "var(--bg-elevated)",
+								border: hermesEnabled
+									? "1px solid var(--accent-purple)"
+									: "1px solid var(--border-mid)",
+								borderRadius: "20px",
+								width: "48px",
+								height: "24px",
+								position: "relative",
+								cursor: "pointer",
+								transition: "all 200ms ease",
+								padding: 0,
+							}}
+						>
+							<span
+								style={{
+									position: "absolute",
+									top: "2px",
+									left: hermesEnabled ? "26px" : "2px",
+									width: "18px",
+									height: "18px",
+									borderRadius: "50%",
+									background: "#fff",
+									transition: "all 200ms ease",
+									boxShadow: "0 1px 3px rgba(0,0,0,0.2)",
+								}}
+							/>
+						</button>
+					</div>
+
+					{/* Remote Connection Toggle */}
+					<div
+						style={{
+							display: "flex",
+							alignItems: "center",
+							justifyContent: "space-between",
+							marginTop: "16px",
+							paddingTop: "16px",
+							borderTop: "1px solid var(--border-subtle)",
+						}}
+					>
+						<div>
+							<div
+								style={{
+									fontSize: "14px",
+									fontWeight: 500,
+									color: "var(--text-primary)",
+								}}
+							>
+								远程连接
+							</div>
+							<div
+								style={{
+									fontSize: "12px",
+									color: "var(--text-secondary)",
+									marginTop: "4px",
+								}}
+							>
+								在侧边栏显示手机端扫码与远程连接入口
+							</div>
+						</div>
+						<button
+							onClick={() => onRemoteEnabledChange?.(!remoteEnabled)}
+							style={{
+								background: remoteEnabled
+									? "var(--accent-purple)"
+									: "var(--bg-elevated)",
+								border: remoteEnabled
+									? "1px solid var(--accent-purple)"
+									: "1px solid var(--border-mid)",
+								borderRadius: "20px",
+								width: "48px",
+								height: "24px",
+								position: "relative",
+								cursor: "pointer",
+								transition: "all 200ms ease",
+								padding: 0,
+							}}
+						>
+							<span
+								style={{
+									position: "absolute",
+									top: "2px",
+									left: remoteEnabled ? "26px" : "2px",
+									width: "18px",
+									height: "18px",
+									borderRadius: "50%",
+									background: "#fff",
+									transition: "all 200ms ease",
+									boxShadow: "0 1px 3px rgba(0,0,0,0.2)",
+								}}
+							/>
+						</button>
+					</div>
+
+					{/* Agent Guide Toggle */}
+					<div
+						style={{
+							display: "flex",
+							alignItems: "center",
+							justifyContent: "space-between",
+							marginTop: "16px",
+							paddingTop: "16px",
+							borderTop: "1px solid var(--border-subtle)",
+						}}
+					>
+						<div>
+							<div
+								style={{
+									fontSize: "14px",
+									fontWeight: 500,
+									color: "var(--text-primary)",
+								}}
+							>
+								配置引导
+							</div>
+							<div
+								style={{
+									fontSize: "12px",
+									color: "var(--text-secondary)",
+									marginTop: "4px",
+								}}
+							>
+								在侧边栏显示 AI Agent 发现、配置引导与模板统一管理入口
+							</div>
+						</div>
+						<button
+							onClick={() => onAgentsGuideEnabledChange?.(!agentsGuideEnabled)}
+							style={{
+								background: agentsGuideEnabled
+									? "var(--accent-purple)"
+									: "var(--bg-elevated)",
+								border: agentsGuideEnabled
+									? "1px solid var(--accent-purple)"
+									: "1px solid var(--border-mid)",
+								borderRadius: "20px",
+								width: "48px",
+								height: "24px",
+								position: "relative",
+								cursor: "pointer",
+								transition: "all 200ms ease",
+								padding: 0,
+							}}
+						>
+							<span
+								style={{
+									position: "absolute",
+									top: "2px",
+									left: agentsGuideEnabled ? "26px" : "2px",
+									width: "18px",
+									height: "18px",
+									borderRadius: "50%",
+									background: "#fff",
+									transition: "all 200ms ease",
+									boxShadow: "0 1px 3px rgba(0,0,0,0.2)",
+								}}
+							/>
+						</button>
+					</div>
+				</div>
 			</div>
 
 			{/* Version Info Settings */}

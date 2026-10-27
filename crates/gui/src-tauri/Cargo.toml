@@ -38,6 +38,7 @@ which = "6.0.0"
 rusqlite = { version = "0.34", features = ["bundled"] }
 notify = "6"
 tungstenite = { version = "0.24", features = ["native-tls"] }
+prost = "0.13"
 
 # Windows 原生 Toast：tauri-plugin-notification 在 dev 构建下会把通知挂到 PowerShell 名下，
 # 点击无法回到应用。这里改用支持 on_activated 的 WinRT 实现，见 src/notification.rs。

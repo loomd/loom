@@ -54,6 +54,12 @@ interface Props {
 	onShellBorderColorChange?: (color: string) => void;
 	shellBorderWidth?: string;
 	onShellBorderWidthChange?: (width: string) => void;
+	hermesEnabled?: boolean;
+	onHermesEnabledChange?: (enabled: boolean) => void;
+	remoteEnabled?: boolean;
+	onRemoteEnabledChange?: (enabled: boolean) => void;
+	agentsGuideEnabled?: boolean;
+	onAgentsGuideEnabledChange?: (enabled: boolean) => void;
 }
 
 type Tab = "general" | "tools" | "env" | "libs";
@@ -100,6 +106,12 @@ export default function SettingsPage({
 	onShellBorderColorChange,
 	shellBorderWidth,
 	onShellBorderWidthChange,
+	hermesEnabled,
+	onHermesEnabledChange,
+	remoteEnabled,
+	onRemoteEnabledChange,
+	agentsGuideEnabled,
+	onAgentsGuideEnabledChange,
 }: Props) {
 	const { t } = useI18n();
 	const [activeSubTab, setActiveSubTab] = useState<Tab>("general");
@@ -225,6 +237,12 @@ export default function SettingsPage({
 						onShellBorderColorChange={onShellBorderColorChange}
 						shellBorderWidth={shellBorderWidth}
 						onShellBorderWidthChange={onShellBorderWidthChange}
+						hermesEnabled={hermesEnabled}
+						onHermesEnabledChange={onHermesEnabledChange}
+						remoteEnabled={remoteEnabled}
+						onRemoteEnabledChange={onRemoteEnabledChange}
+						agentsGuideEnabled={agentsGuideEnabled}
+						onAgentsGuideEnabledChange={onAgentsGuideEnabledChange}
 					/>
 				)}
 				{activeSubTab === "tools" && <CliToolsTab />}

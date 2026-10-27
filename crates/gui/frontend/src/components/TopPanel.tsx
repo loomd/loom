@@ -1,7 +1,7 @@
 import React, { useRef, useCallback } from "react";
 import { useI18n } from "../I18nContext";
 import WindowControlButtons from "./WindowControlButtons";
-import type { Project } from "../types";
+import type { Project, Page } from "../types";
 import type { CompositeState } from "../hooks/useProjectCompositeStates";
 
 interface TopPanelProps {
@@ -9,9 +9,9 @@ interface TopPanelProps {
   selectedProjectId: string;
   onProjectSelect: (projectId: string) => void;
   compositeStates: Record<string, CompositeState>;
-  onNavigate?: (page: "workspace" | "settings" | "agents" | "remote") => void;
+  onNavigate?: (page: Page) => void;
   onRegisterProject?: () => void;
-  page?: "workspace" | "settings" | "agents" | "remote";
+  page?: Page;
 }
 
 export function TopPanel({

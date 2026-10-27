@@ -31,7 +31,7 @@ import {
 	getShellBorderEnabled, setShellBorderEnabled as apiSetShellBorderEnabled,
 	getShellBorderColor, setShellBorderColor as apiSetShellBorderColor,
 	getShellBorderWidth, setShellBorderWidth as apiSetShellBorderWidth,
-	getLeftPanelEnabled, setLeftPanelEnabled as apiSetLeftPanelEnabled,
+	setLeftPanelEnabled as apiSetLeftPanelEnabled,
 	getRightPanelEnabled, setRightPanelEnabled as apiSetRightPanelEnabled,
 	getTopPanelEnabled, setTopPanelEnabled as apiSetTopPanelEnabled,
 	getBottomPanelEnabled, setBottomPanelEnabled as apiSetBottomPanelEnabled,
@@ -39,11 +39,10 @@ import {
 } from "./api";
 import { AgentManagementPage } from "./pages/AgentManagementPage";
 import RemoteConnectionPage from "./pages/RemoteConnectionPage";
+import HermesPage from "./pages/HermesPage";
 import { listen } from "@tauri-apps/api/event";
-import type { Template, AgentNotificationPayload } from "./types";
+import type { Template, AgentNotificationPayload, Page } from "./types";
 import { projectPathKey } from "./utils";
-
-type Page = "workspace" | "settings" | "agents" | "remote";
 
 function EmptyState({ onAdd, t }: { onAdd: () => void; t: (key: string) => string }) {
 	return (
@@ -147,12 +146,20 @@ function App() {
 		return saved === "true";
 	});
 	const [isResizing, setIsResizing] = useState<boolean>(false);
-	const [leftPanelEnabled, setLeftPanelEnabled] = useState<boolean>(() => {
-		const saved = safeGetItem("loom_left_panel_enabled");
-		if (saved !== null) return saved === "true";
-		const oldCollapse = safeGetItem("loom_sidebar_collapse_enabled");
-		if (oldCollapse !== null) return oldCollapse !== "false";
-		return true;
+	// 左侧固定面板固定打开
+	const leftPanelEnabled = true;
+
+	const [hermesEnabled, setHermesEnabled] = useState<boolean>(() => {
+		const saved = safeGetItem("loom_hermes_enabled");
+		return saved !== null ? saved === "true" : true;
+	});
+	const [remoteEnabled, setRemoteEnabled] = useState<boolean>(() => {
+		const saved = safeGetItem("loom_remote_enabled");
+		return saved !== null ? saved === "true" : true;
+	});
+	const [agentsGuideEnabled, setAgentsGuideEnabled] = useState<boolean>(() => {
+		const saved = safeGetItem("loom_agents_guide_enabled");
+		return saved !== null ? saved === "true" : true;
 	});
 	const [rightPanelEnabled, setRightPanelEnabled] = useState<boolean>(() => {
 		const saved = safeGetItem("loom_right_panel_enabled");
@@ -229,9 +236,18 @@ function App() {
 	useEffect(() => { safeSetItem("loom_floating_sidebar_position", floatingSidebarPosition); }, [floatingSidebarPosition]);
 	useEffect(() => { safeSetItem("loom_bottom_panel_mode", bottomPanelMode); }, [bottomPanelMode]);
 	useEffect(() => {
-		safeSetItem("loom_left_panel_enabled", leftPanelEnabled.toString());
-		apiSetLeftPanelEnabled(leftPanelEnabled).catch(() => {});
-	}, [leftPanelEnabled]);
+		safeSetItem("loom_left_panel_enabled", "true");
+		apiSetLeftPanelEnabled(true).catch(() => {});
+	}, []);
+	useEffect(() => {
+		safeSetItem("loom_hermes_enabled", hermesEnabled.toString());
+	}, [hermesEnabled]);
+	useEffect(() => {
+		safeSetItem("loom_remote_enabled", remoteEnabled.toString());
+	}, [remoteEnabled]);
+	useEffect(() => {
+		safeSetItem("loom_agents_guide_enabled", agentsGuideEnabled.toString());
+	}, [agentsGuideEnabled]);
 	useEffect(() => {
 		safeSetItem("loom_right_panel_enabled", rightPanelEnabled.toString());
 		apiSetRightPanelEnabled(rightPanelEnabled).catch(() => {});
@@ -265,9 +281,6 @@ function App() {
 
 	// Load panel settings from Rust file-backed config on mount
 	useEffect(() => {
-		getLeftPanelEnabled()
-			.then((enabled) => { if (typeof enabled === "boolean") setLeftPanelEnabled(enabled); })
-			.catch(() => {});
 		getRightPanelEnabled()
 			.then((enabled) => { if (typeof enabled === "boolean") setRightPanelEnabled(enabled); })
 			.catch(() => {});
@@ -381,14 +394,7 @@ function App() {
 		setRightSidebarWidth(170);
 	}, []);
 
-	const handleLeftPanelEnabledChange = useCallback((enabled: boolean) => {
-		if (!enabled && !rightPanelEnabled && !topPanelEnabled && !bottomPanelEnabled) {
-			toast.error("请至少保留一个面板开启，以便访问设置");
-			return;
-		}
-		setLeftPanelEnabled(enabled);
-		setSidebarCollapseEnabled(enabled);
-	}, [rightPanelEnabled, topPanelEnabled, bottomPanelEnabled, toast]);
+	const handleLeftPanelEnabledChange = useCallback(() => {}, []);
 
 	const handleRightPanelEnabledChange = useCallback((enabled: boolean) => {
 		if (!enabled && !leftPanelEnabled && !topPanelEnabled && !bottomPanelEnabled) {
@@ -413,6 +419,27 @@ function App() {
 		}
 		setBottomPanelEnabled(enabled);
 	}, [leftPanelEnabled, rightPanelEnabled, topPanelEnabled, toast]);
+
+	const handleHermesEnabledChange = useCallback((enabled: boolean) => {
+		setHermesEnabled(enabled);
+		if (!enabled && page === "hermes") {
+			setPage("workspace");
+		}
+	}, [page]);
+
+	const handleRemoteEnabledChange = useCallback((enabled: boolean) => {
+		setRemoteEnabled(enabled);
+		if (!enabled && page === "remote") {
+			setPage("workspace");
+		}
+	}, [page]);
+
+	const handleAgentsGuideEnabledChange = useCallback((enabled: boolean) => {
+		setAgentsGuideEnabled(enabled);
+		if (!enabled && page === "agents") {
+			setPage("workspace");
+		}
+	}, [page]);
 
 	const handleFloatingSidebarEnabledChange = useCallback((enabled: boolean) => {
 		if (!enabled && !sidebarCollapseEnabled) {
@@ -582,7 +609,11 @@ function App() {
 						onProjectSelect={navigateToPage}
 						onSettingsClick={() => setPage("settings")}
 						onAgentsClick={() => setPage("agents")}
+						onHermesClick={() => setPage("hermes")}
 						onRemoteClick={() => setPage("remote")}
+						hermesEnabled={hermesEnabled}
+						remoteEnabled={remoteEnabled}
+						agentsEnabled={agentsGuideEnabled}
 						onAddClick={() => p.setShowModal(true)}
 						onDragStart={p.handleDragStart} onDragOver={p.handleDragOver}
 						onDragLeave={p.handleDragLeave} onDrop={p.handleDrop} onDragEnd={p.handleDragEnd}
@@ -643,6 +674,12 @@ function App() {
 								onShellBorderColorChange={handleShellBorderColorChange}
 								shellBorderWidth={shellBorderWidth}
 								onShellBorderWidthChange={handleShellBorderWidthChange}
+								hermesEnabled={hermesEnabled}
+								onHermesEnabledChange={handleHermesEnabledChange}
+								remoteEnabled={remoteEnabled}
+								onRemoteEnabledChange={handleRemoteEnabledChange}
+								agentsGuideEnabled={agentsGuideEnabled}
+								onAgentsGuideEnabledChange={handleAgentsGuideEnabledChange}
 							/>
 						</div>
 						<div style={{ display: page === "agents" ? "flex" : "none", flexDirection: "column", flex: 1, minHeight: 0, overflow: "hidden" }}>
@@ -660,6 +697,9 @@ function App() {
 						<div style={{ display: page === "remote" ? "flex" : "none", flexDirection: "column", flex: 1, minHeight: 0, overflow: "hidden" }}>
 							<RemoteConnectionPage projects={p.projects} active={page === "remote"} defaultProjectId={p.selectedProjectId} isSidebarCollapsed={actualCollapsed} onToggleSidebar={leftPanelEnabled ? () => setIsCollapsed(!isCollapsed) : undefined} />
 						</div>
+						<div style={{ display: page === "hermes" ? "flex" : "none", flexDirection: "column", flex: 1, minHeight: 0, overflow: "hidden" }}>
+							<HermesPage projects={p.projects} active={page === "hermes"} defaultProjectId={p.selectedProjectId} isSidebarCollapsed={actualCollapsed} onToggleSidebar={leftPanelEnabled ? () => setIsCollapsed(!isCollapsed) : undefined} />
+						</div>
 					</>
 				}
 				rightSidebar={
@@ -675,7 +715,11 @@ function App() {
 							onProjectSelect={navigateToPage}
 							onSettingsClick={() => setPage("settings")}
 							onAgentsClick={() => setPage("agents")}
+							onHermesClick={() => setPage("hermes")}
 							onRemoteClick={() => setPage("remote")}
+							hermesEnabled={hermesEnabled}
+							remoteEnabled={remoteEnabled}
+							agentsEnabled={agentsGuideEnabled}
 							onAddClick={() => p.setShowModal(true)}
 							onDragStart={p.handleDragStart}
 							onDragOver={p.handleDragOver}

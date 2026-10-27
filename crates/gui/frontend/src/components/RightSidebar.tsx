@@ -1,9 +1,7 @@
 import React from "react";
 import { useI18n } from "../I18nContext";
-import type { Project } from "../types";
+import type { Project, Page } from "../types";
 import type { CompositeState } from "../hooks/useProjectCompositeStates";
-
-type Page = "workspace" | "settings" | "agents" | "remote";
 
 interface RightSidebarProps {
   projects: Project[];
@@ -21,6 +19,10 @@ interface RightSidebarProps {
   onSettingsClick?: () => void;
   onAgentsClick?: () => void;
   onRemoteClick?: () => void;
+  onHermesClick?: () => void;
+  hermesEnabled?: boolean;
+  remoteEnabled?: boolean;
+  agentsEnabled?: boolean;
   onRegisterProject?: () => void;
   onAddClick?: () => void;
   onDragStart?: (e: React.DragEvent, index: number) => void;
@@ -52,6 +54,10 @@ export default function RightSidebar({
   onDrop,
   onDragEnd,
   onRemoteClick,
+  onHermesClick,
+  hermesEnabled = true,
+  remoteEnabled = true,
+  agentsEnabled = true,
 }: RightSidebarProps) {
   const { t } = useI18n();
 
@@ -60,6 +66,7 @@ export default function RightSidebar({
   const handleSettings = onSettingsClick || (() => onNavigate?.("settings"));
   const handleAgents = onAgentsClick || (() => onNavigate?.("agents"));
   const handleRemote = onRemoteClick || (() => onNavigate?.("remote"));
+  const handleHermes = onHermesClick || (() => onNavigate?.("hermes"));
   const handleAdd = onAddClick || onRegisterProject;
 
   return (
@@ -213,7 +220,43 @@ export default function RightSidebar({
           </button>
         )}
 
-        {handleRemote && (
+        {hermesEnabled && handleHermes && (
+          <button
+            className={`nav-item${page === "hermes" ? " active" : ""}`}
+            onClick={handleHermes}
+            style={{
+              width: "100%",
+              textAlign: "left",
+              border: "1px solid transparent",
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              gap: "8px",
+              padding: "8px 8px",
+              borderRadius: "var(--radius-sm)",
+              transition:
+                "opacity 0.2s ease, transform 0.2s ease, border-color 0.2s ease, background-color 0.2s ease",
+            }}
+          >
+            <span
+              style={{
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+                flexGrow: 1,
+                fontWeight: 400,
+                display: "inline-flex",
+                alignItems: "center",
+                lineHeight: "1.2",
+                gap: "6px",
+              }}
+            >
+              Hermes
+            </span>
+          </button>
+        )}
+
+        {remoteEnabled && handleRemote && (
           <button
             className={`nav-item${page === "remote" ? " active" : ""}`}
             onClick={handleRemote}
@@ -249,7 +292,7 @@ export default function RightSidebar({
           </button>
         )}
 
-        {handleAgents && (
+        {agentsEnabled && handleAgents && (
           <button
             className={`nav-item${page === "agents" ? " active" : ""}`}
             onClick={handleAgents}

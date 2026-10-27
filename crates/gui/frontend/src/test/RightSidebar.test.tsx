@@ -112,4 +112,28 @@ describe("RightSidebar", () => {
     );
     expect(settingsItems.length).toBeGreaterThanOrEqual(1);
   });
+
+  it("respects hermesEnabled, remoteEnabled, agentsEnabled switches", async () => {
+    await renderSidebar({
+      onHermesClick: vi.fn(),
+      onRemoteClick: vi.fn(),
+      onAgentsClick: vi.fn(),
+      hermesEnabled: false,
+      remoteEnabled: false,
+      agentsEnabled: false,
+    });
+    expect(screen.queryByText("Hermes")).not.toBeInTheDocument();
+    expect(screen.queryByText("远程连接")).not.toBeInTheDocument();
+    expect(screen.queryByText("配置引导")).not.toBeInTheDocument();
+  });
+
+  it("renders pure Hermes text when hermesEnabled is true", async () => {
+    await renderSidebar({
+      onHermesClick: vi.fn(),
+      hermesEnabled: true,
+    });
+    const hermesBtn = screen.getByText("Hermes");
+    expect(hermesBtn).toBeInTheDocument();
+    expect(hermesBtn.textContent?.trim()).toBe("Hermes");
+  });
 });

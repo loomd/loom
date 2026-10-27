@@ -1,5 +1,7 @@
 // TypeScript types matching Rust core models exactly
 
+export type Page = "workspace" | "settings" | "agents" | "remote" | "hermes";
+
 export interface CliTool {
   id: string;
   name: string;

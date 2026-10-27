@@ -1881,6 +1881,7 @@ mod crash_shield;
 mod whats_new;
 mod relay_adapter;
 mod acp;
+mod hermes;
 
 fn get_window_state_path() -> std::path::PathBuf {
     let mut path = cstore::get_config_path();
@@ -2607,7 +2608,12 @@ fn main() {
             relay_adapter::get_remote_session_status,
             relay_adapter::start_remote_session,
             relay_adapter::stop_remote_session,
-            relay_adapter::unbind_mobile
+            relay_adapter::unbind_mobile,
+            hermes::get_hermes_config,
+            hermes::save_hermes_config,
+            hermes::start_hermes_service,
+            hermes::stop_hermes_service,
+            hermes::get_hermes_status
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

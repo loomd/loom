@@ -1,0 +1,592 @@
+use std::collections::HashMap;
+use std::io::{BufRead, BufReader, Write};
+use std::process::{Child, ChildStdin, Command, Stdio};
+use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
+use std::sync::{Arc, Mutex};
+use std::thread;
+use std::time::{Duration, Instant};
+use serde::{Deserialize, Serialize};
+use serde_json::json;
+use tauri::{AppHandle, Emitter};
+
+use super::client::{
+    build_agent_stream_card, build_permission_request_card, build_permission_resolved_card,
+    LarkClient,
+};
+use super::ws::{LarkEventHandler, LarkWsClient};
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HermesLogEntry {
+    pub timestamp: String,
+    pub direction: String, // "in" | "out"
+    pub user_name: String,
+    pub chat_type: String, // "p2p" | "group"
+    pub summary: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HermesStatus {
+    pub state: String, // "stopped" | "connecting" | "connected" | "error"
+    pub error_message: Option<String>,
+    pub log_entries: Vec<HermesLogEntry>,
+    pub connected_since: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct HermesConfig {
+    pub app_id: String,
+    pub app_secret: String,
+    pub default_project_id: String,
+}
+
+struct PendingPermission {
+    acp_request_id: serde_json::Value,
+    tool_name: String,
+    #[allow(dead_code)]
+    chat_id: String,
+    card_message_id: Option<String>,
+}
+
+struct ActiveChatSession {
+    card_message_id: String,
+    accumulated_content: String,
+    last_updated: Instant,
+    is_finished: bool,
+}
+
+pub struct HermesBridge {
+    app_handle: Option<AppHandle>,
+    client: Arc<LarkClient>,
+    project_path: String,
+    stop_signal: Arc<AtomicBool>,
+    status: Arc<Mutex<HermesStatus>>,
+    acp_stdin: Arc<Mutex<Option<ChildStdin>>>,
+    acp_child: Arc<Mutex<Option<Child>>>,
+    next_rpc_id: AtomicI64,
+    active_chats: Arc<Mutex<HashMap<String, ActiveChatSession>>>,
+    pending_permissions: Arc<Mutex<HashMap<String, PendingPermission>>>,
+    current_acp_session_id: Arc<Mutex<Option<String>>>,
+}
+
+impl HermesBridge {
+    pub fn new(
+        app_handle: Option<AppHandle>,
+        app_id: String,
+        app_secret: String,
+        project_path: String,
+    ) -> Self {
+        let client = Arc::new(LarkClient::new(app_id, app_secret));
+        let status = Arc::new(Mutex::new(HermesStatus {
+            state: "connecting".to_string(),
+            error_message: None,
+            log_entries: Vec::new(),
+            connected_since: None,
+        }));
+
+        Self {
+            app_handle,
+            client,
+            project_path,
+            stop_signal: Arc::new(AtomicBool::new(false)),
+            status,
+            acp_stdin: Arc::new(Mutex::new(None)),
+            acp_child: Arc::new(Mutex::new(None)),
+            next_rpc_id: AtomicI64::new(1),
+            active_chats: Arc::new(Mutex::new(HashMap::new())),
+            pending_permissions: Arc::new(Mutex::new(HashMap::new())),
+            current_acp_session_id: Arc::new(Mutex::new(None)),
+        }
+    }
+
+    pub fn get_status(&self) -> HermesStatus {
+        self.status.lock().unwrap().clone()
+    }
+
+    pub fn stop(&self) {
+        self.stop_signal.store(true, Ordering::Relaxed);
+
+        // 终止 ACP 子进程
+        if let Ok(mut child_guard) = self.acp_child.lock() {
+            if let Some(mut child) = child_guard.take() {
+                let _ = child.kill();
+            }
+        }
+        if let Ok(mut stdin_guard) = self.acp_stdin.lock() {
+            *stdin_guard = None;
+        }
+
+        // 更新状态为已停止
+        if let Ok(mut s) = self.status.lock() {
+            s.state = "stopped".to_string();
+            s.error_message = None;
+            self.broadcast_status(&s);
+        }
+    }
+
+    pub fn start(self: Arc<Self>) {
+        // 1. 启动 ACP 子进程并启动 stdout 消费线程
+        if let Err(err) = self.spawn_acp_process(&self) {
+            eprintln!("[Hermes] 启动 ACP 失败: {}", err);
+            let mut s = self.status.lock().unwrap();
+            s.state = "error".to_string();
+            s.error_message = Some(format!("启动 ACP 失败: {}", err));
+            self.broadcast_status(&s);
+            return;
+        }
+
+        // 2. 启动飞书长连接客户端
+        let ws_client = LarkWsClient::new(
+            self.client.clone(),
+            self.clone(),
+            self.stop_signal.clone(),
+        );
+        ws_client.start_loop();
+    }
+
+    fn broadcast_status(&self, status: &HermesStatus) {
+        if let Some(app) = &self.app_handle {
+            let _ = app.emit("hermes-status-update", status);
+        }
+    }
+
+    fn add_log(&self, direction: &str, user_name: &str, chat_type: &str, summary: &str) {
+        let now_str = chrono_like_now();
+        let entry = HermesLogEntry {
+            timestamp: now_str,
+            direction: direction.to_string(),
+            user_name: user_name.to_string(),
+            chat_type: chat_type.to_string(),
+            summary: summary.to_string(),
+        };
+
+        if let Ok(mut s) = self.status.lock() {
+            s.log_entries.push(entry);
+            // 最多保留 200 条日志
+            if s.log_entries.len() > 200 {
+                s.log_entries.remove(0);
+            }
+            self.broadcast_status(&s);
+        }
+    }
+
+    /// 启动 ACP 子进程 (mcode acp)
+    fn spawn_acp_process(&self, arc_self: &Arc<Self>) -> Result<(), String> {
+        let acp_bin = resolve_acp_executable()?;
+        println!("[Hermes] 拉起 ACP 进程: {:?}, cwd: {}", acp_bin, self.project_path);
+
+        #[cfg(target_os = "windows")]
+        use std::os::windows::process::CommandExt;
+        #[cfg(target_os = "windows")]
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+
+        let mut cmd = Command::new(&acp_bin);
+        cmd.arg("acp")
+            .current_dir(&self.project_path)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+
+        #[cfg(target_os = "windows")]
+        cmd.creation_flags(CREATE_NO_WINDOW);
+
+        let mut child = cmd.spawn().map_err(|e| format!("启动 ACP 进程错误: {}", e))?;
+        let stdout = child.stdout.take().ok_or_else(|| "无法获取 ACP stdout".to_string())?;
+        let stdin = child.stdin.take().ok_or_else(|| "无法获取 ACP stdin".to_string())?;
+
+        *self.acp_stdin.lock().unwrap() = Some(stdin);
+        *self.acp_child.lock().unwrap() = Some(child);
+
+        // 发送 initialize
+        let init_id = self.next_rpc_id.fetch_add(1, Ordering::SeqCst);
+        let init_req = json!({
+            "jsonrpc": "2.0",
+            "id": init_id,
+            "method": "initialize",
+            "params": {
+                "protocolVersion": "0.1",
+                "clientInfo": {
+                    "name": "loom-hermes",
+                    "version": "0.1"
+                }
+            }
+        });
+        self.send_to_acp(&init_req)?;
+
+        // 监听 ACP stdout
+        let self_clone = arc_self.clone();
+        thread::spawn(move || {
+            let reader = BufReader::new(stdout);
+            for line_res in reader.lines() {
+                if self_clone.stop_signal.load(Ordering::Relaxed) {
+                    break;
+                }
+                match line_res {
+                    Ok(line) => {
+                        let trimmed = line.trim();
+                        if !trimmed.is_empty() {
+                            self_clone.handle_acp_line(trimmed);
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!("[Hermes] 读取 ACP stdout 异常: {}", e);
+                        break;
+                    }
+                }
+            }
+        });
+
+        Ok(())
+    }
+
+    fn send_to_acp(&self, val: &serde_json::Value) -> Result<(), String> {
+        let mut guard = self.acp_stdin.lock().unwrap();
+        if let Some(stdin) = guard.as_mut() {
+            let mut s = serde_json::to_string(val).map_err(|e| e.to_string())?;
+            s.push('\n');
+            stdin
+                .write_all(s.as_bytes())
+                .map_err(|e| format!("写入 ACP stdin 失败: {}", e))?;
+            stdin.flush().map_err(|e| e.to_string())?;
+            Ok(())
+        } else {
+            Err("ACP 子进程未运行".to_string())
+        }
+    }
+
+    /// 处理从 ACP stdout 收到的 JSON-RPC 消息
+    fn handle_acp_line(&self, line: &str) {
+        let parsed: serde_json::Value = match serde_json::from_str(line) {
+            Ok(v) => v,
+            Err(_) => return,
+        };
+
+        // 1. 如果是响应 initialize 的结果 -> 发送 initialized & session/new
+        if let Some(id) = parsed.get("id").and_then(|i| i.as_i64()) {
+            if id == 1 && parsed.get("result").is_some() {
+                let _ = self.send_to_acp(&json!({
+                    "jsonrpc": "2.0",
+                    "method": "initialized",
+                    "params": {}
+                }));
+                let session_id_req = self.next_rpc_id.fetch_add(1, Ordering::SeqCst);
+                let _ = self.send_to_acp(&json!({
+                    "jsonrpc": "2.0",
+                    "id": session_id_req,
+                    "method": "session/new",
+                    "params": {
+                        "cwd": self.project_path
+                    }
+                }));
+                return;
+            }
+
+            // 如果是 session/new 的响应
+            if let Some(res) = parsed.get("result") {
+                if let Some(sid) = res.get("sessionId").and_then(|s| s.as_str()) {
+                    *self.current_acp_session_id.lock().unwrap() = Some(sid.to_string());
+                    println!("[Hermes] ACP Session 创建成功: {}", sid);
+                    return;
+                }
+            }
+
+            // 如果是 session/prompt 的完成响应
+            if parsed.get("result").is_some() || parsed.get("error").is_some() {
+                self.flush_all_active_chats_finish();
+                return;
+            }
+        }
+
+        // 2. 如果是 ACP 发来的通知 (Notification)
+        if let Some(method) = parsed.get("method").and_then(|m| m.as_str()) {
+            match method {
+                "session/update" => {
+                    if let Some(params) = parsed.get("params") {
+                        self.handle_session_update(params);
+                    }
+                }
+                "session/request_permission" => {
+                    let req_id = parsed.get("id").cloned().unwrap_or(json!(null));
+                    if let Some(params) = parsed.get("params") {
+                        self.handle_permission_request(req_id, params);
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    /// 处理流式内容更新
+    fn handle_session_update(&self, params: &serde_json::Value) {
+        let content_chunk = extract_content_chunk(params);
+        if content_chunk.is_empty() {
+            return;
+        }
+
+        let mut chats = self.active_chats.lock().unwrap();
+        for (_chat_id, session) in chats.iter_mut() {
+            if session.is_finished {
+                continue;
+            }
+            session.accumulated_content.push_str(&content_chunk);
+
+            // 节流：至少间隔 1.2 秒更新一次飞书卡片，避免被频控
+            if session.last_updated.elapsed() >= Duration::from_millis(1200) {
+                let card = build_agent_stream_card("Hermes Agent", &session.accumulated_content, false);
+                let _ = self.client.update_card_message(&session.card_message_id, &card);
+                session.last_updated = Instant::now();
+            }
+        }
+    }
+
+    /// 将所有进行中的会话卡片标记为已完成
+    fn flush_all_active_chats_finish(&self) {
+        let mut chats = self.active_chats.lock().unwrap();
+        for (_chat_id, session) in chats.iter_mut() {
+            if session.is_finished {
+                continue;
+            }
+            session.is_finished = true;
+            let card = build_agent_stream_card("Hermes Agent", &session.accumulated_content, true);
+            let _ = self.client.update_card_message(&session.card_message_id, &card);
+            self.add_log("out", "Hermes Agent", "p2p", &format!("回答完成: {}", truncate_str(&session.accumulated_content, 40)));
+        }
+    }
+
+    /// 处理权限申请
+    fn handle_permission_request(&self, req_id: serde_json::Value, params: &serde_json::Value) {
+        let tool_name = params
+            .get("toolCall")
+            .and_then(|t| t.get("name"))
+            .and_then(|n| n.as_str())
+            .unwrap_or("unknown_tool");
+        let description = params
+            .get("description")
+            .and_then(|d| d.as_str())
+            .unwrap_or("请求调用系统工具");
+
+        let uuid_str = format!("perm_{}", self.next_rpc_id.fetch_add(1, Ordering::SeqCst));
+
+        // 寻找当前活跃的 chat_id 发送权限确认卡片
+        let chats = self.active_chats.lock().unwrap();
+        let target_chat_id = match chats.keys().next() {
+            Some(id) => id.clone(),
+            None => return,
+        };
+
+        let perm_card = build_permission_request_card(&uuid_str, tool_name, description);
+        let msg_id = match self.client.send_card_message("chat_id", &target_chat_id, &perm_card) {
+            Ok(id) => Some(id),
+            Err(e) => {
+                eprintln!("[Hermes] 发送权限卡片失败: {}", e);
+                None
+            }
+        };
+
+        self.pending_permissions.lock().unwrap().insert(
+            uuid_str,
+            PendingPermission {
+                acp_request_id: req_id,
+                tool_name: tool_name.to_string(),
+                chat_id: target_chat_id,
+                card_message_id: msg_id,
+            },
+        );
+
+        self.add_log("out", "Hermes", "p2p", &format!("请求权限确认: {}", tool_name));
+    }
+}
+
+// ─── LarkEventHandler 实现 ──────────────────────────────────────────────────
+
+impl LarkEventHandler for HermesBridge {
+    fn on_connected(&self) {
+        println!("[Hermes] 飞书 WebSocket 长连接已就绪");
+        if let Ok(mut s) = self.status.lock() {
+            s.state = "connected".to_string();
+            s.error_message = None;
+            s.connected_since = Some(chrono_like_now());
+            self.broadcast_status(&s);
+        }
+    }
+
+    fn on_disconnected(&self, reason: &str) {
+        eprintln!("[Hermes] 飞书长连接中断: {}", reason);
+        if let Ok(mut s) = self.status.lock() {
+            s.state = "connecting".to_string();
+            s.error_message = Some(reason.to_string());
+            self.broadcast_status(&s);
+        }
+    }
+
+    fn on_text_message(
+        &self,
+        chat_id: String,
+        chat_type: String,
+        _message_id: String,
+        sender_open_id: String,
+        text: String,
+    ) {
+        self.add_log("in", &sender_open_id, &chat_type, &text);
+
+        // 1. 发送思考中占位卡片
+        let init_card = build_agent_stream_card("Hermes Agent", "正在分析任务...", false);
+        let card_msg_id = match self.client.send_card_message("chat_id", &chat_id, &init_card) {
+            Ok(id) => id,
+            Err(e) => {
+                eprintln!("[Hermes] 发送初始卡片失败: {}", e);
+                return;
+            }
+        };
+
+        // 2. 注册为当前活跃会话
+        {
+            let mut chats = self.active_chats.lock().unwrap();
+            chats.insert(
+                chat_id.clone(),
+                ActiveChatSession {
+                    card_message_id: card_msg_id,
+                    accumulated_content: String::new(),
+                    last_updated: Instant::now(),
+                    is_finished: false,
+                },
+            );
+        }
+
+        // 3. 向 ACP 发起 prompt
+        let current_sid = self.current_acp_session_id.lock().unwrap().clone();
+        let session_id_str = match current_sid {
+            Some(sid) => sid,
+            None => {
+                // 若 session_id 还未就绪，使用临时占位
+                "default".to_string()
+            }
+        };
+
+        let prompt_req_id = self.next_rpc_id.fetch_add(1, Ordering::SeqCst);
+        let prompt_req = json!({
+            "jsonrpc": "2.0",
+            "id": prompt_req_id,
+            "method": "session/prompt",
+            "params": {
+                "sessionId": session_id_str,
+                "prompt": [
+                    {
+                        "type": "text",
+                        "text": text
+                    }
+                ]
+            }
+        });
+
+        if let Err(e) = self.send_to_acp(&prompt_req) {
+            eprintln!("[Hermes] 向 ACP 发送 prompt 失败: {}", e);
+        }
+    }
+
+    fn on_card_action(&self, operator_open_id: String, action_value: serde_json::Value) {
+        let action = action_value
+            .get("action")
+            .and_then(|a| a.as_str())
+            .unwrap_or_default();
+        let req_id = action_value
+            .get("req_id")
+            .and_then(|r| r.as_str())
+            .unwrap_or_default();
+
+        let pending_opt = self.pending_permissions.lock().unwrap().remove(req_id);
+        if let Some(pending) = pending_opt {
+            let approved = action == "approve";
+            let decision_str = if approved { "approved" } else { "rejected" };
+
+            // 1. 回复 ACP 权限结果
+            let rpc_resp = json!({
+                "jsonrpc": "2.0",
+                "id": pending.acp_request_id,
+                "result": {
+                    "outcome": decision_str
+                }
+            });
+            let _ = self.send_to_acp(&rpc_resp);
+
+            // 2. 更新卡片为已处理状态
+            if let Some(msg_id) = pending.card_message_id {
+                let resolved_card = build_permission_resolved_card(
+                    &pending.tool_name,
+                    action,
+                    &operator_open_id,
+                );
+                let _ = self.client.update_card_message(&msg_id, &resolved_card);
+            }
+
+            self.add_log(
+                "in",
+                &operator_open_id,
+                "p2p",
+                &format!("权限确认结果: {} -> {}", pending.tool_name, decision_str),
+            );
+        }
+    }
+}
+
+// ─── 辅助函数 ─────────────────────────────────────────────────────────────
+
+fn resolve_acp_executable() -> Result<String, String> {
+    // 1. 尝试环境变量中的 mcode
+    if let Ok(path) = which::which("mcode") {
+        return Ok(path.to_string_lossy().to_string());
+    }
+    // 2. 检查常见安装路径
+    let home_opt = std::env::var_os("USERPROFILE")
+        .or_else(|| std::env::var_os("HOME"))
+        .map(std::path::PathBuf::from);
+
+    if let Some(home) = home_opt {
+        let standard_path = home.join(".minimax").join("bin").join("mcode.exe");
+        if standard_path.exists() {
+            return Ok(standard_path.to_string_lossy().to_string());
+        }
+        let standard_sh = home.join(".minimax").join("bin").join("mcode");
+        if standard_sh.exists() {
+            return Ok(standard_sh.to_string_lossy().to_string());
+        }
+    }
+    // 3. 回退为直接运行 "mcode"（依靠系统 PATH）
+    Ok("mcode".to_string())
+}
+
+fn extract_content_chunk(params: &serde_json::Value) -> String {
+    let mut chunk = String::new();
+    if let Some(update) = params.get("update") {
+        if let Some(content) = update.get("content") {
+            if let Some(text) = content.get("text").and_then(|t| t.as_str()) {
+                chunk.push_str(text);
+            }
+        }
+        if let Some(thought) = update.get("thought") {
+            if let Some(text) = thought.get("text").and_then(|t| t.as_str()) {
+                chunk.push_str(text);
+            }
+        }
+    }
+    chunk
+}
+
+fn chrono_like_now() -> String {
+    use std::time::SystemTime;
+    let dur = SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .unwrap_or_default();
+    let secs = dur.as_secs();
+    let hour = (secs / 3600 + 8) % 24; // UTC+8
+    let min = (secs / 60) % 60;
+    let sec = secs % 60;
+    format!("{:02}:{:02}:{:02}", hour, min, sec)
+}
+
+fn truncate_str(s: &str, max_len: usize) -> String {
+    if s.chars().count() <= max_len {
+        s.to_string()
+    } else {
+        format!("{}...", s.chars().take(max_len).collect::<String>())
+    }
+}
