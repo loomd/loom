@@ -163,6 +163,12 @@ export default function HermesPage({
     }
 
     setStarting(true);
+    setStatus((prev) => ({
+      ...prev,
+      state: 'connecting',
+      error_message: undefined,
+    }));
+
     try {
       // Save config before starting
       await saveHermesConfig({
@@ -173,6 +179,11 @@ export default function HermesPage({
       await startHermesService(appId, appSecret, proj.root_path);
       toast.success('Hermes 服务已启动');
     } catch (err) {
+      setStatus((prev) => ({
+        ...prev,
+        state: 'error',
+        error_message: String(err),
+      }));
       toast.error(`启动失败: ${err}`);
     } finally {
       setStarting(false);
@@ -183,6 +194,11 @@ export default function HermesPage({
     setStopping(true);
     try {
       await stopHermesService();
+      setStatus((prev) => ({
+        ...prev,
+        state: 'stopped',
+        error_message: undefined,
+      }));
       toast.success('Hermes 服务已停止');
     } catch (err) {
       toast.error(`停止失败: ${err}`);

@@ -118,6 +118,12 @@ struct ActiveChatSession {
     chat_type: String,
 }
 
+struct PendingSessionRequest {
+    chat_id: String,
+    chat_type: String,
+    initial_prompt: Option<String>,
+}
+
 pub struct HermesBridge {
     app_handle: Option<AppHandle>,
     client: Arc<LarkClient>,
@@ -135,7 +141,8 @@ pub struct HermesBridge {
     model_options: Arc<Mutex<Vec<serde_json::Value>>>,
     current_model: Arc<Mutex<String>>,
     pending_model_configs: Arc<Mutex<HashMap<String, String>>>,
-    pending_new_chat_commands: Arc<Mutex<HashMap<i64, String>>>,
+    pending_session_requests: Arc<Mutex<HashMap<i64, PendingSessionRequest>>>,
+    pending_prompt_to_chat: Arc<Mutex<HashMap<i64, String>>>,
     pub audit_logger: Arc<AuditLogger>,
 }
 
@@ -171,7 +178,8 @@ impl HermesBridge {
             model_options: Arc::new(Mutex::new(Vec::new())),
             current_model: Arc::new(Mutex::new(String::new())),
             pending_model_configs: Arc::new(Mutex::new(HashMap::new())),
-            pending_new_chat_commands: Arc::new(Mutex::new(HashMap::new())),
+            pending_session_requests: Arc::new(Mutex::new(HashMap::new())),
+            pending_prompt_to_chat: Arc::new(Mutex::new(HashMap::new())),
             audit_logger: Arc::new(AuditLogger::new()),
         }
     }
@@ -202,6 +210,11 @@ impl HermesBridge {
     }
 
     pub fn start(self: Arc<Self>) {
+        // 初始广播 connecting 状态，确保前端第一时间展示连接状态
+        if let Ok(s) = self.status.lock() {
+            self.broadcast_status(&s);
+        }
+
         // 1. 启动 ACP 子进程并启动 stdout 消费线程
         if let Err(err) = self.spawn_acp_process(&self) {
             eprintln!("[Hermes] 启动 ACP 失败: {}", err);
@@ -393,10 +406,15 @@ impl HermesBridge {
                         }
                     }
 
-                    // 2. 检查是否为指定群聊/用户发起的 session/new 指令
-                    let maybe_chat_id = self.pending_new_chat_commands.lock().unwrap().remove(&id);
-                    if let Some(chat_id) = maybe_chat_id {
-                        self.chat_to_session.lock().unwrap().insert(chat_id.clone(), sid.to_string());
+                    // 2. 检查是否为指定群聊/用户发起的 session/new 请求（自动创建或 /new / /model 指令）
+                    let maybe_pending = self.pending_session_requests.lock().unwrap().remove(&id);
+                    if let Some(pending) = maybe_pending {
+                        let chat_id = pending.chat_id;
+                        let chat_type = pending.chat_type;
+
+                        if let Some(old_sid) = self.chat_to_session.lock().unwrap().insert(chat_id.clone(), sid.to_string()) {
+                            self.session_to_chat.lock().unwrap().remove(&old_sid);
+                        }
                         self.session_to_chat.lock().unwrap().insert(sid.to_string(), chat_id.clone());
 
                         // 若该会话有待配置的目标模型，立即发送 session/set_config_option
@@ -415,13 +433,37 @@ impl HermesBridge {
                             }));
                         }
 
-                        let _ = self.client.send_text_message(
-                            "chat_id",
-                            &chat_id,
-                            &format!("🎉 [Hermes] 新对话就绪！Session ID: `{}`", sid),
-                        );
+                        if let Some(prompt_text) = pending.initial_prompt {
+                            // 首次接入自动建会话：继续发起 prompt
+                            let prompt_req_id = self.next_rpc_id.fetch_add(1, Ordering::SeqCst);
+                            self.pending_prompt_to_chat.lock().unwrap().insert(prompt_req_id, chat_id.clone());
+                            let prompt_req = json!({
+                                "jsonrpc": "2.0",
+                                "id": prompt_req_id,
+                                "method": "session/prompt",
+                                "params": {
+                                    "sessionId": sid,
+                                    "prompt": [
+                                        {
+                                            "type": "text",
+                                            "text": prompt_text
+                                        }
+                                    ]
+                                }
+                            });
+                            if let Err(e) = self.send_to_acp(&prompt_req) {
+                                eprintln!("[Hermes] 向 ACP 发送初始 prompt 失败: {}", e);
+                                self.add_log("out", "Hermes", &chat_type, &format!("向 ACP 发送初始 prompt 失败: {}", e));
+                            }
+                        } else {
+                            let _ = self.client.send_text_message(
+                                "chat_id",
+                                &chat_id,
+                                &format!("🎉 [Hermes] 新对话就绪！Session ID: `{}`", sid),
+                            );
+                        }
                     } else {
-                        // 首次启动默认 session
+                        // 首次启动默认 session（预热会话，等待首个接入的会话认领）
                         *self.current_acp_session_id.lock().unwrap() = Some(sid.to_string());
                     }
 
@@ -432,7 +474,16 @@ impl HermesBridge {
 
             // 如果是 session/prompt 的完成响应
             if parsed.get("result").is_some() || parsed.get("error").is_some() {
-                self.flush_all_active_chats_finish();
+                let target_chat_id = parsed
+                    .get("id")
+                    .and_then(|i| i.as_i64())
+                    .and_then(|req_id| self.pending_prompt_to_chat.lock().unwrap().remove(&req_id));
+
+                if let Some(chat_id) = target_chat_id {
+                    self.flush_chat_finish(&chat_id);
+                } else {
+                    self.flush_all_active_chats_finish();
+                }
                 return;
             }
         }
@@ -477,6 +528,56 @@ impl HermesBridge {
                 }
             }
             session.accumulated_content.push_str(&content_chunk);
+        }
+    }
+
+    /// 在单会话任务执行完毕后，将该群聊/单聊的卡片状态更新为最终内容
+    fn flush_chat_finish(&self, target_chat_id: &str) {
+        let mut chats = self.active_chats.lock().unwrap();
+        if let Some(session) = chats.get_mut(target_chat_id) {
+            if session.is_finished {
+                return;
+            }
+            session.is_finished = true;
+            if let Some(ref card_msg_id) = session.card_message_id {
+                let card = build_agent_stream_card("Hermes Agent", &session.accumulated_content, true);
+                if let Err(e) = self.client.update_card_message(card_msg_id, &card) {
+                    eprintln!("[Hermes] 完成态更新卡片失败: {}，尝试降级发送纯文本", e);
+                    let reply_text = if session.accumulated_content.trim().is_empty() {
+                        "🤖 [Hermes] 任务已执行完毕。".to_string()
+                    } else {
+                        format!("🤖 [Hermes]\n{}", session.accumulated_content)
+                    };
+                    let _ = self.client.send_text_message("chat_id", target_chat_id, &reply_text);
+                }
+            } else if session.fallback_text_mode {
+                let reply_text = if session.accumulated_content.trim().is_empty() {
+                    "🤖 [Hermes] 任务已执行完毕。".to_string()
+                } else {
+                    format!("🤖 [Hermes]\n{}", session.accumulated_content)
+                };
+                let _ = self.client.send_text_message("chat_id", target_chat_id, &reply_text);
+            }
+            let c_type = session.chat_type.clone();
+            self.add_log("out", "Hermes Agent", &c_type, &format!("回答完成: {}", truncate_str(&session.accumulated_content, 40)));
+
+            // 审计落盘：回答完成
+            let cur_m = self.current_model.lock().unwrap().clone();
+            self.audit_logger.record(&AuditRecord {
+                timestamp: current_timestamp_str(),
+                date: current_date_str(),
+                direction: "out".to_string(),
+                event_type: "agent_reply".to_string(),
+                chat_id: target_chat_id.to_string(),
+                chat_type: c_type,
+                sender_id: "Hermes Agent".to_string(),
+                model: if cur_m.is_empty() { None } else { Some(cur_m) },
+                content: session.accumulated_content.clone(),
+                meta: json!({
+                    "card_message_id": session.card_message_id,
+                    "fallback_text_mode": session.fallback_text_mode
+                }),
+            });
         }
     }
 
@@ -544,10 +645,17 @@ impl HermesBridge {
 
         let uuid_str = format!("perm_{}", self.next_rpc_id.fetch_add(1, Ordering::SeqCst));
 
-        // 寻找当前活跃的 chat_id 发送权限确认卡片
-        let chats = self.active_chats.lock().unwrap();
-        let target_chat_id = match chats.keys().next() {
-            Some(id) => id.clone(),
+        // 优先根据 sessionId 定位目标 chat_id 发送权限确认卡片，兜底使用当前首个活跃 chat
+        let sid_opt = params.get("sessionId").and_then(|s| s.as_str());
+        let target_chat_id = sid_opt
+            .and_then(|s| self.session_to_chat.lock().unwrap().get(s).cloned())
+            .or_else(|| {
+                let chats = self.active_chats.lock().unwrap();
+                chats.keys().next().cloned()
+            });
+
+        let target_chat_id = match target_chat_id {
+            Some(id) => id,
             None => return,
         };
 
@@ -587,7 +695,14 @@ impl HermesBridge {
 
     fn handle_command_new(&self, chat_id: &str, chat_type: &str) {
         let req_id = self.next_rpc_id.fetch_add(1, Ordering::SeqCst);
-        self.pending_new_chat_commands.lock().unwrap().insert(req_id, chat_id.to_string());
+        self.pending_session_requests.lock().unwrap().insert(
+            req_id,
+            PendingSessionRequest {
+                chat_id: chat_id.to_string(),
+                chat_type: chat_type.to_string(),
+                initial_prompt: None,
+            },
+        );
 
         // 清理当前会话进行中的卡片状态
         self.active_chats.lock().unwrap().remove(chat_id);
@@ -658,7 +773,14 @@ impl HermesBridge {
                 *self.current_model.lock().unwrap() = matched_val.clone();
 
                 let req_id = self.next_rpc_id.fetch_add(1, Ordering::SeqCst);
-                self.pending_new_chat_commands.lock().unwrap().insert(req_id, chat_id.to_string());
+                self.pending_session_requests.lock().unwrap().insert(
+                    req_id,
+                    PendingSessionRequest {
+                        chat_id: chat_id.to_string(),
+                        chat_type: chat_type.to_string(),
+                        initial_prompt: None,
+                    },
+                );
                 self.pending_model_configs.lock().unwrap().insert(chat_id.to_string(), matched_val);
 
                 // 清理旧状态
@@ -709,9 +831,22 @@ impl LarkEventHandler for HermesBridge {
     fn on_disconnected(&self, reason: &str) {
         eprintln!("[Hermes] 飞书长连接中断: {}", reason);
         if let Ok(mut s) = self.status.lock() {
-            s.state = "connecting".to_string();
-            s.error_message = Some(reason.to_string());
-            self.broadcast_status(&s);
+            if s.state != "stopped" && s.state != "error" {
+                s.state = "connecting".to_string();
+                s.error_message = Some(reason.to_string());
+                self.broadcast_status(&s);
+            }
+        }
+    }
+
+    fn on_error(&self, reason: &str) {
+        eprintln!("[Hermes] 飞书长连接发生致命错误: {}", reason);
+        if let Ok(mut s) = self.status.lock() {
+            if s.state != "stopped" {
+                s.state = "error".to_string();
+                s.error_message = Some(reason.to_string());
+                self.broadcast_status(&s);
+            }
         }
     }
 
@@ -804,44 +939,79 @@ impl LarkEventHandler for HermesBridge {
             );
         }
 
-        // 3. 向 ACP 发起 prompt（使用绑定到当前 chat 的 session_id）
-        let session_id_str = {
-            let chat_sid = self.chat_to_session.lock().unwrap().get(&chat_id).cloned();
-            match chat_sid {
-                Some(sid) => sid,
-                None => {
-                    let default_sid = self.current_acp_session_id.lock().unwrap().clone();
-                    match default_sid {
-                        Some(sid) => {
-                            self.chat_to_session.lock().unwrap().insert(chat_id.clone(), sid.clone());
-                            self.session_to_chat.lock().unwrap().insert(sid.clone(), chat_id.clone());
-                            sid
-                        }
-                        None => "default".to_string(),
-                    }
+        // 3. 检查当前 chat_id 是否已有绑定的独立 Session
+        let session_id_opt = {
+            let mut chat_to_sess = self.chat_to_session.lock().unwrap();
+            if let Some(sid) = chat_to_sess.get(&chat_id).cloned() {
+                Some(sid)
+            } else {
+                // 首次接入：尝试认领启动时的初始预热 session（仅首个接入的会话可认领一次，认领后消耗为 None）
+                if let Some(prewarmed_sid) = self.current_acp_session_id.lock().unwrap().take() {
+                    chat_to_sess.insert(chat_id.clone(), prewarmed_sid.clone());
+                    self.session_to_chat.lock().unwrap().insert(prewarmed_sid.clone(), chat_id.clone());
+                    println!("[Hermes] 会话 {} 认领了初始独立 ACP Session: {}", chat_id, prewarmed_sid);
+                    Some(prewarmed_sid)
+                } else {
+                    None
                 }
             }
         };
 
-        let prompt_req_id = self.next_rpc_id.fetch_add(1, Ordering::SeqCst);
-        let prompt_req = json!({
-            "jsonrpc": "2.0",
-            "id": prompt_req_id,
-            "method": "session/prompt",
-            "params": {
-                "sessionId": session_id_str,
-                "prompt": [
-                    {
-                        "type": "text",
-                        "text": text
+        match session_id_opt {
+            Some(session_id_str) => {
+                let prompt_req_id = self.next_rpc_id.fetch_add(1, Ordering::SeqCst);
+                self.pending_prompt_to_chat.lock().unwrap().insert(prompt_req_id, chat_id.clone());
+                let prompt_req = json!({
+                    "jsonrpc": "2.0",
+                    "id": prompt_req_id,
+                    "method": "session/prompt",
+                    "params": {
+                        "sessionId": session_id_str,
+                        "prompt": [
+                            {
+                                "type": "text",
+                                "text": text
+                            }
+                        ]
                     }
-                ]
-            }
-        });
+                });
 
-        if let Err(e) = self.send_to_acp(&prompt_req) {
-            eprintln!("[Hermes] 向 ACP 发送 prompt 失败: {}", e);
-            self.add_log("out", "Hermes", &chat_type, &format!("向 ACP 发送 prompt 失败: {}", e));
+                if let Err(e) = self.send_to_acp(&prompt_req) {
+                    eprintln!("[Hermes] 向 ACP 发送 prompt 失败: {}", e);
+                    self.add_log("out", "Hermes", &chat_type, &format!("向 ACP 发送 prompt 失败: {}", e));
+                }
+            }
+            None => {
+                // 首次接入且无可用预热 session：为该会话自动创建专属独立的 ACP Session，待创建成功后发送 prompt
+                let new_session_req_id = self.next_rpc_id.fetch_add(1, Ordering::SeqCst);
+                self.pending_session_requests.lock().unwrap().insert(
+                    new_session_req_id,
+                    PendingSessionRequest {
+                        chat_id: chat_id.clone(),
+                        chat_type: chat_type.clone(),
+                        initial_prompt: Some(text),
+                    },
+                );
+
+                let cur_m = self.current_model.lock().unwrap().clone();
+                if !cur_m.is_empty() {
+                    self.pending_model_configs.lock().unwrap().insert(chat_id.clone(), cur_m);
+                }
+
+                println!(
+                    "[Hermes] 会话 {} 首次接入，自动为其创建独立 ACP Session (req_id: {})",
+                    chat_id, new_session_req_id
+                );
+                let _ = self.send_to_acp(&json!({
+                    "jsonrpc": "2.0",
+                    "id": new_session_req_id,
+                    "method": "session/new",
+                    "params": {
+                        "cwd": self.project_path,
+                        "mcpServers": []
+                    }
+                }));
+            }
         }
     }
 

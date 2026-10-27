@@ -24,9 +24,30 @@ pub struct WsEndpointData {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WsEndpointResp {
     pub code: i64,
+    #[serde(default)]
     pub msg: String,
     pub data: Option<WsEndpointData>,
+    pub error: Option<serde_json::Value>,
 }
+
+#[derive(Debug, Clone)]
+pub struct LarkApiError {
+    pub code: i64,
+    pub message: String,
+    pub is_fatal: bool,
+}
+
+impl std::fmt::Display for LarkApiError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.code > 0 {
+            write!(f, "[{}] {}", self.code, self.message)
+        } else {
+            write!(f, "{}", self.message)
+        }
+    }
+}
+
+impl std::error::Error for LarkApiError {}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SendMessageRespData {
@@ -103,7 +124,7 @@ impl LarkClient {
     }
 
     /// 获取长连接 (WebSocket) 接入点地址
-    pub fn get_ws_endpoint(&self) -> Result<String, String> {
+    pub fn get_ws_endpoint(&self) -> Result<String, LarkApiError> {
         let url = format!("{}/callback/ws/endpoint", LARK_HOST);
         let resp = self
             .http_client
@@ -113,23 +134,79 @@ impl LarkClient {
                 "AppSecret": self.app_secret,
             }))
             .send()
-            .map_err(|e| format!("请求飞书长连接接入点失败: {}", e))?;
+            .map_err(|e| LarkApiError {
+                code: -1,
+                message: format!("请求飞书长连接接入点失败: {}", e),
+                is_fatal: false,
+            })?;
 
         if !resp.status().is_success() {
-            return Err(format!("获取接入点接口返回 HTTP 状态码: {}", resp.status()));
+            let status = resp.status();
+            let is_client_err = status.is_client_error();
+            return Err(LarkApiError {
+                code: status.as_u16() as i64,
+                message: format!("获取接入点接口返回 HTTP 状态码: {}", status),
+                is_fatal: is_client_err,
+            });
         }
 
         let body: WsEndpointResp = resp
             .json()
-            .map_err(|e| format!("解析接入点响应失败: {}", e))?;
+            .map_err(|e| LarkApiError {
+                code: -1,
+                message: format!("解析接入点响应失败: {}", e),
+                is_fatal: false,
+            })?;
 
         if body.code != 0 {
-            return Err(format!("获取长连接失败 ({}): {}", body.code, body.msg));
+            let mut err_msg = body.msg;
+            if err_msg.trim().is_empty() {
+                if let Some(err_val) = &body.error {
+                    if let Some(loc_msg) = err_val
+                        .get("localizedMessage")
+                        .and_then(|m| m.get("message"))
+                        .and_then(|s| s.as_str())
+                    {
+                        if !loc_msg.trim().is_empty() {
+                            err_msg = loc_msg.to_string();
+                        }
+                    }
+                }
+            }
+
+            if err_msg.trim().is_empty() {
+                err_msg = match body.code {
+                    1000040346 => "飞书凭据无效，请检查 App ID 与 App Secret 是否匹配".to_string(),
+                    99991663 => "App Secret 错误".to_string(),
+                    99991668 => "App ID 不存在".to_string(),
+                    99991677 => "应用尚未在飞书开放平台配置长连接 (WebSocket) 模式".to_string(),
+                    _ => format!("飞书错误码: {}", body.code),
+                };
+            }
+
+            let is_fatal = matches!(
+                body.code,
+                1000040346 | 99991663 | 99991668 | 99991677 | 40001
+            );
+
+            return Err(LarkApiError {
+                code: body.code,
+                message: format!("获取长连接失败 ({}): {}", body.code, err_msg),
+                is_fatal,
+            });
         }
 
-        let data = body.data.ok_or_else(|| "接入点响应未包含数据".to_string())?;
+        let data = body.data.ok_or_else(|| LarkApiError {
+            code: -1,
+            message: "接入点响应未包含数据".to_string(),
+            is_fatal: true,
+        })?;
         if data.url.is_empty() {
-            return Err("飞书返回的 WebSocket URL 为空".to_string());
+            return Err(LarkApiError {
+                code: -1,
+                message: "飞书返回的 WebSocket URL 为空".to_string(),
+                is_fatal: true,
+            });
         }
 
         Ok(data.url)

@@ -2,7 +2,7 @@ use std::collections::HashSet;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use prost::Message as ProstMessage;
 use tungstenite::{connect, Message};
 
@@ -15,9 +15,20 @@ fn get_processed_ids() -> &'static Mutex<HashSet<String>> {
     GLOBAL_PROCESSED_IDS.get_or_init(|| Mutex::new(HashSet::new()))
 }
 
+fn extract_service_id(url: &str) -> i32 {
+    if let Some(pos) = url.find("service_id=") {
+        let after = &url[pos + "service_id=".len()..];
+        let num_str: String = after.chars().take_while(|c| c.is_ascii_digit()).collect();
+        num_str.parse::<i32>().unwrap_or(0)
+    } else {
+        0
+    }
+}
+
 pub trait LarkEventHandler: Send + Sync + 'static {
     fn on_connected(&self);
     fn on_disconnected(&self, reason: &str);
+    fn on_error(&self, reason: &str);
     fn on_text_message(
         &self,
         chat_id: String,
@@ -52,19 +63,34 @@ impl LarkWsClient {
         }
     }
 
-    /// 启动后台长连接线程（支持断线自动指数退避重连）
+    /// 启动后台长连接线程（支持心跳保活与智能重连）
     pub fn start_loop(self) {
         thread::spawn(move || {
             let mut backoff_secs = 2;
+            let mut failed_attempts = 0;
+
             while !self.stop_signal.load(Ordering::Relaxed) {
                 // 1. 获取长连接 Endpoint
                 let ws_url = match self.client.get_ws_endpoint() {
                     Ok(url) => {
+                        failed_attempts = 0;
                         backoff_secs = 2; // 重置退避
                         url
                     }
                     Err(err) => {
-                        self.handler.on_disconnected(&format!("获取长连接端点失败: {}", err));
+                        failed_attempts += 1;
+                        if err.is_fatal {
+                            eprintln!("[Hermes WS] 飞书鉴权/配置致命错误: {}", err);
+                            self.handler.on_error(&err.message);
+                            break; // 致命错误，停止重试
+                        }
+
+                        if failed_attempts >= 3 {
+                            self.handler.on_error(&format!("多次连接失败 (已重试 {} 次): {}", failed_attempts, err.message));
+                        } else {
+                            self.handler.on_disconnected(&format!("获取端点失败: {}", err.message));
+                        }
+
                         if self.sleep_interruptible(backoff_secs) {
                             break;
                         }
@@ -73,14 +99,26 @@ impl LarkWsClient {
                     }
                 };
 
+                let service_id = extract_service_id(&ws_url);
+
                 // 2. 建立 WebSocket 连接
-                let (mut socket, _) = match connect(ws_url) {
+                let (mut socket, _) = match connect(&ws_url) {
                     Ok(conn) => {
+                        failed_attempts = 0;
+                        backoff_secs = 2;
                         self.handler.on_connected();
                         conn
                     }
                     Err(err) => {
-                        self.handler.on_disconnected(&format!("WebSocket 建连失败: {}", err));
+                        failed_attempts += 1;
+                        let err_msg = format!("WebSocket 建连失败: {}", err);
+                        eprintln!("[Hermes WS] {}", err_msg);
+                        if failed_attempts >= 3 {
+                            self.handler.on_error(&format!("无法连接飞书长连接网关 (已尝试 {} 次): {}", failed_attempts, err));
+                        } else {
+                            self.handler.on_disconnected(&err_msg);
+                        }
+
                         if self.sleep_interruptible(backoff_secs) {
                             break;
                         }
@@ -89,12 +127,59 @@ impl LarkWsClient {
                     }
                 };
 
+                // 设置底层 TCP 读取超时为 1 秒，以便循环响应 stop_signal 和发送心跳
+                if let tungstenite::stream::MaybeTlsStream::NativeTls(stream) = socket.get_mut() {
+                    let _ = stream.get_mut().set_read_timeout(Some(Duration::from_millis(1000)));
+                }
+
+                let mut last_ping = Instant::now();
+                let ping_interval = Duration::from_secs(30);
+
                 // 3. 消息循环
                 while !self.stop_signal.load(Ordering::Relaxed) {
+                    // 定时发送心跳 PingFrame 保活
+                    if last_ping.elapsed() >= ping_interval {
+                        let ping_frame = Frame {
+                            seq_id: 0,
+                            log_id: 0,
+                            service: service_id,
+                            method: 0, // FrameTypeControl
+                            headers: vec![Header {
+                                key: "type".to_string(),
+                                value: "ping".to_string(),
+                            }],
+                            payload_encoding: None,
+                            payload_type: None,
+                            payload: None,
+                            log_id_new: None,
+                        };
+                        let mut buf = Vec::new();
+                        if ping_frame.encode(&mut buf).is_ok() {
+                            if let Err(e) = socket.send(Message::Binary(buf)) {
+                                eprintln!("[Hermes WS] 发送心跳 Ping 失败: {}", e);
+                                if !self.stop_signal.load(Ordering::Relaxed) {
+                                    self.handler.on_disconnected(&format!("发送心跳失败: {}", e));
+                                }
+                                break;
+                            }
+                        }
+                        last_ping = Instant::now();
+                    }
+
                     let msg = match socket.read() {
                         Ok(msg) => msg,
+                        Err(tungstenite::Error::Io(ref e))
+                            if e.kind() == std::io::ErrorKind::WouldBlock
+                                || e.kind() == std::io::ErrorKind::TimedOut =>
+                        {
+                            // 读超时唤醒，继续检查 stop_signal 和心跳时间
+                            continue;
+                        }
                         Err(err) => {
-                            self.handler.on_disconnected(&format!("WebSocket 链接中断: {}", err));
+                            if !self.stop_signal.load(Ordering::Relaxed) {
+                                eprintln!("[Hermes WS] 读取连接中断: {}", err);
+                                self.handler.on_disconnected(&format!("WebSocket 链接中断: {}", err));
+                            }
                             break;
                         }
                     };
@@ -111,20 +196,26 @@ impl LarkWsClient {
 
                             // method = 0: 控制帧 (Ping/Pong)
                             if frame.method == 0 {
-                                let pong_frame = Frame {
-                                    seq_id: frame.seq_id,
-                                    log_id: frame.log_id,
-                                    service: frame.service,
-                                    method: 2, // 2: Pong
-                                    headers: frame.headers,
-                                    payload_encoding: None,
-                                    payload_type: None,
-                                    payload: None,
-                                    log_id_new: frame.log_id_new,
-                                };
-                                let mut buf = Vec::new();
-                                if pong_frame.encode(&mut buf).is_ok() {
-                                    let _ = socket.send(Message::Binary(buf));
+                                let is_ping = frame.headers.iter().any(|h| h.key == "type" && h.value == "ping");
+                                if is_ping {
+                                    let pong_frame = Frame {
+                                        seq_id: frame.seq_id,
+                                        log_id: frame.log_id,
+                                        service: frame.service,
+                                        method: 0, // 控制帧 method 必须是 0
+                                        headers: vec![Header {
+                                            key: "type".to_string(),
+                                            value: "pong".to_string(),
+                                        }],
+                                        payload_encoding: None,
+                                        payload_type: None,
+                                        payload: None,
+                                        log_id_new: frame.log_id_new,
+                                    };
+                                    let mut buf = Vec::new();
+                                    if pong_frame.encode(&mut buf).is_ok() {
+                                        let _ = socket.send(Message::Binary(buf));
+                                    }
                                 }
                                 continue;
                             }
@@ -163,7 +254,9 @@ impl LarkWsClient {
                             let _ = socket.send(Message::Pong(p));
                         }
                         Message::Close(_) => {
-                            self.handler.on_disconnected("服务端关闭连接");
+                            if !self.stop_signal.load(Ordering::Relaxed) {
+                                self.handler.on_disconnected("服务端关闭连接");
+                            }
                             break;
                         }
                         _ => {}
@@ -390,5 +483,14 @@ mod tests {
             "name": "机器人"
         })];
         assert_eq!(clean_text_mentions("@_user_1 @models", Some(&mentions)), "@models");
+    }
+
+    #[test]
+    fn test_extract_service_id() {
+        let url = "wss://msg-frontier.feishu.cn/ws/v2?fpid=493&service_id=33554678&ticket=abc";
+        assert_eq!(extract_service_id(url), 33554678);
+
+        let url_no_sid = "wss://msg-frontier.feishu.cn/ws/v2?fpid=493";
+        assert_eq!(extract_service_id(url_no_sid), 0);
     }
 }
