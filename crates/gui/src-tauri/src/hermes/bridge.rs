@@ -48,7 +48,8 @@ struct PendingPermission {
 }
 
 struct ActiveChatSession {
-    card_message_id: String,
+    card_message_id: Option<String>,
+    fallback_text_mode: bool,
     accumulated_content: String,
     last_updated: Instant,
     is_finished: bool,
@@ -171,17 +172,29 @@ impl HermesBridge {
 
     /// 启动 ACP 子进程 (mcode acp)
     fn spawn_acp_process(&self, arc_self: &Arc<Self>) -> Result<(), String> {
-        let acp_bin = resolve_acp_executable()?;
-        println!("[Hermes] 拉起 ACP 进程: {:?}, cwd: {}", acp_bin, self.project_path);
-
         #[cfg(target_os = "windows")]
         use std::os::windows::process::CommandExt;
         #[cfg(target_os = "windows")]
         const CREATE_NO_WINDOW: u32 = 0x08000000;
 
-        let mut cmd = Command::new(&acp_bin);
-        cmd.arg("acp")
-            .current_dir(&self.project_path)
+        #[cfg(target_os = "windows")]
+        let (mut cmd, args_display) = {
+            let mut c = Command::new("cmd");
+            c.args(["/C", "mcode", "acp"]);
+            (c, "cmd /C mcode acp".to_string())
+        };
+
+        #[cfg(not(target_os = "windows"))]
+        let (mut cmd, args_display) = {
+            let acp_bin = resolve_acp_executable()?;
+            let mut c = Command::new(&acp_bin);
+            c.arg("acp");
+            (c, format!("{} acp", acp_bin))
+        };
+
+        println!("[Hermes] 拉起 ACP 进程: {}, cwd: {}", args_display, self.project_path);
+
+        cmd.current_dir(&self.project_path)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
@@ -203,7 +216,8 @@ impl HermesBridge {
             "id": init_id,
             "method": "initialize",
             "params": {
-                "protocolVersion": "0.1",
+                "protocolVersion": 1,
+                "capabilities": {},
                 "clientInfo": {
                     "name": "loom-hermes",
                     "version": "0.1"
@@ -260,12 +274,12 @@ impl HermesBridge {
             Err(_) => return,
         };
 
-        // 1. 如果是响应 initialize 的结果 -> 发送 initialized & session/new
+        // 1. 如果是响应 initialize 的结果 -> 发送 notifications/initialized & session/new
         if let Some(id) = parsed.get("id").and_then(|i| i.as_i64()) {
             if id == 1 && parsed.get("result").is_some() {
                 let _ = self.send_to_acp(&json!({
                     "jsonrpc": "2.0",
-                    "method": "initialized",
+                    "method": "notifications/initialized",
                     "params": {}
                 }));
                 let session_id_req = self.next_rpc_id.fetch_add(1, Ordering::SeqCst);
@@ -274,7 +288,8 @@ impl HermesBridge {
                     "id": session_id_req,
                     "method": "session/new",
                     "params": {
-                        "cwd": self.project_path
+                        "cwd": self.project_path,
+                        "mcpServers": []
                     }
                 }));
                 return;
@@ -330,10 +345,12 @@ impl HermesBridge {
             session.accumulated_content.push_str(&content_chunk);
 
             // 节流：至少间隔 1.2 秒更新一次飞书卡片，避免被频控
-            if session.last_updated.elapsed() >= Duration::from_millis(1200) {
-                let card = build_agent_stream_card("Hermes Agent", &session.accumulated_content, false);
-                let _ = self.client.update_card_message(&session.card_message_id, &card);
-                session.last_updated = Instant::now();
+            if !session.fallback_text_mode && session.last_updated.elapsed() >= Duration::from_millis(1200) {
+                if let Some(ref card_msg_id) = session.card_message_id {
+                    let card = build_agent_stream_card("Hermes Agent", &session.accumulated_content, false);
+                    let _ = self.client.update_card_message(card_msg_id, &card);
+                    session.last_updated = Instant::now();
+                }
             }
         }
     }
@@ -341,14 +358,23 @@ impl HermesBridge {
     /// 将所有进行中的会话卡片标记为已完成
     fn flush_all_active_chats_finish(&self) {
         let mut chats = self.active_chats.lock().unwrap();
-        for (_chat_id, session) in chats.iter_mut() {
+        for (chat_id, session) in chats.iter_mut() {
             if session.is_finished {
                 continue;
             }
             session.is_finished = true;
-            let card = build_agent_stream_card("Hermes Agent", &session.accumulated_content, true);
-            let _ = self.client.update_card_message(&session.card_message_id, &card);
-            self.add_log("out", "Hermes Agent", "p2p", &format!("回答完成: {}", truncate_str(&session.accumulated_content, 40)));
+            if let Some(ref card_msg_id) = session.card_message_id {
+                let card = build_agent_stream_card("Hermes Agent", &session.accumulated_content, true);
+                let _ = self.client.update_card_message(card_msg_id, &card);
+            } else if session.fallback_text_mode {
+                let reply_text = if session.accumulated_content.trim().is_empty() {
+                    "🤖 [Hermes] 任务已执行完毕。".to_string()
+                } else {
+                    format!("🤖 [Hermes]\n{}", session.accumulated_content)
+                };
+                let _ = self.client.send_text_message("chat_id", chat_id, &reply_text);
+            }
+            self.add_log("out", "Hermes Agent", "chat", &format!("回答完成: {}", truncate_str(&session.accumulated_content, 40)));
         }
     }
 
@@ -428,13 +454,18 @@ impl LarkEventHandler for HermesBridge {
     ) {
         self.add_log("in", &sender_open_id, &chat_type, &text);
 
-        // 1. 发送思考中占位卡片
+        // 1. 尝试发送思考中占位卡片，失败则降级为纯文本提示
         let init_card = build_agent_stream_card("Hermes Agent", "正在分析任务...", false);
-        let card_msg_id = match self.client.send_card_message("chat_id", &chat_id, &init_card) {
-            Ok(id) => id,
+        let (card_msg_id, fallback_text_mode) = match self.client.send_card_message("chat_id", &chat_id, &init_card) {
+            Ok(id) => {
+                self.add_log("out", "Hermes", &chat_type, "已发送交互卡片: 正在分析任务...");
+                (Some(id), false)
+            }
             Err(e) => {
-                eprintln!("[Hermes] 发送初始卡片失败: {}", e);
-                return;
+                eprintln!("[Hermes] 发送初始卡片失败: {}，尝试降级为纯文本", e);
+                self.add_log("out", "Hermes", &chat_type, &format!("发送卡片失败 ({})，降级为纯文本", e));
+                let _ = self.client.send_text_message("chat_id", &chat_id, "🤖 [Hermes] 收到消息，正在分析任务...");
+                (None, true)
             }
         };
 
@@ -445,6 +476,7 @@ impl LarkEventHandler for HermesBridge {
                 chat_id.clone(),
                 ActiveChatSession {
                     card_message_id: card_msg_id,
+                    fallback_text_mode,
                     accumulated_content: String::new(),
                     last_updated: Instant::now(),
                     is_finished: false,
@@ -480,6 +512,7 @@ impl LarkEventHandler for HermesBridge {
 
         if let Err(e) = self.send_to_acp(&prompt_req) {
             eprintln!("[Hermes] 向 ACP 发送 prompt 失败: {}", e);
+            self.add_log("out", "Hermes", &chat_type, &format!("向 ACP 发送 prompt 失败: {}", e));
         }
     }
 
@@ -530,6 +563,7 @@ impl LarkEventHandler for HermesBridge {
 
 // ─── 辅助函数 ─────────────────────────────────────────────────────────────
 
+#[allow(dead_code)]
 fn resolve_acp_executable() -> Result<String, String> {
     // 1. 尝试环境变量中的 mcode
     if let Ok(path) = which::which("mcode") {
@@ -557,15 +591,15 @@ fn resolve_acp_executable() -> Result<String, String> {
 fn extract_content_chunk(params: &serde_json::Value) -> String {
     let mut chunk = String::new();
     if let Some(update) = params.get("update") {
-        if let Some(content) = update.get("content") {
+        if let Some(text) = update.pointer("/content/text").and_then(|t| t.as_str()) {
+            chunk.push_str(text);
+        } else if let Some(content) = update.get("content") {
             if let Some(text) = content.get("text").and_then(|t| t.as_str()) {
                 chunk.push_str(text);
             }
         }
-        if let Some(thought) = update.get("thought") {
-            if let Some(text) = thought.get("text").and_then(|t| t.as_str()) {
-                chunk.push_str(text);
-            }
+        if let Some(text) = update.pointer("/thought/text").and_then(|t| t.as_str()) {
+            chunk.push_str(text);
         }
     }
     chunk

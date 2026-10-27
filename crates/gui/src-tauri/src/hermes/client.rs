@@ -257,6 +257,14 @@ pub fn build_agent_stream_card(title: &str, markdown_content: &str, is_finished:
     };
     let header_color = if is_finished { "green" } else { "blue" };
 
+    let content = if markdown_content.is_empty() {
+        format!("*{}*", status_tag)
+    } else if is_finished {
+        markdown_content.to_string()
+    } else {
+        format!("{}\n\n---\n*{}*", markdown_content, status_tag)
+    };
+
     json!({
         "schema": "2.0",
         "header": {
@@ -270,16 +278,7 @@ pub fn build_agent_stream_card(title: &str, markdown_content: &str, is_finished:
             "elements": [
                 {
                     "tag": "markdown",
-                    "content": if markdown_content.is_empty() { "..." } else { markdown_content }
-                },
-                {
-                    "tag": "note",
-                    "elements": [
-                        {
-                            "tag": "plain_text",
-                            "content": format!("状态: {}", status_tag)
-                        }
-                    ]
+                    "content": content
                 }
             ]
         }
@@ -385,7 +384,8 @@ mod tests {
         assert!(title.contains("Hermes Agent"));
         let body_elements = card["body"]["elements"].as_array().unwrap();
         assert_eq!(body_elements[0]["tag"], "markdown");
-        assert_eq!(body_elements[0]["content"], "测试输出");
+        assert!(body_elements[0]["content"].as_str().unwrap().contains("测试输出"));
+        assert!(body_elements[0]["content"].as_str().unwrap().contains("思考 / 执行中..."));
     }
 
     #[test]
