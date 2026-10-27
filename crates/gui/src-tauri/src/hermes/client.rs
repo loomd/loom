@@ -104,7 +104,7 @@ impl LarkClient {
 
     /// 获取长连接 (WebSocket) 接入点地址
     pub fn get_ws_endpoint(&self) -> Result<String, String> {
-        let url = format!("{}/open-apis/callback/ws/endpoint", LARK_HOST);
+        let url = format!("{}/callback/ws/endpoint", LARK_HOST);
         let resp = self
             .http_client
             .post(&url)
@@ -399,5 +399,13 @@ mod tests {
         let content = resolved_card["body"]["elements"][0]["content"].as_str().unwrap();
         assert!(content.contains("已批准"));
         assert!(content.contains("ou_123"));
+    }
+
+    #[test]
+    fn test_ws_endpoint_url_path() {
+        // 飞书长连接接口必须使用根路由 /callback/ws/endpoint，不能带 /open-apis 前缀
+        let url = format!("{}/callback/ws/endpoint", LARK_HOST);
+        assert_eq!(url, "https://open.feishu.cn/callback/ws/endpoint");
+        assert!(!url.contains("/open-apis/callback"));
     }
 }
