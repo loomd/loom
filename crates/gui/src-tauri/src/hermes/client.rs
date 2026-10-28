@@ -424,7 +424,7 @@ pub fn build_agent_stream_card(title: &str, markdown_content: &str, is_finished:
     })
 }
 
-/// 构建权限确认请求卡片（包含批准/拒绝按钮）
+/// 构建权限确认请求卡片（采用飞书卡片 2.0 规范的 column_set 分栏并排展示批准/拒绝按钮）
 pub fn build_permission_request_card(
     req_id: &str,
     tool_name: &str,
@@ -446,31 +446,49 @@ pub fn build_permission_request_card(
                     "content": format!("**Agent 正在申请调用工具:** `{}`\n\n**请求详情:**\n```\n{}\n```", tool_name, detail)
                 },
                 {
-                    "tag": "action",
-                    "actions": [
+                    "tag": "column_set",
+                    "flex_mode": "flow",
+                    "background_style": "default",
+                    "columns": [
                         {
-                            "tag": "button",
-                            "text": {
-                                "tag": "plain_text",
-                                "content": "批准"
-                            },
-                            "type": "primary",
-                            "value": {
-                                "action": "approve",
-                                "req_id": req_id
-                            }
+                            "tag": "column",
+                            "width": "auto",
+                            "weight": 1,
+                            "vertical_align": "top",
+                            "elements": [
+                                {
+                                    "tag": "button",
+                                    "text": {
+                                        "tag": "plain_text",
+                                        "content": "批准"
+                                    },
+                                    "type": "primary",
+                                    "value": {
+                                        "action": "approve",
+                                        "req_id": req_id
+                                    }
+                                }
+                            ]
                         },
                         {
-                            "tag": "button",
-                            "text": {
-                                "tag": "plain_text",
-                                "content": "拒绝"
-                            },
-                            "type": "danger",
-                            "value": {
-                                "action": "reject",
-                                "req_id": req_id
-                            }
+                            "tag": "column",
+                            "width": "auto",
+                            "weight": 1,
+                            "vertical_align": "top",
+                            "elements": [
+                                {
+                                    "tag": "button",
+                                    "text": {
+                                        "tag": "plain_text",
+                                        "content": "拒绝"
+                                    },
+                                    "type": "danger",
+                                    "value": {
+                                        "action": "reject",
+                                        "req_id": req_id
+                                    }
+                                }
+                            ]
                         }
                     ]
                 }
@@ -530,9 +548,13 @@ mod tests {
     #[test]
     fn test_build_permission_cards() {
         let req_card = build_permission_request_card("perm_1", "write_file", "写入 main.rs");
-        let actions = &req_card["body"]["elements"][1]["actions"];
-        assert_eq!(actions[0]["text"]["content"], "批准");
-        assert_eq!(actions[1]["text"]["content"], "拒绝");
+        assert_eq!(req_card["schema"], "2.0");
+        let col_set = &req_card["body"]["elements"][1];
+        assert_eq!(col_set["tag"], "column_set");
+        let btn_approve = &col_set["columns"][0]["elements"][0];
+        let btn_reject = &col_set["columns"][1]["elements"][0];
+        assert_eq!(btn_approve["text"]["content"], "批准");
+        assert_eq!(btn_reject["text"]["content"], "拒绝");
 
         let resolved_card = build_permission_resolved_card("write_file", "approve", "ou_123");
         let content = resolved_card["body"]["elements"][0]["content"].as_str().unwrap();

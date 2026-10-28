@@ -114,6 +114,7 @@ struct PendingPermission {
     #[allow(dead_code)]
     chat_id: String,
     card_message_id: Option<String>,
+    allow_option_id: Option<String>,
 }
 
 struct ActiveChatSession {
@@ -800,11 +801,33 @@ impl HermesBridge {
             self.send_segment(&target_chat_id, &chat_type, &segment);
         }
 
+        // 解析 ACP 附带的权限选项列表，提取第一个允许类选项 ID
+        let mut allow_option_id = None;
+        if let Some(opts) = params.get("options").and_then(|o| o.as_array()) {
+            for opt in opts {
+                let kind = opt.get("kind").and_then(|k| k.as_str()).unwrap_or("");
+                let oid = opt.get("optionId").and_then(|o| o.as_str());
+                if (kind == "allow_once" || kind == "allow_always") && oid.is_some() {
+                    allow_option_id = oid.map(|s| s.to_string());
+                    break;
+                }
+            }
+        }
+
         let perm_card = build_permission_request_card(&uuid_str, tool_name, description);
         let msg_id = match self.client.send_card_message("chat_id", &target_chat_id, &perm_card) {
-            Ok(id) => Some(id),
+            Ok(id) => {
+                self.add_log("out", "Hermes", "p2p", &format!("已发送权限确认卡片: {}", tool_name));
+                Some(id)
+            }
             Err(e) => {
                 eprintln!("[Hermes] 发送权限卡片失败: {}", e);
+                let fallback_text = format!(
+                    "⚠️ [Hermes] Agent 申请执行工具 `{}`，但交互卡片推送失败: {}\n如需继续，请检查飞书应用权限或配置。",
+                    tool_name, e
+                );
+                let _ = self.client.send_text_message("chat_id", &target_chat_id, &fallback_text);
+                self.add_log("out", "Hermes", "p2p", &format!("发送权限卡片失败: {}", tool_name));
                 None
             }
         };
@@ -816,10 +839,9 @@ impl HermesBridge {
                 tool_name: tool_name.to_string(),
                 chat_id: target_chat_id,
                 card_message_id: msg_id,
+                allow_option_id,
             },
         );
-
-        self.add_log("out", "Hermes", "p2p", &format!("请求权限确认: {}", tool_name));
     }
 
     fn handle_command_help(&self, chat_id: &str, chat_type: &str) {
@@ -1233,12 +1255,27 @@ impl LarkEventHandler for HermesBridge {
             let approved = action == "approve";
             let decision_str = if approved { "approved" } else { "rejected" };
 
-            // 1. 回复 ACP 权限结果
+            // 1. 回复 ACP 权限结果（严格按照 ACP 规范的 outcome 对象结构）
+            let outcome = if approved {
+                let option_id = pending
+                    .allow_option_id
+                    .as_deref()
+                    .unwrap_or("allow_once");
+                json!({
+                    "outcome": "selected",
+                    "optionId": option_id
+                })
+            } else {
+                json!({
+                    "outcome": "cancelled"
+                })
+            };
+
             let rpc_resp = json!({
                 "jsonrpc": "2.0",
                 "id": pending.acp_request_id,
                 "result": {
-                    "outcome": decision_str
+                    "outcome": outcome
                 }
             });
             let _ = self.send_to_acp(&rpc_resp);
