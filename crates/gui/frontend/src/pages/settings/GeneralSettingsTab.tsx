@@ -109,6 +109,135 @@ const SHELL_BORDER_PRESET_COLORS = [
 	{ label: "纯洁白", value: "#e4e4e7" },
 ];
 
+const THEME_OPTIONS: Array<{
+	id: "dark" | "day" | "gray";
+	labelKey: "settings.theme.dark" | "settings.theme.day" | "settings.theme.gray";
+}> = [
+	{ id: "dark", labelKey: "settings.theme.dark" },
+	{ id: "day", labelKey: "settings.theme.day" },
+	{ id: "gray", labelKey: "settings.theme.gray" },
+];
+
+function ThemeMiniPreview({ type, active }: { type: "dark" | "day" | "gray"; active: boolean }) {
+	const configs = {
+		dark: {
+			border: active ? "var(--accent-purple, #8b5cf6)" : "var(--border-subtle, #27272a)",
+			titleBg: "#18181c",
+			dots: "#3f3f46",
+			sidebarBg: "#121215",
+			contentBg: "#0c0c0e",
+			line: "rgba(255, 255, 255, 0.12)",
+			accent: "#8b5cf6",
+		},
+		day: {
+			border: active ? "var(--accent-purple, #8b5cf6)" : "var(--border-subtle, #e4e4e7)",
+			titleBg: "#e4e4e7",
+			dots: "#a1a1aa",
+			sidebarBg: "#f4f4f5",
+			contentBg: "#ffffff",
+			line: "rgba(0, 0, 0, 0.08)",
+			accent: "#7c3aed",
+		},
+		gray: {
+			border: active ? "var(--accent-purple, #8b5cf6)" : "var(--border-subtle, #2d2d34)",
+			titleBg: "#27272e",
+			dots: "#52525b",
+			sidebarBg: "#202026",
+			contentBg: "#17171c",
+			line: "rgba(255, 255, 255, 0.10)",
+			accent: "#9333ea",
+		},
+	};
+	const cfg = configs[type];
+
+	return (
+		<div
+			style={{
+				width: "100%",
+				height: "68px",
+				borderRadius: "6px",
+				border: `1px solid ${cfg.border}`,
+				overflow: "hidden",
+				display: "flex",
+				flexDirection: "column",
+				boxShadow: active
+					? "0 4px 12px rgba(139, 92, 246, 0.18)"
+					: "0 2px 6px rgba(0, 0, 0, 0.06)",
+				transition: "all 200ms ease",
+				boxSizing: "border-box",
+			}}
+		>
+			<div
+				style={{
+					height: "12px",
+					background: cfg.titleBg,
+					display: "flex",
+					alignItems: "center",
+					padding: "0 6px",
+					gap: "3px",
+					flexShrink: 0,
+					boxSizing: "border-box",
+				}}
+			>
+				<span style={{ width: "4px", height: "4px", borderRadius: "50%", background: cfg.dots }} />
+				<span style={{ width: "4px", height: "4px", borderRadius: "50%", background: cfg.dots }} />
+				<span style={{ width: "4px", height: "4px", borderRadius: "50%", background: cfg.dots }} />
+			</div>
+			<div style={{ flex: 1, display: "flex", minHeight: 0 }}>
+				<div
+					style={{
+						width: "28%",
+						background: cfg.sidebarBg,
+						padding: "6px 4px",
+						display: "flex",
+						flexDirection: "column",
+						gap: "4px",
+						flexShrink: 0,
+						boxSizing: "border-box",
+					}}
+				>
+					<div style={{ height: "3px", width: "65%", borderRadius: "1px", background: cfg.accent }} />
+					<div style={{ height: "3px", width: "85%", borderRadius: "1px", background: cfg.line }} />
+					<div style={{ height: "3px", width: "70%", borderRadius: "1px", background: cfg.line }} />
+				</div>
+				<div
+					style={{
+						flex: 1,
+						background: cfg.contentBg,
+						padding: "6px",
+						display: "flex",
+						flexDirection: "column",
+						gap: "4px",
+						minWidth: 0,
+						boxSizing: "border-box",
+					}}
+				>
+					<div
+						style={{
+							height: "16px",
+							borderRadius: "3px",
+							background: cfg.sidebarBg,
+							border: `1px solid ${cfg.line}`,
+							padding: "3px 4px",
+							display: "flex",
+							alignItems: "center",
+							gap: "3px",
+							boxSizing: "border-box",
+						}}
+					>
+						<span style={{ width: "4px", height: "4px", borderRadius: "1px", background: cfg.accent, flexShrink: 0 }} />
+						<div style={{ height: "3px", width: "50%", borderRadius: "1px", background: cfg.line }} />
+					</div>
+					<div style={{ display: "flex", gap: "3px", alignItems: "center" }}>
+						<div style={{ height: "3px", width: "40%", borderRadius: "1px", background: cfg.line }} />
+						<div style={{ height: "3px", width: "25%", borderRadius: "1px", background: cfg.line }} />
+					</div>
+				</div>
+			</div>
+		</div>
+	);
+}
+
 export default function GeneralSettingsTab({
 	theme,
 	onThemeChange,
@@ -340,246 +469,368 @@ export default function GeneralSettingsTab({
 				paddingBottom: "100px",
 			}}
 		>
-			{/* Theme Settings */}
-			<div className="card-outer">
-				<div className="card-inner" style={{ padding: "24px" }}>
+			{/* Version Info Settings */}
+			<section className="card remote-card">
+				<div className="remote-card-head">
+					<div className="remote-card-heading">
+						<h2 className="remote-card-title">{t("settings.version.title")}</h2>
+						<p className="remote-card-desc">{t("settings.version.desc")}</p>
+					</div>
+					<button
+						type="button"
+						className="btn btn-ghost"
+						onClick={handleOpenChangelog}
+						style={{
+							padding: "3px 10px",
+							fontSize: "12px",
+							height: "26px",
+							color: "var(--accent-primary, #3b82f6)",
+							cursor: "pointer",
+						}}
+					>
+						{t("settings.version.changelogBtn")}
+					</button>
+				</div>
+
+				<div
+					style={{
+						display: "flex",
+						alignItems: "center",
+						justifyContent: "space-between",
+						flexWrap: "wrap",
+						gap: "16px",
+						fontSize: "14px",
+						color: "var(--text-primary)",
+					}}
+				>
 					<div
 						style={{
-							fontSize: "15px",
+							display: "flex",
+							alignItems: "center",
+							flexWrap: "wrap",
+							gap: "8px",
+						}}
+					>
+						<span style={{ fontWeight: 600 }}>Loom v{appVersion}</span>
+						<span
+							style={{
+								color: "var(--text-tertiary)",
+								fontSize: "0.85rem",
+							}}
+						>
+							(Stable)
+						</span>
+						{updateInfo && updateInfo.hasUpdate && (
+							<div
+								style={{
+									display: "inline-flex",
+									alignItems: "center",
+									gap: "6px",
+									fontSize: "13px",
+									marginLeft: "8px",
+								}}
+							>
+								<span
+									style={{
+										backgroundColor: "rgba(235, 94, 40, 0.15)",
+										color: "#eb5e28",
+										padding: "2px 8px",
+										borderRadius: "12px",
+										fontWeight: 600,
+										fontSize: "0.75rem",
+										border: "1px solid rgba(235, 94, 40, 0.25)",
+									}}
+								>
+									{t("settings.version.newUpdate")}
+								</span>
+								{downloadProgress && downloadProgress.status !== "idle" ? (
+									<div
+										style={{
+											display: "inline-flex",
+											alignItems: "center",
+											gap: "8px",
+										}}
+									>
+										<span
+											style={{
+												fontSize: "0.8rem",
+												color: "var(--accent-purple, #9b5de5)",
+												fontWeight: 500,
+											}}
+										>
+											{downloadProgress.status === "downloading"
+												? `${t("settings.version.progress.downloading")} ${downloadProgress.percent}%`
+												: t("settings.version.progress.preparing")}
+										</span>
+										<div
+											style={{
+												width: "80px",
+												height: "4px",
+												backgroundColor: "rgba(255, 255, 255, 0.1)",
+												borderRadius: "2px",
+												overflow: "hidden",
+											}}
+										>
+											<div
+												style={{
+													width: `${downloadProgress.percent}%`,
+													height: "100%",
+													backgroundColor: "var(--accent-purple, #9b5de5)",
+													borderRadius: "2px",
+													transition: "width 0.2s ease",
+												}}
+											/>
+										</div>
+									</div>
+								) : (
+									<>
+										{onInstallUpdate && (
+											<button
+												onClick={onInstallUpdate}
+												style={{
+													color: "var(--accent-purple, #9b5de5)",
+													textDecoration: "underline",
+													fontWeight: 500,
+													cursor: "pointer",
+													background: "none",
+													border: "none",
+													fontSize: "inherit",
+													padding: 0,
+												}}
+											>
+												{t("settings.version.installNow")}
+											</button>
+										)}
+										{onSkipVersion && updateInfo.latestVersion && (
+											<button
+												onClick={() =>
+													onSkipVersion(updateInfo.latestVersion)
+												}
+												style={{
+													color: "var(--text-tertiary)",
+													textDecoration: "none",
+													fontWeight: 400,
+													cursor: "pointer",
+													background: "none",
+													border: "none",
+													fontSize: "0.75rem",
+													padding: "2px 8px",
+												}}
+											>
+												{t("settings.version.skip")}
+											</button>
+										)}
+									</>
+								)}
+							</div>
+						)}
+						{updateInfo &&
+							!updateInfo.hasUpdate &&
+							!updateInfo.error && (
+								<span
+									style={{
+										backgroundColor: "rgba(46, 196, 182, 0.12)",
+										color: "#2ec4b6",
+										padding: "2px 8px",
+										borderRadius: "12px",
+										fontWeight: 600,
+										fontSize: "0.75rem",
+										border: "1px solid rgba(46, 196, 182, 0.22)",
+										marginLeft: "8px",
+										display: "inline-flex",
+										alignItems: "center",
+										gap: "4px",
+									}}
+								>
+									✓ {t("settings.version.upToDate")}
+								</span>
+							)}
+						{updateInfo && updateInfo.error && (
+							<span
+								style={{
+									backgroundColor: "rgba(230, 57, 70, 0.12)",
+									color: "#e63946",
+									padding: "2px 8px",
+									borderRadius: "12px",
+									fontWeight: 600,
+									fontSize: "0.75rem",
+									border: "1px solid rgba(230, 57, 70, 0.22)",
+									marginLeft: "8px",
+									display: "inline-flex",
+									alignItems: "center",
+									gap: "4px",
+								}}
+							>
+								⚠ {t("settings.version.checkFailed")}
+							</span>
+						)}
+					</div>
+
+					<button
+						onClick={handleManualCheck}
+						disabled={isChecking}
+						style={{
+							display: "inline-flex",
+							alignItems: "center",
+							justifyContent: "center",
+							gap: "6px",
+							padding: "6px 14px",
+							borderRadius: "var(--radius-sm, 6px)",
+							backgroundColor: isChecking
+								? "var(--bg-button-disabled, #2a2b36)"
+								: "var(--accent-purple, #9b5de5)",
+							color: isChecking ? "var(--text-muted, #666)" : "#ffffff",
+							border: "none",
+							cursor: isChecking ? "not-allowed" : "pointer",
+							fontSize: "13px",
+							fontWeight: 500,
+							transition: "all 200ms ease",
+							boxShadow: "none",
+						}}
+						onMouseEnter={(e) => {
+							if (!isChecking) {
+								e.currentTarget.style.transform = "translateY(-1px)";
+								e.currentTarget.style.filter = "brightness(1.1)";
+								e.currentTarget.style.boxShadow =
+									"0 4px 12px rgba(155, 93, 229, 0.2)";
+							}
+						}}
+						onMouseLeave={(e) => {
+							e.currentTarget.style.transform = "none";
+							e.currentTarget.style.filter = "none";
+							e.currentTarget.style.boxShadow = "none";
+						}}
+					>
+						{isChecking ? (
+							<>
+								<span
+									className="scan-spinner"
+									style={{
+										width: "12px",
+										height: "12px",
+										borderLeftColor: "transparent",
+										margin: 0,
+									}}
+								/>
+								{t("settings.version.checking")}
+							</>
+						) : (
+							t("settings.version.check")
+						)}
+					</button>
+				</div>
+
+				{/* Check Interval Setting */}
+				<div
+					style={{
+						marginTop: "16px",
+						paddingTop: "16px",
+						borderTop: "1px solid var(--border-subtle)",
+					}}
+				>
+					<div
+						style={{
+							fontSize: "13px",
 							fontWeight: 600,
 							color: "var(--text-primary)",
 							marginBottom: "4px",
 						}}
 					>
-						{t("settings.theme.title")}
+						{t("settings.version.checkInterval.title")}
 					</div>
 					<div
 						style={{
 							fontSize: "12px",
 							color: "var(--text-secondary)",
-							marginBottom: "20px",
+							marginTop: "4px",
+							marginBottom: "10px",
 						}}
 					>
-						{t("settings.theme.desc")}
+						{t("settings.version.checkInterval.desc")}
 					</div>
-
-					<div
-						style={{
-							display: "grid",
-							gridTemplateColumns: "1fr 1fr 1fr",
-							gap: "16px",
-						}}
-					>
-						<button
-							onClick={() => handleThemeSelect("dark")}
-							style={{
-								background:
-									theme === "dark"
-										? "var(--accent-purple-dim)"
-										: "var(--bg-elevated)",
-								border:
-									theme === "dark"
-										? "2px solid var(--accent-purple)"
-										: "1px solid var(--border-mid)",
-								borderRadius: "var(--radius-lg)",
-								padding: "20px",
-								cursor: "pointer",
-								textAlign: "left",
-								transition: "all 200ms var(--ease-spring)",
-								display: "flex",
-								flexDirection: "column",
-								gap: "8px",
-							}}
-							className={theme === "dark" ? "theme-active" : ""}
-						>
-							<div
+					<div style={{ display: "flex", gap: "8px" }}>
+						{(
+							[
+								{ value: "", label: t("settings.version.checkInterval.never") },
+								{ value: "30min", label: t("settings.version.checkInterval.30min") },
+								{ value: "1h", label: t("settings.version.checkInterval.1h") },
+							] as const
+						).map((opt) => (
+							<button
+								key={opt.value}
+								onClick={() => handleChangeInterval(opt.value)}
 								style={{
-									display: "flex",
-									alignItems: "center",
-									justifyContent: "space-between",
-									width: "100%",
+									background:
+										checkInterval === opt.value
+											? "var(--accent-purple)"
+											: "var(--bg-elevated)",
+									border:
+										checkInterval === opt.value
+											? "1px solid var(--accent-purple)"
+											: "1px solid var(--border-mid)",
+									borderRadius: "6px",
+									padding: "6px 14px",
+									cursor: "pointer",
+									color:
+										checkInterval === opt.value
+											? "#ffffff"
+											: "var(--text-secondary)",
+									fontSize: "13px",
+									fontWeight: 500,
+									transition: "all 200ms ease",
 								}}
 							>
-								<span style={{ fontSize: "20px" }}>🌙</span>
-								{theme === "dark" && (
-									<span
-										style={{
-											background: "var(--accent-purple)",
-											color: "#ffffff",
-											borderRadius: "50%",
-											width: "18px",
-											height: "18px",
-											display: "inline-flex",
-											alignItems: "center",
-											justifyContent: "center",
-											fontSize: "10px",
-											fontWeight: "bold",
-										}}
-									>
-										✓
-									</span>
-								)}
-							</div>
-							<span
-								style={{
-									fontSize: "14px",
-									fontWeight: 600,
-									color: "var(--text-primary)",
-								}}
-							>
-								{t("settings.theme.dark")}
-							</span>
-						</button>
-
-						<button
-							onClick={() => handleThemeSelect("day")}
-							style={{
-								background:
-									theme === "day"
-										? "var(--accent-purple-dim)"
-										: "var(--bg-elevated)",
-								border:
-									theme === "day"
-										? "2px solid var(--accent-purple)"
-										: "1px solid var(--border-mid)",
-								borderRadius: "var(--radius-lg)",
-								padding: "20px",
-								cursor: "pointer",
-								textAlign: "left",
-								transition: "all 200ms var(--ease-spring)",
-								display: "flex",
-								flexDirection: "column",
-								gap: "8px",
-							}}
-							className={theme === "day" ? "theme-active" : ""}
-						>
-							<div
-								style={{
-									display: "flex",
-									alignItems: "center",
-									justifyContent: "space-between",
-									width: "100%",
-								}}
-							>
-								<span style={{ fontSize: "20px" }}>☀️</span>
-								{theme === "day" && (
-									<span
-										style={{
-											background: "var(--accent-purple)",
-											color: "#ffffff",
-											borderRadius: "50%",
-											width: "18px",
-											height: "18px",
-											display: "inline-flex",
-											alignItems: "center",
-											justifyContent: "center",
-											fontSize: "10px",
-											fontWeight: "bold",
-										}}
-									>
-										✓
-									</span>
-								)}
-							</div>
-							<span
-								style={{
-									fontSize: "14px",
-									fontWeight: 600,
-									color: "var(--text-primary)",
-								}}
-							>
-								{t("settings.theme.day")}
-							</span>
-						</button>
-
-						<button
-							onClick={() => handleThemeSelect("gray")}
-							style={{
-								background:
-									theme === "gray"
-										? "var(--accent-purple-dim)"
-										: "var(--bg-elevated)",
-								border:
-									theme === "gray"
-										? "2px solid var(--accent-purple)"
-										: "1px solid var(--border-mid)",
-								borderRadius: "var(--radius-lg)",
-								padding: "20px",
-								cursor: "pointer",
-								textAlign: "left",
-								transition: "all 200ms var(--ease-spring)",
-								display: "flex",
-								flexDirection: "column",
-								gap: "8px",
-							}}
-							className={theme === "gray" ? "theme-active" : ""}
-						>
-							<div
-								style={{
-									display: "flex",
-									alignItems: "center",
-									justifyContent: "space-between",
-									width: "100%",
-								}}
-							>
-								<span style={{ fontSize: "20px" }}>👁</span>
-								{theme === "gray" && (
-									<span
-										style={{
-											background: "var(--accent-purple)",
-											color: "#ffffff",
-											borderRadius: "50%",
-											width: "18px",
-											height: "18px",
-											display: "inline-flex",
-											alignItems: "center",
-											justifyContent: "center",
-											fontSize: "10px",
-											fontWeight: "bold",
-										}}
-									>
-										✓
-									</span>
-								)}
-							</div>
-							<span
-								style={{
-									fontSize: "14px",
-									fontWeight: 600,
-									color: "var(--text-primary)",
-								}}
-							>
-								{t("settings.theme.gray")}
-							</span>
-						</button>
+								{opt.label}
+							</button>
+						))}
 					</div>
 				</div>
-			</div>
+			</section>
+
+			{/* Theme Settings */}
+			<section className="card remote-card">
+				<div className="remote-card-head">
+					<div className="remote-card-heading">
+						<h2 className="remote-card-title">{t("settings.theme.title")}</h2>
+						<p className="remote-card-desc">{t("settings.theme.desc")}</p>
+					</div>
+				</div>
+
+				<div className="theme-options-grid">
+					{THEME_OPTIONS.map((item) => {
+						const isActive = theme === item.id;
+						return (
+							<button
+								key={item.id}
+								type="button"
+								onClick={() => handleThemeSelect(item.id)}
+								className={`theme-option-card ${isActive ? "theme-active active" : ""}`}
+							>
+								<ThemeMiniPreview type={item.id} active={isActive} />
+								<div className="theme-option-bottom">
+									<div className="theme-option-info">
+										<span className="theme-option-name">{t(item.labelKey)}</span>
+									</div>
+									<div className="theme-radio-dot">
+										{isActive && <div className="theme-radio-inner" />}
+									</div>
+								</div>
+							</button>
+						);
+					})}
+				</div>
+			</section>
 
 			{/* Font Settings */}
-			<div className="card-outer">
-				<div className="card-inner" style={{ padding: "24px" }}>
-					<div
-						style={{
-							fontSize: "15px",
-							fontWeight: 600,
-							color: "var(--text-primary)",
-							marginBottom: "4px",
-						}}
-					>
-						{t("settings.font.title")}
+			<section className="card remote-card">
+				<div className="remote-card-head">
+					<div className="remote-card-heading">
+						<h2 className="remote-card-title">{t("settings.font.title")}</h2>
+						<p className="remote-card-desc">{t("settings.font.desc")}</p>
 					</div>
-					<div
-						style={{
-							fontSize: "12px",
-							color: "var(--text-secondary)",
-							marginBottom: "20px",
-						}}
-					>
-						{t("settings.font.desc")}
-					</div>
+				</div>
 
-					{/* Two-column layout: UI Font & Terminal Font */}
+				{/* Two-column layout: UI Font & Terminal Font */}
 					<div
 						style={{
 							display: "grid",
@@ -1056,79 +1307,49 @@ export default function GeneralSettingsTab({
 							</div>
 						</div>
 					</div>
-				</div>
-			</div>
+			</section>
 
 			{/* Language Settings */}
-			<div className="card-outer">
-				<div className="card-inner" style={{ padding: "24px" }}>
-					<div
-						style={{
-							fontSize: "15px",
-							fontWeight: 600,
-							color: "var(--text-primary)",
-							marginBottom: "4px",
-						}}
-					>
-						{t("settings.lang.title")}
-					</div>
-					<div
-						style={{
-							fontSize: "12px",
-							color: "var(--text-secondary)",
-							marginBottom: "16px",
-						}}
-					>
-						{t("settings.lang.desc")}
-					</div>
-
-					<div style={{ display: "flex", gap: "12px" }}>
-						<button
-							onClick={() => setLanguage("zh")}
-							className={`btn ${language === "zh" ? "btn-primary" : "btn-ghost"}`}
-							style={{
-								borderRadius: "var(--radius-md)",
-								padding: "10px 20px",
-							}}
-						>
-							简体中文
-						</button>
-						<button
-							onClick={() => setLanguage("en")}
-							className={`btn ${language === "en" ? "btn-primary" : "btn-ghost"}`}
-							style={{
-								borderRadius: "var(--radius-md)",
-								padding: "10px 20px",
-							}}
-						>
-							English
-						</button>
+			<section className="card remote-card">
+				<div className="remote-card-head">
+					<div className="remote-card-heading">
+						<h2 className="remote-card-title">{t("settings.lang.title")}</h2>
+						<p className="remote-card-desc">{t("settings.lang.desc")}</p>
 					</div>
 				</div>
-			</div>
+
+				<div style={{ display: "flex", gap: "12px" }}>
+					<button
+						onClick={() => setLanguage("zh")}
+						className={`btn ${language === "zh" ? "btn-primary" : "btn-ghost"}`}
+						style={{
+							borderRadius: "var(--radius-md)",
+							padding: "10px 20px",
+						}}
+					>
+						简体中文
+					</button>
+					<button
+						onClick={() => setLanguage("en")}
+						className={`btn ${language === "en" ? "btn-primary" : "btn-ghost"}`}
+						style={{
+							borderRadius: "var(--radius-md)",
+							padding: "10px 20px",
+						}}
+					>
+						English
+					</button>
+				</div>
+			</section>
 
 			{/* System Settings */}
-			<div className="card-outer">
-				<div className="card-inner" style={{ padding: "24px" }}>
-					<div
-						style={{
-							fontSize: "15px",
-							fontWeight: 600,
-							color: "var(--text-primary)",
-							marginBottom: "4px",
-						}}
-					>
-						{t("settings.system.title")}
+			<section className="card remote-card">
+				<div className="remote-card-head">
+					<div className="remote-card-heading">
+						<h2 className="remote-card-title">{t("settings.system.title")}</h2>
+						<p className="remote-card-desc">{t("settings.system.desc")}</p>
 					</div>
-					<div
-						style={{
-							fontSize: "12px",
-							color: "var(--text-secondary)",
-							marginBottom: "20px",
-						}}
-					>
-						{t("settings.system.desc")}
-					</div>
+				</div>
 
 					{/* Project Column Align */}
 					<div
@@ -1845,23 +2066,16 @@ export default function GeneralSettingsTab({
 							})}
 						</div>
 					</div>
-
-					</div>
-			</div>
+			</section>
 
 			{/* Feature Navigation Switch */}
-			<div className="card-outer">
-				<div className="card-inner" style={{ padding: "24px" }}>
-					<div
-						style={{
-							fontSize: "15px",
-							fontWeight: 600,
-							color: "var(--text-primary)",
-							marginBottom: "16px",
-						}}
-					>
-						功能导航开关
+			<section className="card remote-card">
+				<div className="remote-card-head">
+					<div className="remote-card-heading">
+						<h2 className="remote-card-title">功能导航开关</h2>
+						<p className="remote-card-desc">控制侧边栏与主导航各扩展功能的显示或隐藏。</p>
 					</div>
+				</div>
 
 					{/* Hermes Toggle */}
 					<div
@@ -2056,349 +2270,7 @@ export default function GeneralSettingsTab({
 							/>
 						</button>
 					</div>
-				</div>
-			</div>
-
-			{/* Version Info Settings */}
-			<div className="card-outer">
-				<div className="card-inner" style={{ padding: "24px" }}>
-					<div
-						style={{
-							display: "flex",
-							alignItems: "center",
-							justifyContent: "space-between",
-							marginBottom: "4px",
-						}}
-					>
-						<div
-							style={{
-								fontSize: "15px",
-								fontWeight: 600,
-								color: "var(--text-primary)",
-							}}
-						>
-							{t("settings.version.title")}
-						</div>
-						<button
-							type="button"
-							className="btn btn-ghost"
-							onClick={handleOpenChangelog}
-							style={{
-								padding: "3px 10px",
-								fontSize: "12px",
-								height: "26px",
-								color: "var(--accent-primary, #3b82f6)",
-								cursor: "pointer",
-							}}
-						>
-							{t("settings.version.changelogBtn")}
-						</button>
-					</div>
-					<div
-						style={{
-							fontSize: "12px",
-							color: "var(--text-secondary)",
-							marginBottom: "16px",
-						}}
-					>
-						{t("settings.version.desc")}
-					</div>
-
-					<div
-						style={{
-							display: "flex",
-							alignItems: "center",
-							justifyContent: "space-between",
-							flexWrap: "wrap",
-							gap: "16px",
-							fontSize: "14px",
-							color: "var(--text-primary)",
-						}}
-					>
-						<div
-							style={{
-								display: "flex",
-								alignItems: "center",
-								flexWrap: "wrap",
-								gap: "8px",
-							}}
-						>
-							<span style={{ fontWeight: 600 }}>Loom v{appVersion}</span>
-							<span
-								style={{
-									color: "var(--text-tertiary)",
-									fontSize: "0.85rem",
-								}}
-							>
-								(Stable)
-							</span>
-							{updateInfo && updateInfo.hasUpdate && (
-								<div
-									style={{
-										display: "inline-flex",
-										alignItems: "center",
-										gap: "6px",
-										fontSize: "13px",
-										marginLeft: "8px",
-									}}
-								>
-									<span
-										style={{
-											backgroundColor: "rgba(235, 94, 40, 0.15)",
-											color: "#eb5e28",
-											padding: "2px 8px",
-											borderRadius: "12px",
-											fontWeight: 600,
-											fontSize: "0.75rem",
-											border: "1px solid rgba(235, 94, 40, 0.25)",
-										}}
-									>
-										{t("settings.version.newUpdate")}
-									</span>
-									{downloadProgress && downloadProgress.status !== "idle" ? (
-										<div
-											style={{
-												display: "inline-flex",
-												alignItems: "center",
-												gap: "8px",
-											}}
-										>
-											<span
-												style={{
-													fontSize: "0.8rem",
-													color: "var(--accent-purple, #9b5de5)",
-													fontWeight: 500,
-												}}
-											>
-												{downloadProgress.status === "downloading"
-													? `${t("settings.version.progress.downloading")} ${downloadProgress.percent}%`
-													: t("settings.version.progress.preparing")}
-											</span>
-											<div
-												style={{
-													width: "80px",
-													height: "4px",
-													backgroundColor: "rgba(255, 255, 255, 0.1)",
-													borderRadius: "2px",
-													overflow: "hidden",
-												}}
-											>
-												<div
-													style={{
-														width: `${downloadProgress.percent}%`,
-														height: "100%",
-														backgroundColor: "var(--accent-purple, #9b5de5)",
-														borderRadius: "2px",
-														transition: "width 0.2s ease",
-													}}
-												/>
-											</div>
-										</div>
-									) : (
-										<>
-											{onInstallUpdate && (
-												<button
-													onClick={onInstallUpdate}
-													style={{
-														color: "var(--accent-purple, #9b5de5)",
-														textDecoration: "underline",
-														fontWeight: 500,
-														cursor: "pointer",
-														background: "none",
-														border: "none",
-														fontSize: "inherit",
-														padding: 0,
-													}}
-												>
-													{t("settings.version.installNow")}
-												</button>
-											)}
-											{onSkipVersion && updateInfo.latestVersion && (
-												<button
-													onClick={() =>
-														onSkipVersion(updateInfo.latestVersion)
-													}
-													style={{
-														color: "var(--text-tertiary)",
-														textDecoration: "none",
-														fontWeight: 400,
-														cursor: "pointer",
-														background: "none",
-														border: "none",
-														fontSize: "0.75rem",
-														padding: "2px 8px",
-													}}
-												>
-													{t("settings.version.skip")}
-												</button>
-											)}
-										</>
-									)}
-								</div>
-							)}
-							{updateInfo &&
-								!updateInfo.hasUpdate &&
-								!updateInfo.error && (
-									<span
-										style={{
-											backgroundColor: "rgba(46, 196, 182, 0.12)",
-											color: "#2ec4b6",
-											padding: "2px 8px",
-											borderRadius: "12px",
-											fontWeight: 600,
-											fontSize: "0.75rem",
-											border: "1px solid rgba(46, 196, 182, 0.22)",
-											marginLeft: "8px",
-											display: "inline-flex",
-											alignItems: "center",
-											gap: "4px",
-										}}
-									>
-										✓ {t("settings.version.upToDate")}
-									</span>
-								)}
-							{updateInfo && updateInfo.error && (
-								<span
-									style={{
-										backgroundColor: "rgba(230, 57, 70, 0.12)",
-										color: "#e63946",
-										padding: "2px 8px",
-										borderRadius: "12px",
-										fontWeight: 600,
-										fontSize: "0.75rem",
-										border: "1px solid rgba(230, 57, 70, 0.22)",
-										marginLeft: "8px",
-										display: "inline-flex",
-										alignItems: "center",
-										gap: "4px",
-									}}
-								>
-									⚠ {t("settings.version.checkFailed")}
-								</span>
-							)}
-						</div>
-
-						<button
-							onClick={handleManualCheck}
-							disabled={isChecking}
-							style={{
-								display: "inline-flex",
-								alignItems: "center",
-								justifyContent: "center",
-								gap: "6px",
-								padding: "6px 14px",
-								borderRadius: "var(--radius-sm, 6px)",
-								backgroundColor: isChecking
-									? "var(--bg-button-disabled, #2a2b36)"
-									: "var(--accent-purple, #9b5de5)",
-								color: isChecking ? "var(--text-muted, #666)" : "#ffffff",
-								border: "none",
-								cursor: isChecking ? "not-allowed" : "pointer",
-								fontSize: "13px",
-								fontWeight: 500,
-								transition: "all 200ms ease",
-								boxShadow: "none",
-							}}
-							onMouseEnter={(e) => {
-								if (!isChecking) {
-									e.currentTarget.style.transform = "translateY(-1px)";
-									e.currentTarget.style.filter = "brightness(1.1)";
-									e.currentTarget.style.boxShadow =
-										"0 4px 12px rgba(155, 93, 229, 0.2)";
-								}
-							}}
-							onMouseLeave={(e) => {
-								e.currentTarget.style.transform = "none";
-								e.currentTarget.style.filter = "none";
-								e.currentTarget.style.boxShadow = "none";
-							}}
-						>
-							{isChecking ? (
-								<>
-									<span
-										className="scan-spinner"
-										style={{
-											width: "12px",
-											height: "12px",
-											borderLeftColor: "transparent",
-											margin: 0,
-										}}
-									/>
-									{t("settings.version.checking")}
-								</>
-							) : (
-								t("settings.version.check")
-							)}
-						</button>
-					</div>
-
-					{/* Check Interval Setting */}
-					<div
-						style={{
-							marginTop: "16px",
-							paddingTop: "16px",
-							borderTop: "1px solid var(--border-subtle)",
-						}}
-					>
-						<div
-							style={{
-								fontSize: "13px",
-								fontWeight: 600,
-								color: "var(--text-primary)",
-								marginBottom: "4px",
-							}}
-						>
-							{t("settings.version.checkInterval.title")}
-						</div>
-						<div
-							style={{
-								fontSize: "12px",
-								color: "var(--text-secondary)",
-								marginTop: "4px",
-								marginBottom: "10px",
-							}}
-						>
-							{t("settings.version.checkInterval.desc")}
-						</div>
-						<div style={{ display: "flex", gap: "8px" }}>
-							{(
-								[
-									{ value: "", label: t("settings.version.checkInterval.never") },
-									{ value: "30min", label: t("settings.version.checkInterval.30min") },
-									{ value: "1h", label: t("settings.version.checkInterval.1h") },
-								] as const
-							).map((opt) => (
-								<button
-									key={opt.value}
-									onClick={() => handleChangeInterval(opt.value)}
-									style={{
-										background:
-											checkInterval === opt.value
-												? "var(--accent-purple)"
-												: "var(--bg-elevated)",
-										border:
-											checkInterval === opt.value
-												? "1px solid var(--accent-purple)"
-												: "1px solid var(--border-mid)",
-										borderRadius: "6px",
-										padding: "6px 14px",
-										cursor: "pointer",
-										color:
-											checkInterval === opt.value
-												? "#ffffff"
-												: "var(--text-secondary)",
-										fontSize: "13px",
-										fontWeight: 500,
-										transition: "all 200ms ease",
-									}}
-								>
-									{opt.label}
-								</button>
-							))}
-						</div>
-					</div>
-				</div>
-			</div>
+			</section>
 
 			{showChangelog && (
 				<WhatsNewDialog
