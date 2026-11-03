@@ -11,6 +11,7 @@ import { useI18n } from '../I18nContext';
 import { TemplateModal } from './TemplatesPage';
 import { EditorPlaceholder } from '../components/EditorPlaceholder';
 import { clearProjectTerminals, deleteProjectAgentHistory, getProjectAgentHistory, getProjectLayout, getProjectTerminals, getRestoreTerminals, pollAgentState, saveProjectAgentHistory, saveProjectLayout, saveProjectTerminals } from '../api';
+import { buildMcodeResumeArgs, buildOpencodeResumeArgs } from '../utils';
 import { syncProjectShells } from '../hooks/useProjectCompositeStates';
 import type { CompositeState } from '../hooks/useProjectCompositeStates';
 import type { Project, AgentStateInfo, PersistedTerminal, AgentHistoryEntry } from '../types';
@@ -120,14 +121,7 @@ const performRestore = useCallback((list: PersistedTerminal[], layout: GridLayou
       if (isMcode) {
         if (sessionId) {
           if (command && (command.toLowerCase().includes('mcode') || command.toLowerCase().includes('minimax'))) {
-            const cleanArgs = args ? [...args] : [];
-            const sIdx = cleanArgs.indexOf('--session');
-            if (sIdx !== -1 && sIdx + 1 < cleanArgs.length) {
-              cleanArgs[sIdx + 1] = sessionId;
-            } else {
-              cleanArgs.push('--session', sessionId);
-            }
-            args = cleanArgs;
+            args = buildMcodeResumeArgs(args, sessionId);
           } else {
             initialCommand = `mcode --session ${sessionId}`;
           }
@@ -137,14 +131,7 @@ const performRestore = useCallback((list: PersistedTerminal[], layout: GridLayou
       } else {
         if (sessionId) {
           if (command && command.toLowerCase().includes('opencode')) {
-            const cleanArgs = args ? [...args] : [];
-            const sIdx = cleanArgs.indexOf('-s');
-            if (sIdx !== -1 && sIdx + 1 < cleanArgs.length) {
-              cleanArgs[sIdx + 1] = sessionId;
-            } else {
-              cleanArgs.push('-s', sessionId);
-            }
-            args = cleanArgs;
+            args = buildOpencodeResumeArgs(args, sessionId);
           } else {
             initialCommand = `opencode -s ${sessionId}`;
           }
@@ -814,33 +801,19 @@ const closeActiveByShortcut = useCallback(() => {
 
                             if (isEntryMcode) {
                               if (command && (command.toLowerCase().includes('mcode') || command.toLowerCase().includes('minimax'))) {
-                                const cleanArgs = args ? [...args] : [];
-                                const sIdx = cleanArgs.indexOf('--session');
-                                if (sIdx !== -1 && sIdx + 1 < cleanArgs.length) {
-                                  cleanArgs[sIdx + 1] = sessionId;
-                                } else {
-                                  cleanArgs.push('--session', sessionId);
-                                }
-                                args = cleanArgs;
+                                args = buildMcodeResumeArgs(args, sessionId);
                               } else if (!command) {
                                 command = 'mcode';
-                                args = ['--session', sessionId];
+                                args = buildMcodeResumeArgs(args, sessionId);
                               } else {
                                 initialCommand = `mcode --session ${sessionId}`;
                               }
                             } else {
                               if (command && command.toLowerCase().includes('opencode')) {
-                                const cleanArgs = args ? [...args] : [];
-                                const sIdx = cleanArgs.indexOf('-s');
-                                if (sIdx !== -1 && sIdx + 1 < cleanArgs.length) {
-                                  cleanArgs[sIdx + 1] = sessionId;
-                                } else {
-                                  cleanArgs.push('-s', sessionId);
-                                }
-                                args = cleanArgs;
+                                args = buildOpencodeResumeArgs(args, sessionId);
                               } else if (!command) {
                                 command = 'opencode';
-                                args = ['-s', sessionId];
+                                args = buildOpencodeResumeArgs(args, sessionId);
                               } else {
                                 initialCommand = `opencode -s ${sessionId}`;
                               }

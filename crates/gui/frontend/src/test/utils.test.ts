@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { mergeCliArgs, projectPathKey } from "../utils";
+import { buildMcodeResumeArgs, buildOpencodeResumeArgs, mergeCliArgs, projectPathKey } from "../utils";
 
 describe("mergeCliArgs", () => {
   it("merges empty arrays", () => {
@@ -84,3 +84,64 @@ describe("projectPathKey", () => {
     expect(projectPathKey("D:\\Develop\\loom")).not.toBe(projectPathKey("D:\\Develop\\other"));
   });
 });
+
+describe("buildMcodeResumeArgs", () => {
+  it("removes --mode lightweight and injects --session", () => {
+    const raw = ["--model", "custom_provider:loom/claude-opus-4-6-thinking", "--mode", "lightweight"];
+    const result = buildMcodeResumeArgs(raw, "mvs_12345");
+    expect(result).toEqual([
+      "--model",
+      "custom_provider:loom/claude-opus-4-6-thinking",
+      "--session",
+      "mvs_12345",
+    ]);
+  });
+
+  it("removes --mode=lightweight syntax", () => {
+    const raw = ["--mode=lightweight", "--ptc"];
+    const result = buildMcodeResumeArgs(raw, "mvs_12345");
+    expect(result).toEqual(["--ptc", "--session", "mvs_12345"]);
+  });
+
+  it("removes -c and --continue conflicting flags", () => {
+    const raw = ["-c", "--model", "custom_provider:loom/claude-opus-4-6-thinking"];
+    const result = buildMcodeResumeArgs(raw, "mvs_12345");
+    expect(result).toEqual([
+      "--model",
+      "custom_provider:loom/claude-opus-4-6-thinking",
+      "--session",
+      "mvs_12345",
+    ]);
+  });
+
+  it("replaces old --session and --resume arguments", () => {
+    const raw = ["--session", "old_session", "--resume", "old_resume", "-m", "loom/model"];
+    const result = buildMcodeResumeArgs(raw, "mvs_new");
+    expect(result).toEqual(["-m", "loom/model", "--session", "mvs_new"]);
+  });
+
+  it("handles undefined or empty args cleanly", () => {
+    expect(buildMcodeResumeArgs(undefined, "mvs_12345")).toEqual(["--session", "mvs_12345"]);
+    expect(buildMcodeResumeArgs([], "mvs_12345")).toEqual(["--session", "mvs_12345"]);
+  });
+});
+
+describe("buildOpencodeResumeArgs", () => {
+  it("replaces old -s or --session with new sessionId", () => {
+    const raw = ["-s", "old_sess", "--verbose"];
+    const result = buildOpencodeResumeArgs(raw, "ses_new");
+    expect(result).toEqual(["--verbose", "-s", "ses_new"]);
+  });
+
+  it("removes conflicting -c / --continue flags", () => {
+    const raw = ["-c", "--continue", "--model", "anthropic/claude"];
+    const result = buildOpencodeResumeArgs(raw, "ses_new");
+    expect(result).toEqual(["--model", "anthropic/claude", "-s", "ses_new"]);
+  });
+
+  it("handles undefined or empty args cleanly", () => {
+    expect(buildOpencodeResumeArgs(undefined, "ses_12345")).toEqual(["-s", "ses_12345"]);
+    expect(buildOpencodeResumeArgs([], "ses_12345")).toEqual(["-s", "ses_12345"]);
+  });
+});
+

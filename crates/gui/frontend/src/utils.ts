@@ -399,3 +399,107 @@ export function composeTerminalFontFamily(latinFont?: string, cjkFont?: string):
   specificFonts.push('monospace');
   return specificFonts.join(', ');
 }
+
+/**
+ * 组装 mcode 恢复会话参数。
+ * 剔除与恢复已有会话冲突的参数（如 --mode, -c, --continue, 旧的 --session / --resume 等），
+ * 保留其他有效参数（如 --model, -m, --ptc 等），并正确注入 [--session, sessionId]。
+ */
+export function buildMcodeResumeArgs(args: string[] | undefined, sessionId: string): string[] {
+  const result: string[] = [];
+  if (args && args.length > 0) {
+    let i = 0;
+    while (i < args.length) {
+      const item = args[i];
+      if (!item) {
+        i++;
+        continue;
+      }
+      // 1. 过滤 --mode (以及 --mode=xxx)
+      if (item === '--mode') {
+        i++;
+        if (i < args.length && !args[i].startsWith('-')) {
+          i++;
+        }
+        continue;
+      }
+      if (item.startsWith('--mode=')) {
+        i++;
+        continue;
+      }
+      // 2. 过滤旧的 --session (以及 --session=xxx)
+      if (item === '--session') {
+        i++;
+        if (i < args.length && !args[i].startsWith('-')) {
+          i++;
+        }
+        continue;
+      }
+      if (item.startsWith('--session=')) {
+        i++;
+        continue;
+      }
+      // 3. 过滤旧的 --resume (以及 --resume=xxx)
+      if (item === '--resume') {
+        i++;
+        if (i < args.length && !args[i].startsWith('-')) {
+          i++;
+        }
+        continue;
+      }
+      if (item.startsWith('--resume=')) {
+        i++;
+        continue;
+      }
+      // 4. 过滤 -c 和 --continue
+      if (item === '-c' || item === '--continue') {
+        i++;
+        continue;
+      }
+
+      result.push(item);
+      i++;
+    }
+  }
+
+  result.push('--session', sessionId);
+  return result;
+}
+
+/**
+ * 组装 opencode 恢复会话参数。
+ * 剔除旧的 -s, --session, -c, --continue 等，并注入 [-s, sessionId]。
+ */
+export function buildOpencodeResumeArgs(args: string[] | undefined, sessionId: string): string[] {
+  const result: string[] = [];
+  if (args && args.length > 0) {
+    let i = 0;
+    while (i < args.length) {
+      const item = args[i];
+      if (!item) {
+        i++;
+        continue;
+      }
+      if (item === '-s' || item === '--session') {
+        i++;
+        if (i < args.length && !args[i].startsWith('-')) {
+          i++;
+        }
+        continue;
+      }
+      if (item.startsWith('--session=') || item.startsWith('-s=')) {
+        i++;
+        continue;
+      }
+      if (item === '-c' || item === '--continue') {
+        i++;
+        continue;
+      }
+      result.push(item);
+      i++;
+    }
+  }
+  result.push('-s', sessionId);
+  return result;
+}
+

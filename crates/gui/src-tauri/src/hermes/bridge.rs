@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::io::{BufRead, BufReader, Write};
 use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
@@ -11,7 +11,7 @@ use tauri::{AppHandle, Emitter};
 
 use super::audit::{current_date_str, current_timestamp_str, AuditLogger, AuditRecord};
 use super::client::{
-    build_permission_request_card, build_permission_resolved_card, LarkClient,
+    build_permission_request_card, build_permission_resolved_card, LarkClient, QuotedMessageInfo,
 };
 use super::ws::{LarkEventHandler, LarkWsClient};
 use crate::acp::match_model_option;
@@ -80,6 +80,65 @@ pub fn parse_hermes_command(text: &str) -> Option<HermesCommand> {
     }
 
     None
+}
+
+/// 飞书消息转 Agent Prompt 的上下文参数
+#[derive(Debug, Clone, Default)]
+pub struct HermesPromptContext<'a> {
+    pub sender_name: Option<&'a str>,
+    pub sender_id: &'a str,
+    pub chat_type: &'a str,
+    pub chat_id: &'a str,
+    pub chat_name: Option<&'a str>,
+    pub include_chat_context: bool,
+    pub quoted_info: Option<&'a QuotedMessageInfo>,
+}
+
+/// 格式化飞书消息为 Agent Prompt（注入发言者身份、首轮群聊元信息和引用回复上下文）
+pub fn format_hermes_prompt(
+    ctx: &HermesPromptContext,
+    raw_text: &str,
+) -> String {
+    let mut parts = Vec::new();
+
+    // 1. 群聊感知：仅在首轮对话时注入群聊名称和群聊 ID，声明仅作背景参考，无需主动拉取群历史记录
+    if ctx.chat_type == "group" && ctx.include_chat_context {
+        let chat_desc = if let Some(name) = ctx.chat_name.filter(|s| !s.trim().is_empty()) {
+            format!("「{}」(群ID: {})", name, ctx.chat_id)
+        } else {
+            format!("(群ID: {})", ctx.chat_id)
+        };
+        parts.push(format!(
+            "[当前处于群聊{}，仅作会话背景参考，请直接回答当前发言，无需也不要主动拉取群历史记录]",
+            chat_desc
+        ));
+    }
+
+    // 2. 引用回复感知：当用户回复了某条消息时注入被回复内容
+    if let Some(quoted) = ctx.quoted_info {
+        let q_sender = quoted
+            .sender_name
+            .as_deref()
+            .filter(|s| !s.trim().is_empty())
+            .unwrap_or(&quoted.sender_id);
+
+        if quoted.text.contains('\n') {
+            parts.push(format!(
+                "[引用回复: {}说:\n\"\"\"\n{}\n\"\"\"]",
+                q_sender, quoted.text
+            ));
+        } else {
+            parts.push(format!("[引用回复: {}说: \"{}\"]", q_sender, quoted.text));
+        }
+    }
+
+    // 3. 发言者身份感知：在发言前注入 "xxx说："
+    let speaker = ctx.sender_name
+        .filter(|s| !s.trim().is_empty())
+        .unwrap_or(ctx.sender_id);
+    parts.push(format!("{}说：\n{}", speaker, raw_text));
+
+    parts.join("\n")
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -152,6 +211,7 @@ pub struct HermesBridge {
     pending_model_configs: Arc<Mutex<HashMap<String, String>>>,
     pending_session_requests: Arc<Mutex<HashMap<i64, PendingSessionRequest>>>,
     pending_prompt_to_chat: Arc<Mutex<HashMap<i64, String>>>,
+    known_context_chats: Arc<Mutex<HashSet<String>>>,
     pub audit_logger: Arc<AuditLogger>,
 }
 
@@ -189,6 +249,7 @@ impl HermesBridge {
             pending_model_configs: Arc::new(Mutex::new(HashMap::new())),
             pending_session_requests: Arc::new(Mutex::new(HashMap::new())),
             pending_prompt_to_chat: Arc::new(Mutex::new(HashMap::new())),
+            known_context_chats: Arc::new(Mutex::new(HashSet::new())),
             audit_logger: Arc::new(AuditLogger::new()),
         }
     }
@@ -899,6 +960,9 @@ impl HermesBridge {
     }
 
     fn handle_command_new(&self, chat_id: &str, chat_type: &str) {
+        // 重置该会话的群聊上下文记录，使新会话的首轮对话重新注入群聊信息
+        self.known_context_chats.lock().unwrap().remove(chat_id);
+
         let req_id = self.next_rpc_id.fetch_add(1, Ordering::SeqCst);
         self.pending_session_requests.lock().unwrap().insert(
             req_id,
@@ -989,6 +1053,7 @@ impl HermesBridge {
                 self.pending_model_configs.lock().unwrap().insert(chat_id.to_string(), matched_val);
 
                 // 清理旧状态
+                self.known_context_chats.lock().unwrap().remove(chat_id);
                 self.active_chats.lock().unwrap().remove(chat_id);
 
                 let _ = self.send_to_acp(&json!({
@@ -1062,10 +1127,15 @@ impl LarkEventHandler for HermesBridge {
         message_id: String,
         sender_open_id: String,
         text: String,
+        parent_id: Option<String>,
     ) {
         let maybe_cmd = parse_hermes_command(&text);
 
-        // 1. /stop 指令优先响应，绕过在途互斥拦截以强制中止当前任务
+        // 1. 获取发送者姓名（用于日志展示与 Prompt 增强）
+        let sender_name = self.client.get_user_name(&sender_open_id);
+        let display_sender = sender_name.as_deref().unwrap_or(&sender_open_id);
+
+        // 2. /stop 指令优先响应，绕过在途互斥拦截以强制中止当前任务
         if let Some(HermesCommand::Stop) = maybe_cmd {
             if !message_id.is_empty() {
                 let client = self.client.clone();
@@ -1074,12 +1144,12 @@ impl LarkEventHandler for HermesBridge {
                     let _ = client.add_reaction(&mid, "OK");
                 });
             }
-            self.add_log("in", &sender_open_id, &chat_type, &text);
+            self.add_log("in", display_sender, &chat_type, &text);
             self.handle_command_stop(&chat_id, &chat_type);
             return;
         }
 
-        // 2. 会话在途互斥保护：若当前会话上一条任务还在执行中，忽略并发重发消息，避免并发冲突与双重回复
+        // 3. 会话在途互斥保护：若当前会话上一条任务还在执行中，忽略并发重发消息，避免并发冲突与双重回复
         {
             let chats = self.active_chats.lock().unwrap();
             if let Some(existing) = chats.get(&chat_id) {
@@ -1090,7 +1160,7 @@ impl LarkEventHandler for HermesBridge {
             }
         }
 
-        // 3. 开始处理消息：第一时间对用户消息添加表情回复 (Reaction)
+        // 4. 开始处理消息：第一时间对用户消息添加表情回复 (Reaction)
         if !message_id.is_empty() {
             let client = self.client.clone();
             let mid = message_id.clone();
@@ -1099,25 +1169,24 @@ impl LarkEventHandler for HermesBridge {
             });
         }
 
-        self.add_log("in", &sender_open_id, &chat_type, &text);
+        self.add_log("in", display_sender, &chat_type, &text);
 
-        // 审计落盘：记录每一条用户消息
-        let cur_m = self.current_model.lock().unwrap().clone();
-        self.audit_logger.record(&AuditRecord {
-            timestamp: current_timestamp_str(),
-            date: current_date_str(),
-            direction: "in".to_string(),
-            event_type: "user_message".to_string(),
-            chat_id: chat_id.clone(),
-            chat_type: chat_type.clone(),
-            sender_id: sender_open_id.clone(),
-            model: if cur_m.is_empty() { None } else { Some(cur_m) },
-            content: text.clone(),
-            meta: json!({ "message_id": message_id }),
-        });
-
-        // 4. 其他指令判断：/help / /new / /models / /model <name>
+        // 5. 其他指令判断：/help / /new / /models / /model <name>
         if let Some(cmd) = maybe_cmd {
+            let cur_m = self.current_model.lock().unwrap().clone();
+            self.audit_logger.record(&AuditRecord {
+                timestamp: current_timestamp_str(),
+                date: current_date_str(),
+                direction: "in".to_string(),
+                event_type: "command".to_string(),
+                chat_id: chat_id.clone(),
+                chat_type: chat_type.clone(),
+                sender_id: sender_open_id.clone(),
+                model: if cur_m.is_empty() { None } else { Some(cur_m) },
+                content: text.clone(),
+                meta: json!({ "message_id": message_id }),
+            });
+
             match cmd {
                 HermesCommand::Help => {
                     self.handle_command_help(&chat_id, &chat_type);
@@ -1139,7 +1208,7 @@ impl LarkEventHandler for HermesBridge {
             }
         }
 
-        // 5. 注册为当前活跃会话（无占位卡片，待收到 Agent 正式文本段落时直接发送）
+        // 6. 注册为当前活跃会话（无占位卡片，待收到 Agent 正式文本段落时直接发送）
         {
             let mut chats = self.active_chats.lock().unwrap();
             chats.insert(
@@ -1155,7 +1224,61 @@ impl LarkEventHandler for HermesBridge {
             );
         }
 
-        // 7. 检查当前 chat_id 是否已有绑定的独立 Session
+        // 7. 增强 Prompt 上下文：群聊感知与引用回复消息获取
+        // 群聊信息仅在会话的首轮对话注入，后续轮次无需重复携带
+        let include_chat_context = if chat_type == "group" {
+            let mut known = self.known_context_chats.lock().unwrap();
+            known.insert(chat_id.clone())
+        } else {
+            false
+        };
+
+        let chat_name = if chat_type == "group" && include_chat_context {
+            self.client.get_chat_name(&chat_id)
+        } else {
+            None
+        };
+
+        let quoted_info = if let Some(ref pid) = parent_id {
+            match self.client.get_quoted_message_info(pid) {
+                Ok(info) => Some(info),
+                Err(e) => {
+                    eprintln!("[Hermes] 获取被引用消息 {} 失败: {}", pid, e);
+                    None
+                }
+            }
+        } else {
+            None
+        };
+
+        let prompt_ctx = HermesPromptContext {
+            sender_name: sender_name.as_deref(),
+            sender_id: &sender_open_id,
+            chat_type: &chat_type,
+            chat_id: &chat_id,
+            chat_name: chat_name.as_deref(),
+            include_chat_context,
+            quoted_info: quoted_info.as_ref(),
+        };
+
+        let full_prompt = format_hermes_prompt(&prompt_ctx, &text);
+
+        // 审计落盘：忠实留存实际喂给 Agent 的完整 Prompt（含发信人、群聊环境与引用内容）
+        let cur_m = self.current_model.lock().unwrap().clone();
+        self.audit_logger.record(&AuditRecord {
+            timestamp: current_timestamp_str(),
+            date: current_date_str(),
+            direction: "in".to_string(),
+            event_type: "user_message".to_string(),
+            chat_id: chat_id.clone(),
+            chat_type: chat_type.clone(),
+            sender_id: sender_open_id.clone(),
+            model: if cur_m.is_empty() { None } else { Some(cur_m) },
+            content: full_prompt.clone(),
+            meta: json!({ "message_id": message_id }),
+        });
+
+        // 8. 检查当前 chat_id 是否已有绑定的独立 Session
         let session_id_opt = {
             let mut chat_to_sess = self.chat_to_session.lock().unwrap();
             if let Some(sid) = chat_to_sess.get(&chat_id).cloned() {
@@ -1186,7 +1309,7 @@ impl LarkEventHandler for HermesBridge {
                         "prompt": [
                             {
                                 "type": "text",
-                                "text": text
+                                "text": full_prompt
                             }
                         ]
                     }
@@ -1214,7 +1337,7 @@ impl LarkEventHandler for HermesBridge {
                     PendingSessionRequest {
                         chat_id: chat_id.clone(),
                         chat_type: chat_type.clone(),
-                        initial_prompt: Some(text),
+                        initial_prompt: Some(full_prompt),
                     },
                 );
 
@@ -1464,5 +1587,121 @@ mod tests {
             }
         });
         assert_eq!(extract_content_chunk(&tool_update), "");
+    }
+
+    #[test]
+    fn test_format_hermes_prompt() {
+        // 1. 私聊场景（有姓名）
+        let prompt_p2p = format_hermes_prompt(
+            &HermesPromptContext {
+                sender_name: Some("张三"),
+                sender_id: "ou_123",
+                chat_type: "p2p",
+                chat_id: "oc_chat1",
+                chat_name: None,
+                include_chat_context: false,
+                quoted_info: None,
+            },
+            "请帮我写个脚本",
+        );
+        assert_eq!(prompt_p2p, "张三说：\n请帮我写个脚本");
+
+        // 2. 群聊场景首轮（有群名、有姓名）：必须注入群聊信息
+        let prompt_group_first = format_hermes_prompt(
+            &HermesPromptContext {
+                sender_name: Some("李四"),
+                sender_id: "ou_456",
+                chat_type: "group",
+                chat_id: "oc_group1",
+                chat_name: Some("前端研发群"),
+                include_chat_context: true,
+                quoted_info: None,
+            },
+            "项目打包失败了",
+        );
+        assert_eq!(
+            prompt_group_first,
+            "[当前处于群聊「前端研发群」(群ID: oc_group1)，仅作会话背景参考，请直接回答当前发言，无需也不要主动拉取群历史记录]\n李四说：\n项目打包失败了"
+        );
+
+        // 3. 群聊场景后续轮次（include_chat_context 为 false）：不再重复注入群聊信息
+        let prompt_group_subsequent = format_hermes_prompt(
+            &HermesPromptContext {
+                sender_name: Some("李四"),
+                sender_id: "ou_456",
+                chat_type: "group",
+                chat_id: "oc_group1",
+                chat_name: Some("前端研发群"),
+                include_chat_context: false,
+                quoted_info: None,
+            },
+            "另外再查下 release notes",
+        );
+        assert_eq!(prompt_group_subsequent, "李四说：\n另外再查下 release notes");
+
+        // 4. 群聊场景（无群名、无姓名兜底为 ID）
+        let prompt_group_fallback = format_hermes_prompt(
+            &HermesPromptContext {
+                sender_name: None,
+                sender_id: "ou_unknown",
+                chat_type: "group",
+                chat_id: "oc_group2",
+                chat_name: None,
+                include_chat_context: true,
+                quoted_info: None,
+            },
+            "有人在吗",
+        );
+        assert_eq!(
+            prompt_group_fallback,
+            "[当前处于群聊(群ID: oc_group2)，仅作会话背景参考，请直接回答当前发言，无需也不要主动拉取群历史记录]\nou_unknown说：\n有人在吗"
+        );
+
+        // 5. 群聊场景后续轮次（带单行引用回复）：不重复注入群信息，但保留引用信息
+        let quoted_single = QuotedMessageInfo {
+            sender_id: "ou_author".to_string(),
+            sender_name: Some("王五".to_string()),
+            msg_type: "text".to_string(),
+            text: "我刚才提交了 PR #42".to_string(),
+        };
+        let prompt_reply = format_hermes_prompt(
+            &HermesPromptContext {
+                sender_name: Some("赵六"),
+                sender_id: "ou_reviewer",
+                chat_type: "group",
+                chat_id: "oc_group3",
+                chat_name: Some("核心仓库群"),
+                include_chat_context: false,
+                quoted_info: Some(&quoted_single),
+            },
+            "收到，我马上 review",
+        );
+        assert_eq!(
+            prompt_reply,
+            "[引用回复: 王五说: \"我刚才提交了 PR #42\"]\n赵六说：\n收到，我马上 review"
+        );
+
+        // 6. 群聊首轮（带多行引用回复）
+        let quoted_multiline = QuotedMessageInfo {
+            sender_id: "ou_author".to_string(),
+            sender_name: Some("王五".to_string()),
+            msg_type: "text".to_string(),
+            text: "第一行报错\n第二行堆栈".to_string(),
+        };
+        let prompt_reply_multiline = format_hermes_prompt(
+            &HermesPromptContext {
+                sender_name: Some("赵六"),
+                sender_id: "ou_reviewer",
+                chat_type: "group",
+                chat_id: "oc_group3",
+                chat_name: Some("核心仓库群"),
+                include_chat_context: true,
+                quoted_info: Some(&quoted_multiline),
+            },
+            "这个看下网络配置",
+        );
+        assert!(prompt_reply_multiline.contains("[当前处于群聊「核心仓库群」(群ID: oc_group3)"));
+        assert!(prompt_reply_multiline.contains("[引用回复: 王五说:\n\"\"\"\n第一行报错\n第二行堆栈\n\"\"\"]"));
+        assert!(prompt_reply_multiline.contains("赵六说：\n这个看下网络配置"));
     }
 }

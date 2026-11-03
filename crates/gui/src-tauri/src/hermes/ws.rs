@@ -36,6 +36,7 @@ pub trait LarkEventHandler: Send + Sync + 'static {
         message_id: String,
         sender_open_id: String,
         text: String,
+        parent_id: Option<String>,
     );
     fn on_card_action(
         &self,
@@ -394,6 +395,12 @@ impl LarkWsClient {
                     .unwrap_or_default()
                     .to_string();
 
+                let parent_id = message
+                    .get("parent_id")
+                    .and_then(|v| v.as_str())
+                    .filter(|s| !s.is_empty())
+                    .map(|s| s.to_string());
+
                 let msg_type = message
                     .get("message_type")
                     .and_then(|v| v.as_str())
@@ -406,6 +413,19 @@ impl LarkWsClient {
                         .and_then(|v| v.as_str())
                         .unwrap_or_default();
                     let mentions = message.get("mentions").and_then(|m| m.as_array());
+
+                    // 从 mentions 中提取已知用户姓名预填充本地缓存
+                    if let Some(mention_list) = mentions {
+                        for m in mention_list {
+                            if let (Some(open_id), Some(name)) = (
+                                m.get("id").and_then(|i| i.get("open_id")).and_then(|o| o.as_str()),
+                                m.get("name").and_then(|n| n.as_str()),
+                            ) {
+                                self.client.cache_user_name(open_id, name);
+                            }
+                        }
+                    }
+
                     if let Ok(content_obj) = serde_json::from_str::<serde_json::Value>(content_str) {
                         if let Some(text) = content_obj.get("text").and_then(|t| t.as_str()) {
                             // 群聊场景过滤：若群消息未 @ 机器人且不是斜杠指令，忽略群内普通闲聊
@@ -423,6 +443,7 @@ impl LarkWsClient {
                                     message_id,
                                     sender_open_id,
                                     cleaned_text,
+                                    parent_id,
                                 );
                             }
                         }

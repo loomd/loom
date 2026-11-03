@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 use serde::{Deserialize, Serialize};
@@ -62,11 +63,21 @@ pub struct SendMessageResp {
     pub data: Option<SendMessageRespData>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct QuotedMessageInfo {
+    pub sender_id: String,
+    pub sender_name: Option<String>,
+    pub msg_type: String,
+    pub text: String,
+}
+
 pub struct LarkClient {
     pub app_id: String,
     pub app_secret: String,
     http_client: reqwest::blocking::Client,
     token_cache: Mutex<Option<(String, Instant)>>,
+    user_name_cache: Mutex<HashMap<String, String>>,
+    chat_name_cache: Mutex<HashMap<String, String>>,
 }
 
 impl LarkClient {
@@ -80,6 +91,8 @@ impl LarkClient {
             app_secret,
             http_client,
             token_cache: Mutex::new(None),
+            user_name_cache: Mutex::new(HashMap::new()),
+            chat_name_cache: Mutex::new(HashMap::new()),
         }
     }
 
@@ -367,6 +380,280 @@ impl LarkClient {
             }
         }
     }
+
+    /// 缓存用户姓名
+    pub fn cache_user_name(&self, open_id: &str, name: &str) {
+        if open_id.is_empty() || name.is_empty() {
+            return;
+        }
+        if let Ok(mut cache) = self.user_name_cache.lock() {
+            cache.insert(open_id.to_string(), name.to_string());
+        }
+    }
+
+    /// 获取用户姓名（带本地缓存和通讯录 API 查询兜底）
+    pub fn get_user_name(&self, open_id: &str) -> Option<String> {
+        if open_id.is_empty() {
+            return None;
+        }
+
+        // 1. 优先查缓存
+        if let Ok(cache) = self.user_name_cache.lock() {
+            if let Some(name) = cache.get(open_id) {
+                return Some(name.clone());
+            }
+        }
+
+        // 2. 调飞书通讯录 API 获取用户信息
+        let token = self.get_tenant_access_token().ok()?;
+        let url = format!("{}/open-apis/contact/v3/users/{}?user_id_type=open_id", LARK_HOST, open_id);
+
+        let resp = self
+            .http_client
+            .get(&url)
+            .bearer_auth(token)
+            .send()
+            .ok()?;
+
+        if !resp.status().is_success() {
+            return None;
+        }
+
+        let body: serde_json::Value = resp.json().ok()?;
+        if body.get("code").and_then(|c| c.as_i64()).unwrap_or(-1) != 0 {
+            return None;
+        }
+
+        let user_obj = body.get("data").and_then(|d| d.get("user"))?;
+        let name = user_obj
+            .get("name")
+            .and_then(|n| n.as_str())
+            .or_else(|| user_obj.get("nickname").and_then(|n| n.as_str()))
+            .filter(|s| !s.trim().is_empty())?;
+
+        let name_str = name.trim().to_string();
+        if let Ok(mut cache) = self.user_name_cache.lock() {
+            cache.insert(open_id.to_string(), name_str.clone());
+        }
+
+        Some(name_str)
+    }
+
+    /// 缓存群名称
+    #[allow(dead_code)]
+    pub fn cache_chat_name(&self, chat_id: &str, name: &str) {
+        if chat_id.is_empty() || name.is_empty() {
+            return;
+        }
+        if let Ok(mut cache) = self.chat_name_cache.lock() {
+            cache.insert(chat_id.to_string(), name.to_string());
+        }
+    }
+
+    /// 获取群聊名称（带本地缓存与 IM 群信息 API 查询）
+    pub fn get_chat_name(&self, chat_id: &str) -> Option<String> {
+        if chat_id.is_empty() {
+            return None;
+        }
+
+        // 1. 优先查缓存
+        if let Ok(cache) = self.chat_name_cache.lock() {
+            if let Some(name) = cache.get(chat_id) {
+                return Some(name.clone());
+            }
+        }
+
+        // 2. 调飞书群信息 API: GET /open-apis/im/v1/chats/:chat_id
+        let token = self.get_tenant_access_token().ok()?;
+        let url = format!("{}/open-apis/im/v1/chats/{}", LARK_HOST, chat_id);
+
+        let resp = self
+            .http_client
+            .get(&url)
+            .bearer_auth(token)
+            .send()
+            .ok()?;
+
+        if !resp.status().is_success() {
+            return None;
+        }
+
+        let body: serde_json::Value = resp.json().ok()?;
+        if body.get("code").and_then(|c| c.as_i64()).unwrap_or(-1) != 0 {
+            return None;
+        }
+
+        let chat_name = body
+            .get("data")
+            .and_then(|d| d.get("name"))
+            .and_then(|n| n.as_str())
+            .filter(|s| !s.trim().is_empty())?;
+
+        let name_str = chat_name.trim().to_string();
+        if let Ok(mut cache) = self.chat_name_cache.lock() {
+            cache.insert(chat_id.to_string(), name_str.clone());
+        }
+
+        Some(name_str)
+    }
+
+    /// 获取指定消息内容及发送者（用于引用回复感知）
+    pub fn get_quoted_message_info(&self, message_id: &str) -> Result<QuotedMessageInfo, String> {
+        if message_id.is_empty() {
+            return Err("message_id 为空".to_string());
+        }
+
+        let token = self.get_tenant_access_token()?;
+        let url = format!("{}/open-apis/im/v1/messages/{}", LARK_HOST, message_id);
+
+        let resp = self
+            .http_client
+            .get(&url)
+            .bearer_auth(token)
+            .send()
+            .map_err(|e| format!("获取被引用消息网络错误: {}", e))?;
+
+        if !resp.status().is_success() {
+            return Err(format!("获取被引用消息接口 HTTP 状态码: {}", resp.status()));
+        }
+
+        let body: serde_json::Value = resp
+            .json()
+            .map_err(|e| format!("解析被引用消息响应失败: {}", e))?;
+
+        let code = body.get("code").and_then(|c| c.as_i64()).unwrap_or(-1);
+        if code != 0 {
+            let msg = body.get("msg").and_then(|m| m.as_str()).unwrap_or("未知错误");
+            return Err(format!("获取被引用消息失败 ({}): {}", code, msg));
+        }
+
+        let item = body
+            .get("data")
+            .and_then(|d| d.get("items"))
+            .and_then(|items| items.as_array())
+            .and_then(|arr| arr.first())
+            .ok_or_else(|| "未找到被引用消息内容".to_string())?;
+
+        let sender_id = item
+            .get("sender")
+            .and_then(|s| s.get("id"))
+            .and_then(|id| id.as_str())
+            .unwrap_or_default()
+            .to_string();
+
+        let sender_type = item
+            .get("sender")
+            .and_then(|s| s.get("sender_type"))
+            .and_then(|st| st.as_str())
+            .unwrap_or("user");
+
+        let sender_name = if sender_type == "app" || sender_type == "bot" {
+            Some("Hermes".to_string())
+        } else if !sender_id.is_empty() {
+            self.get_user_name(&sender_id)
+        } else {
+            None
+        };
+
+        let msg_type = item
+            .get("msg_type")
+            .and_then(|m| m.as_str())
+            .unwrap_or("text")
+            .to_string();
+
+        let content_str = item
+            .get("body")
+            .and_then(|b| b.get("content"))
+            .and_then(|c| c.as_str())
+            .unwrap_or_default();
+
+        let text = extract_text_from_message(&msg_type, content_str);
+
+        Ok(QuotedMessageInfo {
+            sender_id,
+            sender_name,
+            msg_type,
+            text,
+        })
+    }
+}
+
+/// 从飞书消息体中提取纯文本可读内容
+pub fn extract_text_from_message(msg_type: &str, content_json_str: &str) -> String {
+    let parsed: serde_json::Value = match serde_json::from_str(content_json_str) {
+        Ok(v) => v,
+        Err(_) => return content_json_str.to_string(),
+    };
+
+    match msg_type {
+        "text" => parsed
+            .get("text")
+            .and_then(|t| t.as_str())
+            .unwrap_or_default()
+            .to_string(),
+        "post" => {
+            let mut result = Vec::new();
+            let lang_obj = if let Some(zh) = parsed.get("zh_cn") {
+                Some(zh)
+            } else if let Some(map) = parsed.as_object() {
+                map.values().next()
+            } else {
+                None
+            };
+
+            if let Some(post) = lang_obj {
+                if let Some(title) = post.get("title").and_then(|t| t.as_str()) {
+                    if !title.trim().is_empty() {
+                        result.push(title.to_string());
+                    }
+                }
+                if let Some(paragraphs) = post.get("content").and_then(|c| c.as_array()) {
+                    for p in paragraphs {
+                        if let Some(elements) = p.as_array() {
+                            let mut line = String::new();
+                            for elem in elements {
+                                let tag = elem.get("tag").and_then(|t| t.as_str()).unwrap_or("");
+                                match tag {
+                                    "text" => {
+                                        if let Some(txt) = elem.get("text").and_then(|t| t.as_str()) {
+                                            line.push_str(txt);
+                                        }
+                                    }
+                                    "a" => {
+                                        if let Some(txt) = elem.get("text").and_then(|t| t.as_str()) {
+                                            line.push_str(txt);
+                                        }
+                                    }
+                                    "at" => {
+                                        if let Some(name) = elem.get("user_name").and_then(|n| n.as_str()) {
+                                            line.push_str(&format!("@{}", name));
+                                        }
+                                    }
+                                    _ => {}
+                                }
+                            }
+                            if !line.is_empty() {
+                                result.push(line);
+                            }
+                        }
+                    }
+                }
+            }
+            if result.is_empty() {
+                "[富文本消息]".to_string()
+            } else {
+                result.join("\n")
+            }
+        }
+        "image" => "[图片]".to_string(),
+        "file" => "[文件]".to_string(),
+        "audio" => "[语音]".to_string(),
+        "media" => "[视频]".to_string(),
+        "share_chat" => "[群名片]".to_string(),
+        "share_user" => "[个人名片]".to_string(),
+        "interactive" => "[卡片消息]".to_string(),
+        _ => format!("[{}]", msg_type),
+    }
 }
 
 // ─── 卡片构建工具函数 ────────────────────────────────────────────────────────
@@ -578,5 +865,48 @@ mod tests {
         let url = format!("{}/callback/ws/endpoint", LARK_HOST);
         assert_eq!(url, "https://open.feishu.cn/callback/ws/endpoint");
         assert!(!url.contains("/open-apis/callback"));
+    }
+
+    #[test]
+    fn test_extract_text_from_message() {
+        // 纯文本
+        let text_json = serde_json::json!({ "text": "你好，Loom" }).to_string();
+        assert_eq!(extract_text_from_message("text", &text_json), "你好，Loom");
+
+        // 富文本 post
+        let post_json = serde_json::json!({
+            "zh_cn": {
+                "title": "公告标题",
+                "content": [
+                    [
+                        { "tag": "text", "text": "第一段文字 " },
+                        { "tag": "at", "user_name": "张三" }
+                    ],
+                    [
+                        { "tag": "text", "text": "第二段正文" }
+                    ]
+                ]
+            }
+        }).to_string();
+        let extracted = extract_text_from_message("post", &post_json);
+        assert!(extracted.contains("公告标题"));
+        assert!(extracted.contains("第一段文字 @张三"));
+        assert!(extracted.contains("第二段正文"));
+
+        // 多媒体类型占位
+        assert_eq!(extract_text_from_message("image", "{}"), "[图片]");
+        assert_eq!(extract_text_from_message("file", "{}"), "[文件]");
+    }
+
+    #[test]
+    fn test_client_caches() {
+        let client = LarkClient::new("app_id".to_string(), "app_secret".to_string());
+        client.cache_user_name("ou_123", "张三");
+        assert_eq!(client.get_user_name("ou_123"), Some("张三".to_string()));
+        assert_eq!(client.get_user_name(""), None);
+
+        client.cache_chat_name("oc_456", "研发讨论群");
+        assert_eq!(client.get_chat_name("oc_456"), Some("研发讨论群".to_string()));
+        assert_eq!(client.get_chat_name(""), None);
     }
 }
