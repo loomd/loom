@@ -15,6 +15,8 @@ export interface ConsoleTab {
   filePath?: string;
   isDirty?: boolean;
   initialCommand?: string;
+  /** Incremented to force FileEditor to re-read the file from disk */
+  refreshKey?: number;
 }
 
 export type GridLayout = '2x1' | '1x2' | '3x1' | '1x3' | '2x2' | '2x3' | '3x2' | '3x3' | '2+1' | '1+2';
@@ -261,22 +263,41 @@ export function useTabs(projectRoot: string) {
   }, [activeTabId, dialog, tabs]);
 
   const handleOpenFile = useCallback((file: FileEntry, cwd: string) => {
-    const fileId = file.path;
+    const isAbs = /^[a-zA-Z]:[/\\]/.test(file.path) || file.path.startsWith('\\\\') || file.path.startsWith('/');
+    const baseCwd = cwd || projectRoot || '';
+    const fullPath = isAbs
+      ? file.path
+      : `${baseCwd.replace(/[/\\]+$/, '')}/${file.path.replace(/^[/\\]+/, '')}`;
+    const fileId = fullPath;
+
     setTabs(prev => {
-      const alreadyOpen = prev.find(t => t.id === fileId);
-      if (alreadyOpen) return prev;
+      const alreadyOpen = prev.find(t => t.id === fileId || t.filePath === fullPath);
+      if (alreadyOpen) {
+        // Tab has unsaved edits – don't overwrite, just switch to it
+        if (alreadyOpen.isDirty) return prev;
+        // Tab already exists – bump refreshKey so FileEditor re-reads from disk
+        return prev.map(t =>
+          (t.id === fileId || t.filePath === fullPath)
+            ? { ...t, refreshKey: (t.refreshKey ?? 0) + 1 }
+            : t
+        );
+      }
       const newEditorTab: ConsoleTab = {
         id: fileId,
         title: file.name,
         type: 'editor',
-        cwd,
-        filePath: file.path,
-        isDirty: false
+        cwd: baseCwd,
+        filePath: fullPath,
+        isDirty: false,
+        refreshKey: 0
       };
       return [...prev, newEditorTab];
     });
+    if (layoutMode) {
+      setLayoutMode(null);
+    }
     setActiveTabId(fileId);
-  }, []);
+  }, [projectRoot, layoutMode, setLayoutMode]);
 
   const addTab = useCallback((tab: ConsoleTab, targetSlotIndex?: number) => {
     if (tab.type === 'terminal' && layoutMode) {

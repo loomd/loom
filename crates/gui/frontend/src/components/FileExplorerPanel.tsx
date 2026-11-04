@@ -147,7 +147,7 @@ export function FileExplorerPanel({
   onOpenInManager,
   onDeleteFile,
 }: FileExplorerPanelProps) {
-  const filtered = files.filter(f => f.name.toLowerCase().includes(fileFilter.toLowerCase()));
+  const filtered = (files || []).filter(f => f.name.toLowerCase().includes(fileFilter.toLowerCase()));
 
   return (
     <div style={{

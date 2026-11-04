@@ -659,43 +659,60 @@ struct FileEntry {
 
 #[tauri::command]
 fn list_project_files(dir_path: String) -> Result<Vec<FileEntry>, String> {
-    let path = std::path::Path::new(&dir_path);
-    if !path.exists() {
-        return Err("Directory does not exist".to_string());
+    let raw_path = std::path::Path::new(&dir_path);
+    let resolved_path = if raw_path.exists() {
+        raw_path.to_path_buf()
+    } else {
+        // 若为相对路径，尝试在已知项目中寻找
+        let mut found = None;
+        if let Ok(projects) = cstore::get_projects() {
+            for proj in projects {
+                let candidate = proj.root_path.join(raw_path);
+                if candidate.exists() {
+                    found = Some(candidate);
+                    break;
+                }
+            }
+        }
+        found.unwrap_or_else(|| raw_path.to_path_buf())
+    };
+
+    if !resolved_path.exists() {
+        return Err(format!("Directory does not exist: {}", dir_path));
     }
-    if !path.is_dir() {
-        return Err("Path is not a directory".to_string());
+    if !resolved_path.is_dir() {
+        return Err(format!("Path is not a directory: {}", dir_path));
     }
 
-    let entries =
-        std::fs::read_dir(path).map_err(|e| format!("Failed to read directory: {}", e))?;
+    let entries = std::fs::read_dir(&resolved_path)
+        .map_err(|e| format!("Failed to read directory: {}", e))?;
 
     let mut file_entries = Vec::new();
     for entry in entries.flatten() {
-            let file_path = entry.path();
-            let name = file_path
-                .file_name()
-                .map(|n| n.to_string_lossy().to_string())
-                .unwrap_or_default();
+        let file_path = entry.path();
+        let name = file_path
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_default();
 
-            if name.is_empty() || name == "." || name == ".." {
-                continue;
-            }
-
-            let is_dir = file_path.is_dir();
-            let size = if is_dir {
-                0
-            } else {
-                entry.metadata().map(|m| m.len()).unwrap_or(0)
-            };
-
-            file_entries.push(FileEntry {
-                name,
-                path: file_path.to_string_lossy().to_string(),
-                is_dir,
-                size,
-            });
+        if name.is_empty() || name == "." || name == ".." {
+            continue;
         }
+
+        let is_dir = file_path.is_dir();
+        let size = if is_dir {
+            0
+        } else {
+            entry.metadata().map(|m| m.len()).unwrap_or(0)
+        };
+
+        file_entries.push(FileEntry {
+            name,
+            path: file_path.to_string_lossy().to_string(),
+            is_dir,
+            size,
+        });
+    }
 
     file_entries.sort_by(|a, b| {
         if a.is_dir != b.is_dir {
@@ -711,13 +728,36 @@ fn list_project_files(dir_path: String) -> Result<Vec<FileEntry>, String> {
 #[tauri::command]
 fn open_file_with_system(file_path: String) -> Result<(), String> {
     let path = std::path::Path::new(&file_path);
-    if !path.exists() {
-        return Err("File/Folder does not exist".to_string());
+    let target = if path.exists() {
+        path.to_path_buf()
+    } else {
+        let mut found = None;
+        if let Ok(projects) = cstore::get_projects() {
+            for proj in projects {
+                let candidate = proj.root_path.join(path);
+                if candidate.exists() {
+                    found = Some(candidate);
+                    break;
+                }
+            }
+        }
+        found.unwrap_or_else(|| path.to_path_buf())
+    };
+
+    if !target.exists() {
+        return Err(format!("File/Folder does not exist: {}", file_path));
     }
+
+    let target_str = target.to_string_lossy().to_string();
 
     #[cfg(target_os = "windows")]
     let res = std::process::Command::new("cmd")
-        .args(["/C", "start", "", &file_path])
+        .args(["/C", "start", "", &target_str])
+        .status();
+
+    #[cfg(not(target_os = "windows"))]
+    let res = std::process::Command::new("xdg-open")
+        .arg(&target_str)
         .status();
 
     match res {
@@ -730,15 +770,40 @@ fn open_file_with_system(file_path: String) -> Result<(), String> {
 #[tauri::command]
 fn open_in_manager(item_path: String) -> Result<(), String> {
     let path = std::path::Path::new(&item_path);
-    if !path.exists() {
-        return Err("Item does not exist".to_string());
+    let target = if path.exists() {
+        path.to_path_buf()
+    } else {
+        let mut found = None;
+        if let Ok(projects) = cstore::get_projects() {
+            for proj in projects {
+                let candidate = proj.root_path.join(path);
+                if candidate.exists() {
+                    found = Some(candidate);
+                    break;
+                }
+            }
+        }
+        found.unwrap_or_else(|| path.to_path_buf())
+    };
+
+    if !target.exists() {
+        return Err(format!("Item does not exist: {}", item_path));
     }
 
     #[cfg(target_os = "windows")]
     {
-        let win_path = item_path.replace("/", "\\");
+        let win_path = target.to_string_lossy().replace("/", "\\");
         std::process::Command::new("explorer")
             .arg(format!("/select,{}", win_path))
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        let parent = target.parent().unwrap_or(&target);
+        std::process::Command::new("xdg-open")
+            .arg(parent)
             .spawn()
             .map_err(|e| e.to_string())?;
     }
@@ -748,12 +813,63 @@ fn open_in_manager(item_path: String) -> Result<(), String> {
 
 #[tauri::command]
 fn read_text_file(file_path: String) -> Result<String, String> {
-    std::fs::read_to_string(&file_path).map_err(|e| e.to_string())
+    let path = std::path::Path::new(&file_path);
+    let target_path = if path.exists() {
+        path.to_path_buf()
+    } else {
+        let mut resolved = None;
+        if let Ok(projects) = cstore::get_projects() {
+            for proj in projects {
+                let candidate = proj.root_path.join(path);
+                if candidate.exists() {
+                    resolved = Some(candidate);
+                    break;
+                }
+            }
+        }
+        resolved.unwrap_or_else(|| path.to_path_buf())
+    };
+
+    if !target_path.exists() {
+        return Err(format!("文件不存在: {}", file_path));
+    }
+    if target_path.is_dir() {
+        return Err(format!("目标为目录而非文本文件: {}", file_path));
+    }
+
+    let bytes = std::fs::read(&target_path)
+        .map_err(|e| format!("读取文件失败 ({}): {}", target_path.display(), e))?;
+
+    let content = match String::from_utf8(bytes.clone()) {
+        Ok(s) => s,
+        Err(_) => String::from_utf8_lossy(&bytes).to_string(),
+    };
+
+    let trimmed = content.strip_prefix('\u{feff}').unwrap_or(&content).to_string();
+    Ok(trimmed)
 }
 
 #[tauri::command]
 fn write_text_file(file_path: String, content: String) -> Result<(), String> {
-    std::fs::write(&file_path, content).map_err(|e| e.to_string())
+    let path = std::path::Path::new(&file_path);
+    let target_path = if path.is_absolute() || path.exists() {
+        path.to_path_buf()
+    } else {
+        let mut resolved = None;
+        if let Ok(projects) = cstore::get_projects() {
+            for proj in projects {
+                let candidate = proj.root_path.join(path);
+                if candidate.parent().map(|p| p.exists()).unwrap_or(false) {
+                    resolved = Some(candidate);
+                    break;
+                }
+            }
+        }
+        resolved.unwrap_or_else(|| path.to_path_buf())
+    };
+
+    std::fs::write(&target_path, content)
+        .map_err(|e| format!("写入文件失败 ({}): {}", target_path.display(), e))
 }
 
 #[tauri::command]
@@ -1863,6 +1979,33 @@ fn execute_test_command(cmd: &str, args_json: &str) -> Result<String, String> {
             set_agent_notification_enabled(enabled)?;
             Ok("null".to_string())
         }
+        "list_project_files" => {
+            let dir_path = args["dir_path"]
+                .as_str()
+                .or_else(|| args["dirPath"].as_str())
+                .ok_or_else(|| "Missing argument 'dirPath'".to_string())?;
+            let res = list_project_files(dir_path.to_string())?;
+            serde_json::to_string(&res).map_err(|e| e.to_string())
+        }
+        "read_text_file" => {
+            let file_path = args["file_path"]
+                .as_str()
+                .or_else(|| args["filePath"].as_str())
+                .ok_or_else(|| "Missing argument 'filePath'".to_string())?;
+            let res = read_text_file(file_path.to_string())?;
+            serde_json::to_string(&res).map_err(|e| e.to_string())
+        }
+        "write_text_file" => {
+            let file_path = args["file_path"]
+                .as_str()
+                .or_else(|| args["filePath"].as_str())
+                .ok_or_else(|| "Missing argument 'filePath'".to_string())?;
+            let content = args["content"]
+                .as_str()
+                .ok_or_else(|| "Missing argument 'content'".to_string())?;
+            write_text_file(file_path.to_string(), content.to_string())?;
+            Ok("null".to_string())
+        }
         _ => Err(format!("Unknown command '{}'", cmd)),
     }
 }
@@ -2626,4 +2769,74 @@ fn main() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn create_test_temp_dir(prefix: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!("{}_{}", prefix, std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn test_read_and_write_text_file() {
+        let temp_dir = create_test_temp_dir("loom_file_rw");
+        let file_path = temp_dir.join("test.txt");
+        let path_str = file_path.to_string_lossy().to_string();
+
+        // 写入文件
+        write_text_file(path_str.clone(), "hello loom".to_string()).unwrap();
+
+        // 读取文件
+        let content = read_text_file(path_str.clone()).unwrap();
+        assert_eq!(content, "hello loom");
+
+        // 读取不存在的文件
+        let missing = temp_dir.join("missing.txt").to_string_lossy().to_string();
+        let err = read_text_file(missing).unwrap_err();
+        assert!(err.contains("文件不存在"));
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_read_text_file_with_bom_and_lossy_encoding() {
+        let temp_dir = create_test_temp_dir("loom_bom_test");
+        let file_path = temp_dir.join("bom_test.txt");
+
+        // 带 UTF-8 BOM 的内容
+        let mut bytes = vec![0xEF, 0xBB, 0xBF];
+        bytes.extend_from_slice("bom content".as_bytes());
+        std::fs::write(&file_path, bytes).unwrap();
+
+        let content = read_text_file(file_path.to_string_lossy().to_string()).unwrap();
+        assert_eq!(content, "bom content");
+
+        // 包含无效 UTF-8 字节（如 GBK 字节 0xD6, 0xD0）
+        let gbk_file = temp_dir.join("gbk_test.txt");
+        std::fs::write(&gbk_file, [0xD6, 0xD0, 0xCE, 0xC4]).unwrap();
+        let gbk_content = read_text_file(gbk_file.to_string_lossy().to_string()).unwrap();
+        assert!(!gbk_content.is_empty());
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_list_project_files_basic() {
+        let temp_dir = create_test_temp_dir("loom_list_test");
+        let file1 = temp_dir.join("a.txt");
+        let file2 = temp_dir.join("sub");
+        std::fs::write(&file1, "file1").unwrap();
+        std::fs::create_dir_all(&file2).unwrap();
+
+        let entries = list_project_files(temp_dir.to_string_lossy().to_string()).unwrap();
+        assert_eq!(entries.len(), 2);
+        assert!(entries.iter().any(|e| e.name == "a.txt" && !e.is_dir));
+        assert!(entries.iter().any(|e| e.name == "sub" && e.is_dir));
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
 }

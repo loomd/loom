@@ -365,7 +365,12 @@ export function useWorkspaceData(
           toast.error('Failed to open file: ' + String(e));
         }
       } else {
-        tabActions.openEditorTab(file, currentPath);
+        const isAbs = /^[a-zA-Z]:[/\\]/.test(file.path) || file.path.startsWith('\\\\') || file.path.startsWith('/');
+        const baseDir = currentPath || project.root_path || '';
+        const resolvedPath = isAbs
+          ? file.path
+          : `${baseDir.replace(/[/\\]+$/, '')}/${file.path.replace(/^[/\\]+/, '')}`;
+        tabActions.openEditorTab({ ...file, path: resolvedPath }, baseDir);
       }
     }
   };

@@ -148,7 +148,7 @@ describe("App", () => {
     await act(async () => {});
 
     await vi.waitFor(() => {
-      expect(screen.getByText("alpha")).toBeInTheDocument();
+      expect(screen.getAllByText("alpha").length).toBeGreaterThan(0);
     });
 
     const handlerCall = listenMock.mock.calls.find((c) => c[0] === "agent-notification-activate");

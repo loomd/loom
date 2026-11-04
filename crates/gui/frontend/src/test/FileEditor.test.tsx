@@ -5,6 +5,8 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { I18nProvider } from "../I18nContext";
 import { ToastProvider } from "../ToastContext";
 
+vi.mock("monaco-editor", () => ({}));
+
 function TestWrapper({ children }: { children: React.ReactNode }) {
   return (
     <I18nProvider>
@@ -27,6 +29,10 @@ vi.mock("@monaco-editor/react", () => ({
       onChange={(e) => onChange?.(e.target.value)}
     />
   ),
+  loader: {
+    config: vi.fn(),
+    init: vi.fn(() => Promise.resolve()),
+  },
 }));
 
 beforeEach(() => {

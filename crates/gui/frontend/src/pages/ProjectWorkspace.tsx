@@ -1029,6 +1029,7 @@ const closeActiveByShortcut = useCallback(() => {
                   filePath={tab.filePath}
                   onContentDirtyChange={(dirty) => updateTabDirty(tab.id, dirty)}
                   theme={theme}
+                  refreshKey={tab.refreshKey}
                 />
               </Suspense>
             </div>

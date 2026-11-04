@@ -1,13 +1,18 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import Editor from '@monaco-editor/react';
+import * as monaco from 'monaco-editor';
+import Editor, { loader } from '@monaco-editor/react';
 import { readTextFile, writeTextFile } from '../api';
 import { useToast } from '../ToastContext';
 import { useI18n } from '../I18nContext';
+
+loader.config({ monaco });
 
 interface FileEditorProps {
   filePath: string;
   onContentDirtyChange: (isDirty: boolean) => void;
   theme?: 'dark' | 'day' | 'gray';
+  /** Incremented externally to force a re-read from disk */
+  refreshKey?: number;
 }
 
 const getMonacoTheme = (theme?: 'dark' | 'day' | 'gray') => {
@@ -21,7 +26,7 @@ const getMonacoTheme = (theme?: 'dark' | 'day' | 'gray') => {
   }
 };
 
-export function FileEditor({ filePath, onContentDirtyChange, theme }: FileEditorProps) {
+export function FileEditor({ filePath, onContentDirtyChange, theme, refreshKey }: FileEditorProps) {
   const [content, setContent] = useState<string>('');
   const [initialContent, setInitialContent] = useState<string>('');
   const [loading, setLoading] = useState<boolean>(true);
@@ -31,7 +36,9 @@ export function FileEditor({ filePath, onContentDirtyChange, theme }: FileEditor
   const dirtyChangeRef = useRef(onContentDirtyChange);
   useEffect(() => { dirtyChangeRef.current = onContentDirtyChange; }, [onContentDirtyChange]);
 
-  // Load file content
+  const [retryCount, setRetryCount] = useState<number>(0);
+
+  // Load file content (re-runs when filePath changes or refreshKey is bumped)
   useEffect(() => {
     let active = true;
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -56,7 +63,7 @@ export function FileEditor({ filePath, onContentDirtyChange, theme }: FileEditor
     return () => {
       active = false;
     };
-  }, [filePath]);
+  }, [filePath, refreshKey, retryCount]);
 
   // Determine Monaco Editor language mode from file extension
   const getLanguage = (path: string): string => {
@@ -178,6 +185,20 @@ export function FileEditor({ filePath, onContentDirtyChange, theme }: FileEditor
         <div style={{ fontSize: '0.9rem', maxWidth: '400px', wordBreak: 'break-all' }}>
           {(t('editor.error') || '加载文件失败: ') + error}
         </div>
+        <button
+          onClick={() => setRetryCount((c) => c + 1)}
+          style={{
+            padding: '6px 14px',
+            backgroundColor: 'var(--bg-elevated, #27272a)',
+            color: 'var(--text-primary, #fff)',
+            border: '1px solid var(--border-subtle, #3f3f46)',
+            borderRadius: 'var(--radius-sm, 6px)',
+            cursor: 'pointer',
+            fontSize: '0.8rem',
+          }}
+        >
+          重新加载
+        </button>
       </div>
     );
   }
