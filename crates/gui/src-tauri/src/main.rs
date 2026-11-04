@@ -1,5 +1,8 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+#[global_allocator]
+static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
 const MIN_WINDOW_WIDTH: u32 = 800;
 const MIN_WINDOW_HEIGHT: u32 = 560;
 

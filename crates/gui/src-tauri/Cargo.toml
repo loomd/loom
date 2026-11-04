@@ -37,6 +37,7 @@ raw-window-handle = "0.6.2"
 which = "6.0.0"
 rusqlite = { version = "0.34", features = ["bundled"] }
 notify = "6"
+mimalloc = "0.1"
 tungstenite = { version = "0.24", features = ["native-tls"] }
 prost = "0.13"
 

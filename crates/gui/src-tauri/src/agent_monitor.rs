@@ -1,7 +1,7 @@
 ﻿use rusqlite::{Connection, OpenFlags};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, OnceLock};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -506,6 +506,10 @@ pub struct AgentStateInfo {
     pub session_title: Option<String>,
 }
 
+/// 全局持久化缓存的只读 SQLite 数据库连接，避免每次轮询高频打开与销毁连接导致系统堆碎片与损坏
+static OPENCODE_CACHED_CONN: OnceLock<Mutex<Option<(PathBuf, Connection)>>> = OnceLock::new();
+static MCODE_CACHED_CONN: OnceLock<Mutex<Option<(PathBuf, Connection)>>> = OnceLock::new();
+
 /// 从 opencode 或 mcode 本地数据库查询指定 session 的真实标题
 pub fn get_session_title(agent_type: &str, session_id: &str) -> Option<String> {
     if session_id.is_empty() {
@@ -514,9 +518,9 @@ pub fn get_session_title(agent_type: &str, session_id: &str) -> Option<String> {
     let is_mcode = agent_type.eq_ignore_ascii_case("mcode") || session_id.starts_with("mvs_");
     let is_opencode = agent_type.eq_ignore_ascii_case("opencode") || session_id.starts_with("ses_");
 
-    if is_mcode {
-        if let Some(db_path) = AgentMonitor::get_mcode_db_path() {
-            if let Ok(conn) = AgentMonitor::open_readonly_conn(&db_path) {
+    AgentMonitor::with_cached_conns(|op_conn, mc_conn| {
+        if is_mcode {
+            if let Some(conn) = mc_conn {
                 if let Ok(mut stmt) = conn.prepare("SELECT title FROM local_runtime_sessions WHERE session_id = ?1 LIMIT 1") {
                     if let Ok(Some(t)) = stmt.query_row(rusqlite::params![session_id], |row| row.get::<_, Option<String>>(0)) {
                         let trimmed = t.trim().to_string();
@@ -527,11 +531,9 @@ pub fn get_session_title(agent_type: &str, session_id: &str) -> Option<String> {
                 }
             }
         }
-    }
 
-    if is_opencode {
-        if let Some(db_path) = AgentMonitor::get_db_path() {
-            if let Ok(conn) = AgentMonitor::open_readonly_conn(&db_path) {
+        if is_opencode {
+            if let Some(conn) = op_conn {
                 if let Ok(mut stmt) = conn.prepare("SELECT title FROM session WHERE id = ?1 LIMIT 1") {
                     if let Ok(Some(t)) = stmt.query_row(rusqlite::params![session_id], |row| row.get::<_, Option<String>>(0)) {
                         let trimmed = t.trim().to_string();
@@ -542,9 +544,9 @@ pub fn get_session_title(agent_type: &str, session_id: &str) -> Option<String> {
                 }
             }
         }
-    }
 
-    None
+        None
+    })
 }
 
 /// Monotonic counter to resolve sub-millisecond input ordering.
@@ -692,13 +694,56 @@ impl AgentMonitor {
         None
     }
 
-    fn open_readonly_conn(db_path: &PathBuf) -> Result<Connection, rusqlite::Error> {
+    fn open_readonly_conn(db_path: &Path) -> Result<Connection, rusqlite::Error> {
         let flags = OpenFlags::SQLITE_OPEN_READ_ONLY
-            | OpenFlags::SQLITE_OPEN_NO_MUTEX
             | OpenFlags::SQLITE_OPEN_URI;
         let conn = Connection::open_with_flags(db_path, flags)?;
         let _ = conn.execute_batch("PRAGMA query_only = ON; PRAGMA busy_timeout = 200;");
         Ok(conn)
+    }
+
+    /// 获取缓存的只读 SQLite 数据库连接执行闭包。
+    /// 采用连接单例与全局锁，避免高频并发打开与关闭连接造成堆碎片和损坏。
+    pub fn with_cached_conns<R>(
+        f: impl FnOnce(Option<&Connection>, Option<&Connection>) -> R,
+    ) -> R {
+        let opencode_cell = OPENCODE_CACHED_CONN.get_or_init(|| Mutex::new(None));
+        let mcode_cell = MCODE_CACHED_CONN.get_or_init(|| Mutex::new(None));
+
+        // 固定加锁顺序以避免死锁：先 opencode，后 mcode
+        let mut opencode_guard = opencode_cell.lock().unwrap();
+        let mut mcode_guard = mcode_cell.lock().unwrap();
+
+        // 维护 opencode 连接缓存
+        if let Some(path) = Self::get_db_path() {
+            let valid = match opencode_guard.as_ref() {
+                Some((cached_path, conn)) => cached_path == &path && conn.execute_batch("").is_ok(),
+                None => false,
+            };
+            if !valid {
+                *opencode_guard = Self::open_readonly_conn(&path).ok().map(|c| (path, c));
+            }
+        } else {
+            *opencode_guard = None;
+        }
+
+        // 维护 mcode 连接缓存
+        if let Some(path) = Self::get_mcode_db_path() {
+            let valid = match mcode_guard.as_ref() {
+                Some((cached_path, conn)) => cached_path == &path && conn.execute_batch("").is_ok(),
+                None => false,
+            };
+            if !valid {
+                *mcode_guard = Self::open_readonly_conn(&path).ok().map(|c| (path, c));
+            }
+        } else {
+            *mcode_guard = None;
+        }
+
+        let op_conn = opencode_guard.as_ref().map(|(_, c)| c);
+        let mc_conn = mcode_guard.as_ref().map(|(_, c)| c);
+
+        f(op_conn, mc_conn)
     }
 
     fn find_latest_opencode_session(conn: &Connection, workspace_dir: &str) -> Option<(String, i64)> {
@@ -834,15 +879,14 @@ impl AgentMonitor {
             session_title: None,
         };
 
-        let opencode_conn = Self::get_db_path().and_then(|p| Self::open_readonly_conn(&p).ok());
-        let mcode_conn = Self::get_mcode_db_path().and_then(|p| Self::open_readonly_conn(&p).ok());
+        Self::with_cached_conns(|opencode_conn, mcode_conn| {
+            if opencode_conn.is_none() && mcode_conn.is_none() {
+                eprintln!("[AgentPoll] no DB path, Waiting");
+                return Some(waiting());
+            }
 
-        if opencode_conn.is_none() && mcode_conn.is_none() {
-            eprintln!("[AgentPoll] no DB path, Waiting");
-            return Some(waiting());
-        }
-
-        self.poll_state_with_conns(opencode_conn.as_ref(), mcode_conn.as_ref(), workspace_dir, agent_type)
+            self.poll_state_with_conns(opencode_conn, mcode_conn, workspace_dir, agent_type)
+        })
     }
 
     pub fn poll_state_with_conns(
@@ -924,15 +968,14 @@ impl AgentMonitor {
             session_title: None,
         };
 
-        let opencode_conn = Self::get_db_path().and_then(|p| Self::open_readonly_conn(&p).ok());
-        let mcode_conn = Self::get_mcode_db_path().and_then(|p| Self::open_readonly_conn(&p).ok());
+        Self::with_cached_conns(|opencode_conn, mcode_conn| {
+            if opencode_conn.is_none() && mcode_conn.is_none() {
+                eprintln!("[AgentPoll:pty={}] no DB path, Waiting", pty_session_id);
+                return Some(waiting());
+            }
 
-        if opencode_conn.is_none() && mcode_conn.is_none() {
-            eprintln!("[AgentPoll:pty={}] no DB path, Waiting", pty_session_id);
-            return Some(waiting());
-        }
-
-        self.poll_state_for_pty_with_conns(opencode_conn.as_ref(), mcode_conn.as_ref(), workspace_dir, pty_session_id, agent_type)
+            self.poll_state_for_pty_with_conns(opencode_conn, mcode_conn, workspace_dir, pty_session_id, agent_type)
+        })
     }
 
     pub fn poll_state_for_pty_with_conns(
