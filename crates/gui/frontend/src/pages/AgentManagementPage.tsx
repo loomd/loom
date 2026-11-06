@@ -740,7 +740,7 @@ export const AgentManagementPage: React.FC<AgentManagementPageProps> = ({ onOpen
                           检测到新版本 v{latestInfo?.version}（当前 v{agent.version}），可点击右侧更新
                         </span>
                         <button
-                          onClick={() => onOpenTerminal?.(agentKey === 'mcode' ? 'mcode update' : agent.install_command)}
+                          onClick={() => onOpenTerminal?.(agent.install_command)}
                           style={{
                             padding: '3px 10px',
                             fontSize: '11px',
