@@ -137,7 +137,7 @@ pub fn get_project_agent_history(project_id: &str) -> Vec<AgentHistoryEntry> {
     state.project_agent_history.get(project_id).cloned().unwrap_or_default()
 }
 
-/// 追加一条 agent 历史记录，相同 session_id 时更新 last_seen，超过 6 条时淘汰最旧的
+/// 追加一条 agent 历史记录，相同 session_id 时更新 last_seen，超过 10 条时淘汰最旧的
 pub fn save_project_agent_history(project_id: &str, entry: AgentHistoryEntry) -> Result<()> {
     let mut state = get_current_state();
     let list = state.project_agent_history.entry(project_id.to_string()).or_default();
@@ -153,7 +153,7 @@ pub fn save_project_agent_history(project_id: &str, entry: AgentHistoryEntry) ->
     }
     // 按 last_seen 降序排序，只保留最新 6 条
     list.sort_by_key(|a| std::cmp::Reverse(a.last_seen));
-    list.truncate(6);
+    list.truncate(10);
     save_current_state(&state)
 }
 

@@ -624,3 +624,42 @@ fn test_agent_notification_setting() {
     });
 }
 
+
+
+#[test]
+fn test_save_project_agent_history_limit() {
+    run_test_with_temp_config(|_config_path| {
+        use super::manager::{delete_project_agent_history, get_project_agent_history, save_project_agent_history};
+        use crate::storage::AgentHistoryEntry;
+
+        let proj_id = "proj_test_history";
+
+        // Insert 12 entries with increasing timestamps
+        for i in 1..=12 {
+            let entry = AgentHistoryEntry {
+                session_id: format!("ses_{}", i),
+                title: format!("Title {}", i),
+                session_title: None,
+                agent_type: "opencode".to_string(),
+                cwd: ".".to_string(),
+                command: None,
+                args: None,
+                last_seen: i as u64,
+            };
+            save_project_agent_history(proj_id, entry).unwrap();
+        }
+
+        let history = get_project_agent_history(proj_id);
+        // Should truncate to maximum 10 items
+        assert_eq!(history.len(), 10);
+        // Should be sorted descending by last_seen
+        assert_eq!(history[0].session_id, "ses_12");
+        assert_eq!(history[9].session_id, "ses_3");
+
+        // Delete one entry
+        delete_project_agent_history(proj_id, "ses_12").unwrap();
+        let history_after = get_project_agent_history(proj_id);
+        assert_eq!(history_after.len(), 9);
+        assert_eq!(history_after[0].session_id, "ses_11");
+    });
+}
