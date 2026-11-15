@@ -509,16 +509,45 @@ pub struct AgentStateInfo {
 /// 全局持久化缓存的只读 SQLite 数据库连接，避免每次轮询高频打开与销毁连接导致系统堆碎片与损坏
 static OPENCODE_CACHED_CONN: OnceLock<Mutex<Option<(PathBuf, Connection)>>> = OnceLock::new();
 static MCODE_CACHED_CONN: OnceLock<Mutex<Option<(PathBuf, Connection)>>> = OnceLock::new();
+static AGY_CACHED_CONN: OnceLock<Mutex<Option<(PathBuf, Connection)>>> = OnceLock::new();
 
-/// 从 opencode 或 mcode 本地数据库查询指定 session 的真实标题
+/// 从 opencode、mcode 或 agy 本地数据库查询指定 session 的真实标题
 pub fn get_session_title(agent_type: &str, session_id: &str) -> Option<String> {
     if session_id.is_empty() {
         return None;
     }
-    let is_mcode = agent_type.eq_ignore_ascii_case("mcode") || session_id.starts_with("mvs_");
-    let is_opencode = agent_type.eq_ignore_ascii_case("opencode") || session_id.starts_with("ses_");
+    let is_agy = agent_type.eq_ignore_ascii_case("agy")
+        || agent_type.eq_ignore_ascii_case("antigravity")
+        || is_uuid_format(session_id);
+    let is_mcode = !is_agy && (agent_type.eq_ignore_ascii_case("mcode") || session_id.starts_with("mvs_"));
+    let is_opencode = !is_agy && (agent_type.eq_ignore_ascii_case("opencode") || session_id.starts_with("ses_") || session_id.starts_with("session_"));
 
-    AgentMonitor::with_cached_conns(|op_conn, mc_conn| {
+    AgentMonitor::with_cached_conns(|op_conn, mc_conn, agy_conn| {
+        if is_agy {
+            if let Some(conn) = agy_conn {
+                if let Ok(mut stmt) = conn.prepare("SELECT title, preview FROM conversation_summaries WHERE conversation_id = ?1 LIMIT 1") {
+                    if let Ok((title, preview)) = stmt.query_row(rusqlite::params![session_id], |row| {
+                        let t: Option<String> = row.get(0).ok();
+                        let p: Option<String> = row.get(1).ok();
+                        Ok((t, p))
+                    }) {
+                        if let Some(t) = title {
+                            let tr = t.trim().to_string();
+                            if !tr.is_empty() {
+                                return Some(tr);
+                            }
+                        }
+                        if let Some(p) = preview {
+                            let tr = p.trim().chars().take(30).collect::<String>();
+                            if !tr.is_empty() {
+                                return Some(tr);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         if is_mcode {
             if let Some(conn) = mc_conn {
                 if let Ok(mut stmt) = conn.prepare("SELECT title FROM local_runtime_sessions WHERE session_id = ?1 LIMIT 1") {
@@ -649,10 +678,29 @@ pub fn cleanup_pty(pty_session_id: &str) {
 
 pub struct AgentMonitor;
 
+/// 校验是否为 36 位的标准 UUID 格式（如 agy 会话 ID：b9bd2863-8cfb-45ce-a019-959bf2024c1a）
+pub fn is_uuid_format(s: &str) -> bool {
+    let b = s.as_bytes();
+    if b.len() != 36 {
+        return false;
+    }
+    for (i, &ch) in b.iter().enumerate() {
+        if i == 8 || i == 13 || i == 18 || i == 23 {
+            if ch != b'-' {
+                return false;
+            }
+        } else if !ch.is_ascii_hexdigit() {
+            return false;
+        }
+    }
+    true
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum SessionSource {
     OpenCode,
     Mcode,
+    Agy,
 }
 
 impl AgentMonitor {
@@ -694,6 +742,22 @@ impl AgentMonitor {
         None
     }
 
+    fn get_agy_db_path() -> Option<PathBuf> {
+        if let Ok(dir) = std::env::var("AGY_APP_DATA_DIR") {
+            let p = PathBuf::from(dir).join("conversation_summaries.db");
+            if p.exists() { return Some(p); }
+        }
+        if let Ok(h) = std::env::var("USERPROFILE") {
+            let p = PathBuf::from(&h).join(".gemini").join("antigravity-cli").join("conversation_summaries.db");
+            if p.exists() { return Some(p); }
+        }
+        if let Ok(h) = std::env::var("HOME") {
+            let p = PathBuf::from(&h).join(".gemini").join("antigravity-cli").join("conversation_summaries.db");
+            if p.exists() { return Some(p); }
+        }
+        None
+    }
+
     fn open_readonly_conn(db_path: &Path) -> Result<Connection, rusqlite::Error> {
         let flags = OpenFlags::SQLITE_OPEN_READ_ONLY
             | OpenFlags::SQLITE_OPEN_URI;
@@ -705,14 +769,16 @@ impl AgentMonitor {
     /// 获取缓存的只读 SQLite 数据库连接执行闭包。
     /// 采用连接单例与全局锁，避免高频并发打开与关闭连接造成堆碎片和损坏。
     pub fn with_cached_conns<R>(
-        f: impl FnOnce(Option<&Connection>, Option<&Connection>) -> R,
+        f: impl FnOnce(Option<&Connection>, Option<&Connection>, Option<&Connection>) -> R,
     ) -> R {
         let opencode_cell = OPENCODE_CACHED_CONN.get_or_init(|| Mutex::new(None));
         let mcode_cell = MCODE_CACHED_CONN.get_or_init(|| Mutex::new(None));
+        let agy_cell = AGY_CACHED_CONN.get_or_init(|| Mutex::new(None));
 
-        // 固定加锁顺序以避免死锁：先 opencode，后 mcode
+        // 固定加锁顺序以避免死锁：先 opencode，再 mcode，最后 agy
         let mut opencode_guard = opencode_cell.lock().unwrap();
         let mut mcode_guard = mcode_cell.lock().unwrap();
+        let mut agy_guard = agy_cell.lock().unwrap();
 
         // 维护 opencode 连接缓存
         if let Some(path) = Self::get_db_path() {
@@ -740,10 +806,24 @@ impl AgentMonitor {
             *mcode_guard = None;
         }
 
+        // 维护 agy 连接缓存
+        if let Some(path) = Self::get_agy_db_path() {
+            let valid = match agy_guard.as_ref() {
+                Some((cached_path, conn)) => cached_path == &path && conn.execute_batch("").is_ok(),
+                None => false,
+            };
+            if !valid {
+                *agy_guard = Self::open_readonly_conn(&path).ok().map(|c| (path, c));
+            }
+        } else {
+            *agy_guard = None;
+        }
+
         let op_conn = opencode_guard.as_ref().map(|(_, c)| c);
         let mc_conn = mcode_guard.as_ref().map(|(_, c)| c);
+        let agy_conn = agy_guard.as_ref().map(|(_, c)| c);
 
-        f(op_conn, mc_conn)
+        f(op_conn, mc_conn, agy_conn)
     }
 
     fn find_latest_opencode_session(conn: &Connection, workspace_dir: &str) -> Option<(String, i64)> {
@@ -872,6 +952,60 @@ impl AgentMonitor {
         list
     }
 
+    fn find_latest_agy_session(conn: &Connection, workspace_dir: &str) -> Option<(String, i64)> {
+        let ws_clean = workspace_dir.trim().to_lowercase();
+        let ws_slash = ws_clean.replace('\\', "/");
+        let pattern_slash = format!("%{}%", ws_slash);
+        let pattern_backslash = format!("%{}%", ws_clean.replace('/', "\\"));
+
+        let mut stmt = conn.prepare(
+            "SELECT conversation_id, (unixepoch(substr(last_modified_time, 1, 19)) * 1000) AS ts_ms \
+             FROM conversation_summaries \
+             WHERE workspace_uris LIKE ?1 OR workspace_uris LIKE ?2 \
+             ORDER BY CASE WHEN status = 'CASCADE_RUN_STATUS_RUNNING' OR not_fully_idle != 0 THEN 1 ELSE 0 END DESC, last_modified_time DESC LIMIT 1"
+        ).ok()?;
+
+        stmt.query_row(
+            rusqlite::params![pattern_slash, pattern_backslash],
+            |row| {
+                let id: String = row.get(0)?;
+                let ts: i64 = row.get(1)?;
+                Ok((id, ts))
+            }
+        ).ok()
+    }
+
+    fn find_candidate_agy_sessions(conn: &Connection, workspace_dir: &str) -> Vec<(String, i64, bool)> {
+        let ws_clean = workspace_dir.trim().to_lowercase();
+        let ws_slash = ws_clean.replace('\\', "/");
+        let pattern_slash = format!("%{}%", ws_slash);
+        let pattern_backslash = format!("%{}%", ws_clean.replace('/', "\\"));
+
+        let mut stmt = match conn.prepare(
+            "SELECT conversation_id, (unixepoch(substr(last_modified_time, 1, 19)) * 1000) AS ts_ms, \
+             (status = 'CASCADE_RUN_STATUS_RUNNING' OR not_fully_idle != 0) \
+             FROM conversation_summaries \
+             WHERE workspace_uris LIKE ?1 OR workspace_uris LIKE ?2 \
+             ORDER BY CASE WHEN status = 'CASCADE_RUN_STATUS_RUNNING' OR not_fully_idle != 0 THEN 1 ELSE 0 END DESC, last_modified_time DESC LIMIT 10"
+        ) {
+            Ok(s) => s,
+            Err(_) => return Vec::new(),
+        };
+
+        let mut rows = match stmt.query(rusqlite::params![pattern_slash, pattern_backslash]) {
+            Ok(r) => r,
+            Err(_) => return Vec::new(),
+        };
+
+        let mut list = Vec::new();
+        while let Ok(Some(row)) = rows.next() {
+            if let (Ok(id), Ok(ts), Ok(started)) = (row.get(0), row.get(1), row.get::<_, i64>(2).map(|v| v != 0)) {
+                list.push((id, ts, started));
+            }
+        }
+        list
+    }
+
     pub fn poll_state(&self, workspace_dir: &str, agent_type: Option<&str>) -> Option<AgentStateInfo> {
         let waiting = || AgentStateInfo {
             state: AgentState::Waiting,
@@ -879,13 +1013,13 @@ impl AgentMonitor {
             session_title: None,
         };
 
-        Self::with_cached_conns(|opencode_conn, mcode_conn| {
-            if opencode_conn.is_none() && mcode_conn.is_none() {
+        Self::with_cached_conns(|opencode_conn, mcode_conn, agy_conn| {
+            if opencode_conn.is_none() && mcode_conn.is_none() && agy_conn.is_none() {
                 eprintln!("[AgentPoll] no DB path, Waiting");
                 return Some(waiting());
             }
 
-            self.poll_state_with_conns(opencode_conn, mcode_conn, workspace_dir, agent_type)
+            self.poll_state_with_conns(opencode_conn, mcode_conn, agy_conn, workspace_dir, agent_type)
         })
     }
 
@@ -893,6 +1027,7 @@ impl AgentMonitor {
         &self,
         opencode_conn: Option<&Connection>,
         mcode_conn: Option<&Connection>,
+        agy_conn: Option<&Connection>,
         workspace_dir: &str,
         agent_type: Option<&str>,
     ) -> Option<AgentStateInfo> {
@@ -902,8 +1037,16 @@ impl AgentMonitor {
             session_title: None,
         };
 
+        let is_agy = agent_type.is_none_or(|t| t.eq_ignore_ascii_case("agy") || t.eq_ignore_ascii_case("antigravity"));
         let is_opencode = agent_type.is_none_or(|t| t.eq_ignore_ascii_case("opencode"));
         let is_mcode = agent_type.is_none_or(|t| t.eq_ignore_ascii_case("mcode"));
+
+        let mut latest_agy = None;
+        if is_agy {
+            if let Some(conn) = agy_conn {
+                latest_agy = Self::find_latest_agy_session(conn, workspace_dir);
+            }
+        }
 
         let mut latest_opencode = None;
         if is_opencode {
@@ -919,20 +1062,28 @@ impl AgentMonitor {
             }
         }
 
-        let chosen = match (latest_opencode, latest_mcode) {
-            (Some((oid, ots)), Some((mid, mts))) => {
-                if mts >= ots {
-                    Some((mid, SessionSource::Mcode))
-                } else {
-                    Some((oid, SessionSource::OpenCode))
-                }
-            }
-            (Some((oid, _)), None) => Some((oid, SessionSource::OpenCode)),
-            (None, Some((mid, _))) => Some((mid, SessionSource::Mcode)),
-            (None, None) => None,
-        };
+        let mut all_latests: Vec<(String, i64, SessionSource)> = Vec::new();
+        if let Some((aid, ats)) = latest_agy {
+            all_latests.push((aid, ats, SessionSource::Agy));
+        }
+        if let Some((oid, ots)) = latest_opencode {
+            all_latests.push((oid, ots, SessionSource::OpenCode));
+        }
+        if let Some((mid, mts)) = latest_mcode {
+            all_latests.push((mid, mts, SessionSource::Mcode));
+        }
+
+        all_latests.sort_by_key(|a| std::cmp::Reverse(a.1));
+        let chosen = all_latests.into_iter().next().map(|(id, _, src)| (id, src));
 
         match chosen {
+            Some((sid, SessionSource::Agy)) => {
+                if let Some(conn) = agy_conn {
+                    self.poll_agy_session(conn, &sid)
+                } else {
+                    Some(waiting())
+                }
+            }
             Some((sid, SessionSource::OpenCode)) => {
                 if let Some(conn) = opencode_conn {
                     self.poll_parts(conn, &sid)
@@ -957,7 +1108,7 @@ impl AgentMonitor {
     /// Legacy single-connection helper (primarily used in tests)
     #[allow(dead_code)]
     pub fn poll_state_with_conn(&self, conn: &Connection, workspace_dir: &str) -> Option<AgentStateInfo> {
-        self.poll_state_with_conns(Some(conn), None, workspace_dir, None)
+        self.poll_state_with_conns(Some(conn), None, None, workspace_dir, None)
     }
 
     /// Poll agent state scoped to a specific PTY terminal.
@@ -968,13 +1119,13 @@ impl AgentMonitor {
             session_title: None,
         };
 
-        Self::with_cached_conns(|opencode_conn, mcode_conn| {
-            if opencode_conn.is_none() && mcode_conn.is_none() {
+        Self::with_cached_conns(|opencode_conn, mcode_conn, agy_conn| {
+            if opencode_conn.is_none() && mcode_conn.is_none() && agy_conn.is_none() {
                 eprintln!("[AgentPoll:pty={}] no DB path, Waiting", pty_session_id);
                 return Some(waiting());
             }
 
-            self.poll_state_for_pty_with_conns(opencode_conn, mcode_conn, workspace_dir, pty_session_id, agent_type)
+            self.poll_state_for_pty_with_conns(opencode_conn, mcode_conn, agy_conn, workspace_dir, pty_session_id, agent_type)
         })
     }
 
@@ -982,6 +1133,7 @@ impl AgentMonitor {
         &self,
         opencode_conn: Option<&Connection>,
         mcode_conn: Option<&Connection>,
+        agy_conn: Option<&Connection>,
         workspace_dir: &str,
         pty_session_id: &str,
         agent_type: Option<&str>,
@@ -997,10 +1149,16 @@ impl AgentMonitor {
         let owners = SESSION_OWNER.get_or_init(|| Mutex::new(HashMap::new()));
         let spawns = PTY_SPAWNS.get_or_init(|| Mutex::new(HashMap::new()));
 
+        let is_agy = agent_type.is_none_or(|t| t.eq_ignore_ascii_case("agy") || t.eq_ignore_ascii_case("antigravity"));
         let is_opencode = agent_type.is_none_or(|t| t.eq_ignore_ascii_case("opencode"));
         let is_mcode = agent_type.is_none_or(|t| t.eq_ignore_ascii_case("mcode"));
 
         let poll_by_sid = |sid: &str| -> Option<AgentStateInfo> {
+            if is_uuid_format(sid) || (opencode_conn.is_none() && mcode_conn.is_none()) {
+                if let Some(conn) = agy_conn {
+                    return self.poll_agy_session(conn, sid);
+                }
+            }
             if sid.starts_with("mvs_") || opencode_conn.is_none() {
                 if let Some(conn) = mcode_conn {
                     return self.poll_mcode_parts(conn, sid);
@@ -1012,6 +1170,9 @@ impl AgentMonitor {
             if let Some(conn) = mcode_conn {
                 return self.poll_mcode_parts(conn, sid);
             }
+            if let Some(conn) = agy_conn {
+                return self.poll_agy_session(conn, sid);
+            }
             Some(waiting())
         };
 
@@ -1019,9 +1180,12 @@ impl AgentMonitor {
         if let Some(at) = agent_type {
             let mut cache_guard = cache.lock().unwrap();
             if let Some((cached, _)) = cache_guard.get(pty_session_id) {
+                let cached_is_agy = is_uuid_format(cached);
                 let cached_is_mcode = cached.starts_with("mvs_");
-                let mismatch = if at.eq_ignore_ascii_case("opencode") {
-                    cached_is_mcode
+                let mismatch = if at.eq_ignore_ascii_case("agy") || at.eq_ignore_ascii_case("antigravity") {
+                    !cached_is_agy
+                } else if at.eq_ignore_ascii_case("opencode") {
+                    cached_is_mcode || cached_is_agy
                 } else if at.eq_ignore_ascii_case("mcode") {
                     !cached_is_mcode
                 } else {
@@ -1121,6 +1285,13 @@ impl AgentMonitor {
 
         // 2. Collect candidate sessions for this workspace
         let mut candidates: Vec<(String, i64, SessionSource, bool)> = Vec::new();
+        if is_agy {
+            if let Some(conn) = agy_conn {
+                for (id, ts, started) in Self::find_candidate_agy_sessions(conn, workspace_dir) {
+                    candidates.push((id, ts, SessionSource::Agy, started));
+                }
+            }
+        }
         if is_opencode {
             if let Some(conn) = opencode_conn {
                 for (id, ts, started) in Self::find_candidate_opencode_sessions(conn, workspace_dir) {
@@ -1175,10 +1346,12 @@ impl AgentMonitor {
             };
 
             if other_pty_alive {
-                let is_mcode = matches!(cand_source, SessionSource::Mcode) || cand_sid.starts_with("mvs_");
+                let is_isolated = matches!(cand_source, SessionSource::Mcode | SessionSource::Agy)
+                    || cand_sid.starts_with("mvs_")
+                    || is_uuid_format(&cand_sid);
 
-                if is_mcode {
-                    // For mcode, multiple PTYs run distinct mcode instances.
+                if is_isolated {
+                    // For mcode and agy, multiple PTYs run distinct instances.
                     // If the original PTY is alive, NEVER steal its session while it is working,
                     // and NEVER steal a session that was active before this PTY was spawned.
                     if is_candidate_working || cand_ts < spawn_time {
@@ -1248,7 +1421,61 @@ impl AgentMonitor {
     /// Legacy single-connection helper (primarily used in tests)
     #[cfg(test)]
     pub fn poll_state_for_pty_with_conn(&self, conn: &Connection, workspace_dir: &str, pty_session_id: &str) -> Option<AgentStateInfo> {
-        self.poll_state_for_pty_with_conns(Some(conn), None, workspace_dir, pty_session_id, None)
+        self.poll_state_for_pty_with_conns(Some(conn), None, None, workspace_dir, pty_session_id, None)
+    }
+
+    fn poll_agy_session(&self, conn: &Connection, conversation_id: &str) -> Option<AgentStateInfo> {
+        let mut session_title: Option<String> = None;
+        let mut status = String::new();
+        let mut not_fully_idle = false;
+        let mut killed = false;
+
+        if let Ok(mut stmt) = conn.prepare(
+            "SELECT title, preview, status, not_fully_idle, killed \
+             FROM conversation_summaries WHERE conversation_id = ?1 LIMIT 1"
+        ) {
+            if let Ok(row) = stmt.query_row(rusqlite::params![conversation_id], |r| {
+                let t: Option<String> = r.get(0).ok();
+                let p: Option<String> = r.get(1).ok();
+                let st: String = r.get(2).unwrap_or_default();
+                let nfi: bool = r.get::<_, i64>(3).map(|v| v != 0).unwrap_or(false);
+                let kd: bool = r.get::<_, i64>(4).map(|v| v != 0).unwrap_or(false);
+                Ok((t, p, st, nfi, kd))
+            }) {
+                if let Some(t) = row.0 {
+                    let tr = t.trim().to_string();
+                    if !tr.is_empty() {
+                        session_title = Some(tr);
+                    }
+                }
+                if session_title.is_none() {
+                    if let Some(p) = row.1 {
+                        let tr = p.trim().chars().take(30).collect::<String>();
+                        if !tr.is_empty() {
+                            session_title = Some(tr);
+                        }
+                    }
+                }
+                status = row.2;
+                not_fully_idle = row.3;
+                killed = row.4;
+            }
+        }
+
+        let state = if killed {
+            AgentState::Error
+        } else if status == "CASCADE_RUN_STATUS_RUNNING" || not_fully_idle {
+            AgentState::Running
+        } else {
+            AgentState::Waiting
+        };
+
+        eprintln!("[AgentPoll:agy] {:?}, conversation: {}", state, conversation_id);
+        Some(AgentStateInfo {
+            state,
+            session_id: conversation_id.to_string(),
+            session_title,
+        })
     }
 
     fn poll_mcode_parts(&self, conn: &Connection, session_id: &str) -> Option<AgentStateInfo> {
@@ -1672,6 +1899,25 @@ mod tests {
         conn
     }
 
+    fn setup_test_agy_db() -> Connection {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute(
+            "CREATE TABLE conversation_summaries (
+                conversation_id TEXT PRIMARY KEY,
+                title TEXT NOT NULL DEFAULT '',
+                preview TEXT NOT NULL DEFAULT '',
+                step_count INTEGER NOT NULL DEFAULT 0,
+                last_modified_time DATETIME NOT NULL,
+                workspace_uris TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT '',
+                not_fully_idle NUMERIC NOT NULL DEFAULT 0,
+                killed NUMERIC NOT NULL DEFAULT 0
+            )",
+            [],
+        ).unwrap();
+        conn
+    }
+
     fn setup_test_mcode_db() -> Connection {
         let conn = Connection::open_in_memory().unwrap();
         conn.execute(
@@ -1779,7 +2025,7 @@ mod tests {
         ).unwrap();
 
         // 3. 轮询 -> 识别为 Running
-        let state1 = monitor.poll_state_for_pty_with_conns(None, Some(&mcode_conn), ws_dir, pty_id, Some("mcode")).unwrap();
+        let state1 = monitor.poll_state_for_pty_with_conns(None, Some(&mcode_conn), None, ws_dir, pty_id, Some("mcode")).unwrap();
         assert_eq!(state1.state, AgentState::Running);
         assert_eq!(state1.session_id, "mvs_test_001");
 
@@ -1788,7 +2034,7 @@ mod tests {
             "INSERT INTO questionnaire_requests (request_id, session_id, status) VALUES (?1, ?2, ?3)",
             rusqlite::params!["req_01", "mvs_test_001", "pending"],
         ).unwrap();
-        let state2 = monitor.poll_state_for_pty_with_conns(None, Some(&mcode_conn), ws_dir, pty_id, Some("mcode")).unwrap();
+        let state2 = monitor.poll_state_for_pty_with_conns(None, Some(&mcode_conn), None, ws_dir, pty_id, Some("mcode")).unwrap();
         assert_eq!(state2.state, AgentState::Question);
 
         // 5. 问题处理完毕，插入子 Agent 任务 (running)
@@ -1800,7 +2046,7 @@ mod tests {
             "INSERT INTO local_runtime_background_tasks (task_id, owner_session_id, status) VALUES (?1, ?2, ?3)",
             rusqlite::params!["task_01", "mvs_test_001", "running"],
         ).unwrap();
-        let state3 = monitor.poll_state_for_pty_with_conns(None, Some(&mcode_conn), ws_dir, pty_id, Some("mcode")).unwrap();
+        let state3 = monitor.poll_state_for_pty_with_conns(None, Some(&mcode_conn), None, ws_dir, pty_id, Some("mcode")).unwrap();
         assert_eq!(state3.state, AgentState::AgentCall);
 
         // 6. 任务完成，会话变为 idle，即使历史上存在 error_message 报错信息，正常结束后仍应为 Waiting（不亮红灯）
@@ -1812,7 +2058,7 @@ mod tests {
             "UPDATE local_runtime_sessions SET status = 'idle', error_message = 'Request timed out' WHERE session_id = 'mvs_test_001'",
             [],
         ).unwrap();
-        let state4 = monitor.poll_state_for_pty_with_conns(None, Some(&mcode_conn), ws_dir, pty_id, Some("mcode")).unwrap();
+        let state4 = monitor.poll_state_for_pty_with_conns(None, Some(&mcode_conn), None, ws_dir, pty_id, Some("mcode")).unwrap();
         assert_eq!(state4.state, AgentState::Waiting);
 
         // 7. 若会话最终真正发生致命异常终止，status 变为 error 时才显示 Error（红灯）
@@ -1820,7 +2066,7 @@ mod tests {
             "UPDATE local_runtime_sessions SET status = 'error', error_message = 'Fatal crash' WHERE session_id = 'mvs_test_001'",
             [],
         ).unwrap();
-        let state5 = monitor.poll_state_for_pty_with_conns(None, Some(&mcode_conn), ws_dir, pty_id, Some("mcode")).unwrap();
+        let state5 = monitor.poll_state_for_pty_with_conns(None, Some(&mcode_conn), None, ws_dir, pty_id, Some("mcode")).unwrap();
         assert_eq!(state5.state, AgentState::Error);
 
         cleanup_pty(pty_id);
@@ -1924,6 +2170,7 @@ mod tests {
         let state_oc = monitor.poll_state_for_pty_with_conns(
             Some(&opencode_conn),
             Some(&mcode_conn),
+            None,
             ws_dir,
             pty_opencode,
             Some("opencode"),
@@ -1935,6 +2182,7 @@ mod tests {
         let state_mc = monitor.poll_state_for_pty_with_conns(
             Some(&opencode_conn),
             Some(&mcode_conn),
+            None,
             ws_dir,
             pty_mcode,
             Some("mcode"),
@@ -1952,6 +2200,7 @@ mod tests {
         let state_oc2 = monitor.poll_state_for_pty_with_conns(
             Some(&opencode_conn),
             Some(&mcode_conn),
+            None,
             ws_dir,
             pty_opencode,
             Some("opencode"),
@@ -1963,6 +2212,7 @@ mod tests {
         let state_mc2 = monitor.poll_state_for_pty_with_conns(
             Some(&opencode_conn),
             Some(&mcode_conn),
+            None,
             ws_dir,
             pty_mcode,
             Some("mcode"),
@@ -2002,7 +2252,7 @@ mod tests {
         ).unwrap();
 
         // 3. 轮询 -> 应优先认领 running 中的会话 mvs_running_old，状态为 Running
-        let state = monitor.poll_state_for_pty_with_conns(None, Some(&mcode_conn), ws_dir, pty_id, Some("mcode")).unwrap();
+        let state = monitor.poll_state_for_pty_with_conns(None, Some(&mcode_conn), None, ws_dir, pty_id, Some("mcode")).unwrap();
         assert_eq!(state.state, AgentState::Running);
         assert_eq!(state.session_id, "mvs_running_old");
 
@@ -2031,7 +2281,7 @@ mod tests {
         mark_pty_active(pty_id);
 
         // 3. 轮询 -> 因为该会话正在运行，应放行认领，状态仍为 Running，而不应被拦截为 Waiting
-        let state = monitor.poll_state_for_pty_with_conns(None, Some(&mcode_conn), ws_dir, pty_id, Some("mcode")).unwrap();
+        let state = monitor.poll_state_for_pty_with_conns(None, Some(&mcode_conn), None, ws_dir, pty_id, Some("mcode")).unwrap();
         assert_eq!(state.state, AgentState::Running);
         assert_eq!(state.session_id, "mvs_spawn_after");
 
@@ -2060,7 +2310,7 @@ mod tests {
         ).unwrap();
 
         // Shell 1 轮询 -> 正确认领 mvs_shell_1，状态为 Running
-        let state_1 = monitor.poll_state_for_pty_with_conns(None, Some(&mcode_conn), ws_dir, pty_shell_1, Some("mcode")).unwrap();
+        let state_1 = monitor.poll_state_for_pty_with_conns(None, Some(&mcode_conn), None, ws_dir, pty_shell_1, Some("mcode")).unwrap();
         assert_eq!(state_1.state, AgentState::Running);
         assert_eq!(state_1.session_id, "mvs_shell_1");
 
@@ -2071,12 +2321,12 @@ mod tests {
         mark_pty_active(pty_shell_2);
 
         // 3. Shell 2 轮询 -> 必须为 Waiting，绝不能抢占 Shell 1 正在运行的会话！
-        let state_2 = monitor.poll_state_for_pty_with_conns(None, Some(&mcode_conn), ws_dir, pty_shell_2, Some("mcode")).unwrap();
+        let state_2 = monitor.poll_state_for_pty_with_conns(None, Some(&mcode_conn), None, ws_dir, pty_shell_2, Some("mcode")).unwrap();
         assert_eq!(state_2.state, AgentState::Waiting);
         assert_ne!(state_2.session_id, "mvs_shell_1");
 
         // 4. Shell 1 再次轮询 -> 依然稳定保持为 Running，session_id 依然是 mvs_shell_1
-        let state_1_again = monitor.poll_state_for_pty_with_conns(None, Some(&mcode_conn), ws_dir, pty_shell_1, Some("mcode")).unwrap();
+        let state_1_again = monitor.poll_state_for_pty_with_conns(None, Some(&mcode_conn), None, ws_dir, pty_shell_1, Some("mcode")).unwrap();
         assert_eq!(state_1_again.state, AgentState::Running);
         assert_eq!(state_1_again.session_id, "mvs_shell_1");
 
@@ -2088,16 +2338,139 @@ mod tests {
         ).unwrap();
 
         // 6. Shell 2 轮询 -> 认领自己刚创建的会话 mvs_shell_2，状态为 Running
-        let state_2_own = monitor.poll_state_for_pty_with_conns(None, Some(&mcode_conn), ws_dir, pty_shell_2, Some("mcode")).unwrap();
+        let state_2_own = monitor.poll_state_for_pty_with_conns(None, Some(&mcode_conn), None, ws_dir, pty_shell_2, Some("mcode")).unwrap();
         assert_eq!(state_2_own.state, AgentState::Running);
         assert_eq!(state_2_own.session_id, "mvs_shell_2");
 
         // 7. Shell 1 轮询 -> 依然保持 mvs_shell_1，各自独立运行，状态均为 Running！
-        let state_1_final = monitor.poll_state_for_pty_with_conns(None, Some(&mcode_conn), ws_dir, pty_shell_1, Some("mcode")).unwrap();
+        let state_1_final = monitor.poll_state_for_pty_with_conns(None, Some(&mcode_conn), None, ws_dir, pty_shell_1, Some("mcode")).unwrap();
         assert_eq!(state_1_final.state, AgentState::Running);
         assert_eq!(state_1_final.session_id, "mvs_shell_1");
 
         cleanup_pty(pty_shell_1);
         cleanup_pty(pty_shell_2);
+    }
+
+    #[test]
+    fn test_agy_session_polling_and_status_mapping() {
+        let _lock = TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+        let agy_conn = setup_test_agy_db();
+        let monitor = AgentMonitor::new();
+        let ws_dir = "D:/Develop/loom";
+        let pty_id = "pty_agy_test_1";
+
+        PTY_SPAWNS.get_or_init(|| Mutex::new(HashMap::new()))
+            .lock().unwrap()
+            .insert(pty_id.to_string(), 1000);
+        mark_pty_active(pty_id);
+
+        // 1. 插入 running 状态的会话
+        agy_conn.execute(
+            "INSERT INTO conversation_summaries (conversation_id, title, preview, last_modified_time, workspace_uris, status, not_fully_idle, killed) \
+             VALUES (?1, ?2, ?3, datetime('now'), ?4, ?5, ?6, ?7)",
+            rusqlite::params![
+                "b9bd2863-8cfb-45ce-a019-959bf2024c1a",
+                "适配agy灯态系统",
+                "请实施修改",
+                "[\"file:///D:/Develop/loom\"]",
+                "CASCADE_RUN_STATUS_RUNNING",
+                1,
+                0
+            ],
+        ).unwrap();
+
+        let state1 = monitor.poll_state_for_pty_with_conns(None, None, Some(&agy_conn), ws_dir, pty_id, Some("agy")).unwrap();
+        assert_eq!(state1.state, AgentState::Running);
+        assert_eq!(state1.session_id, "b9bd2863-8cfb-45ce-a019-959bf2024c1a");
+        assert_eq!(state1.session_title.as_deref(), Some("适配agy灯态系统"));
+
+        // 2. 会话执行完毕转为 IDLE
+        agy_conn.execute(
+            "UPDATE conversation_summaries SET status = 'CASCADE_RUN_STATUS_IDLE', not_fully_idle = 0 WHERE conversation_id = 'b9bd2863-8cfb-45ce-a019-959bf2024c1a'",
+            [],
+        ).unwrap();
+        let state2 = monitor.poll_state_for_pty_with_conns(None, None, Some(&agy_conn), ws_dir, pty_id, Some("agy")).unwrap();
+        assert_eq!(state2.state, AgentState::Waiting);
+
+        // 3. 验证 killed 异常会话映射为 Error
+        agy_conn.execute(
+            "UPDATE conversation_summaries SET killed = 1 WHERE conversation_id = 'b9bd2863-8cfb-45ce-a019-959bf2024c1a'",
+            [],
+        ).unwrap();
+        let state3 = monitor.poll_state_for_pty_with_conns(None, None, Some(&agy_conn), ws_dir, pty_id, Some("agy")).unwrap();
+        assert_eq!(state3.state, AgentState::Error);
+
+        cleanup_pty(pty_id);
+    }
+
+    #[test]
+    fn test_concurrent_agy_and_mcode_ptys_do_not_preempt() {
+        let _lock = TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+        let agy_conn = setup_test_agy_db();
+        let mcode_conn = setup_test_mcode_db();
+        let monitor = AgentMonitor::new();
+        let ws_dir = "D:/Develop/loom";
+
+        let pty_agy = "pty_dual_agy";
+        let pty_mcode = "pty_dual_mcode";
+
+        PTY_SPAWNS.get_or_init(|| Mutex::new(HashMap::new()))
+            .lock().unwrap()
+            .insert(pty_agy.to_string(), 1000);
+        PTY_SPAWNS.get_or_init(|| Mutex::new(HashMap::new()))
+            .lock().unwrap()
+            .insert(pty_mcode.to_string(), 1000);
+
+        // 1. 写入 agy 运行中会话
+        agy_conn.execute(
+            "INSERT INTO conversation_summaries (conversation_id, title, preview, last_modified_time, workspace_uris, status, not_fully_idle, killed) \
+             VALUES (?1, ?2, ?3, datetime('now'), ?4, ?5, ?6, ?7)",
+            rusqlite::params![
+                "b9bd2863-8cfb-45ce-a019-959bf2024c1a",
+                "agy任务",
+                "预览",
+                "[\"file:///D:/Develop/loom\"]",
+                "CASCADE_RUN_STATUS_RUNNING",
+                1,
+                0
+            ],
+        ).unwrap();
+
+        // 2. 写入 mcode 运行中会话
+        mcode_conn.execute(
+            "INSERT INTO local_runtime_sessions (session_id, workspace_dir, project_workspace_dir, parent_session_id, status, error_message, updated_at_ms) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            rusqlite::params!["mvs_mcode_1", ws_dir, ws_dir, "", "started", "", 2000],
+        ).unwrap();
+
+        mark_pty_active(pty_agy);
+        mark_pty_active(pty_mcode);
+
+        // 3. 轮询 agy 终端
+        let state_agy = monitor.poll_state_for_pty_with_conns(
+            None,
+            Some(&mcode_conn),
+            Some(&agy_conn),
+            ws_dir,
+            pty_agy,
+            Some("agy"),
+        ).unwrap();
+        assert_eq!(state_agy.state, AgentState::Running);
+        assert_eq!(state_agy.session_id, "b9bd2863-8cfb-45ce-a019-959bf2024c1a");
+
+        // 4. 轮询 mcode 终端
+        let state_mc = monitor.poll_state_for_pty_with_conns(
+            None,
+            Some(&mcode_conn),
+            Some(&agy_conn),
+            ws_dir,
+            pty_mcode,
+            Some("mcode"),
+        ).unwrap();
+        assert_eq!(state_mc.state, AgentState::Running);
+        assert_eq!(state_mc.session_id, "mvs_mcode_1");
+
+        cleanup_pty(pty_agy);
+        cleanup_pty(pty_mcode);
     }
 }

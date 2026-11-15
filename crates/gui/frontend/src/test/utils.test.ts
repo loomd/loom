@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildMcodeResumeArgs, buildOpencodeResumeArgs, mergeCliArgs, projectPathKey } from "../utils";
+import { buildAgyResumeArgs, buildMcodeResumeArgs, buildOpencodeResumeArgs, mergeCliArgs, projectPathKey } from "../utils";
 
 describe("mergeCliArgs", () => {
   it("merges empty arrays", () => {
@@ -142,6 +142,35 @@ describe("buildOpencodeResumeArgs", () => {
   it("handles undefined or empty args cleanly", () => {
     expect(buildOpencodeResumeArgs(undefined, "ses_12345")).toEqual(["-s", "ses_12345"]);
     expect(buildOpencodeResumeArgs([], "ses_12345")).toEqual(["-s", "ses_12345"]);
+  });
+});
+
+describe("buildAgyResumeArgs", () => {
+  it("replaces old --conversation with new conversationId and retains model/permissions", () => {
+    const raw = ["--conversation", "old_conv_id", "--model", "gemini-2.5-pro", "--dangerously-skip-permissions"];
+    const result = buildAgyResumeArgs(raw, "b9bd2863-8cfb-45ce-a019-959bf2024c1a");
+    expect(result).toEqual([
+      "--model",
+      "gemini-2.5-pro",
+      "--dangerously-skip-permissions",
+      "--conversation",
+      "b9bd2863-8cfb-45ce-a019-959bf2024c1a",
+    ]);
+  });
+
+  it("removes conflicting -c / --continue / --new-project / -p flags", () => {
+    const raw = ["-c", "--continue", "--new-project", "-p", "hello", "--dangerously-skip-permissions"];
+    const result = buildAgyResumeArgs(raw, "conv-new-123");
+    expect(result).toEqual([
+      "--dangerously-skip-permissions",
+      "--conversation",
+      "conv-new-123",
+    ]);
+  });
+
+  it("handles undefined or empty args cleanly", () => {
+    expect(buildAgyResumeArgs(undefined, "conv-123")).toEqual(["--conversation", "conv-123"]);
+    expect(buildAgyResumeArgs([], "conv-123")).toEqual(["--conversation", "conv-123"]);
   });
 });
 

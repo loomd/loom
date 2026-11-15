@@ -567,6 +567,55 @@ export function cleanBaseUrlComment(raw: string): string {
 }
 
 /**
+ * 组装 agy 恢复会话参数。
+ * 剔除旧的 --conversation / -c / --continue / --new-project 等，
+ * 保留其他有效参数（如 --model, --dangerously-skip-permissions 等），并注入 [--conversation, sessionId]。
+ */
+export function buildAgyResumeArgs(args: string[] | undefined, sessionId: string): string[] {
+  const result: string[] = [];
+  if (args && args.length > 0) {
+    let i = 0;
+    while (i < args.length) {
+      const item = args[i];
+      if (!item) {
+        i++;
+        continue;
+      }
+      // 1. 过滤旧的 --conversation (以及 --conversation=xxx)
+      if (item === '--conversation') {
+        i++;
+        if (i < args.length && !args[i].startsWith('-')) {
+          i++;
+        }
+        continue;
+      }
+      if (item.startsWith('--conversation=')) {
+        i++;
+        continue;
+      }
+      // 2. 过滤 -c, --continue, --new-project
+      if (item === '-c' || item === '--continue' || item === '--new-project') {
+        i++;
+        continue;
+      }
+      // 3. 过滤 prompt 运行模式参数
+      if (item === '-p' || item === '--print' || item === '--prompt' || item === '-i' || item === '--prompt-interactive') {
+        i++;
+        if (i < args.length && !args[i].startsWith('-')) {
+          i++;
+        }
+        continue;
+      }
+
+      result.push(item);
+      i++;
+    }
+  }
+  result.push('--conversation', sessionId);
+  return result;
+}
+
+/**
  * 规范化 Antigravity CLI 的 Base URL
  * agy 必须为站点根路径，移除 /models, /v1, /v1beta, /gemini 等后缀
  */

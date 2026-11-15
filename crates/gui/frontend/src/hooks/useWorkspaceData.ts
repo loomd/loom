@@ -287,8 +287,11 @@ export function useWorkspaceData(
         tool.name.toLowerCase().includes('opencode') || tool.path.toLowerCase().includes('opencode') ||
         tool.name.toLowerCase().includes('mcode') || tool.path.toLowerCase().includes('mcode') ||
         tool.name.toLowerCase().includes('minimax') || tool.path.toLowerCase().includes('minimax') ||
+        tool.name.toLowerCase().includes('agy') || tool.path.toLowerCase().includes('agy') ||
+        tool.name.toLowerCase().includes('antigravity') || tool.path.toLowerCase().includes('antigravity') ||
         tpl.name.toLowerCase().includes('opencode') || tpl.name.toLowerCase().includes('mcode') || tpl.name.toLowerCase().includes('minimax') ||
-        (tpl.args && tpl.args.some(a => a.toLowerCase().includes('opencode') || a.toLowerCase().includes('mcode') || a.toLowerCase().includes('minimax')));
+        tpl.name.toLowerCase().includes('agy') || tpl.name.toLowerCase().includes('antigravity') ||
+        (tpl.args && tpl.args.some(a => a.toLowerCase().includes('opencode') || a.toLowerCase().includes('mcode') || a.toLowerCase().includes('minimax') || a.toLowerCase().includes('agy') || a.toLowerCase().includes('antigravity')));
       if (isOpencode) newTab.isOpencode = true;
       tabActions.addTab(newTab, tpl.targetSlotIndex);
       tabActions.setActiveTabId(newSessionId);
