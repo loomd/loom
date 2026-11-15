@@ -222,4 +222,99 @@ describe("AgentManagementPage", () => {
     expect(normalizeAgyBaseUrl("https://code.ai80.vip/gemini")).toBe("https://code.ai80.vip");
     expect(normalizeAgyBaseUrl("https://code.ai80.vip/models/")).toBe("https://code.ai80.vip");
   });
+
+  it("配置引导保存 agy 配置与 Loom 运行模板时追加 --dangerously-skip-permissions 参数", async () => {
+    // Mock fetch_provider_models 及后续调用
+    vi.mocked(invoke).mockImplementation(async (cmd: string) => {
+      if (cmd === "get_agent_discovery_status") {
+        return {
+          agents: [
+            {
+              name: "agy",
+              installed: true,
+              version: "1.5.9",
+              executable_path: "C:\\bin\\agy.cmd",
+              install_command: "irm https://install.ps1 | iex",
+              download_url: "https://antigravity.google",
+            },
+          ],
+          npm_installed: true,
+          npm_path: "C:\\bin\\npm.cmd",
+          node_install_command: "winget install NodeJS",
+          node_download_url: "https://nodejs.org",
+        };
+      }
+      if (cmd === "check_agent_latest_version") {
+        return "1.5.9";
+      }
+      if (cmd === "get_injected_skill_paths") {
+        return [];
+      }
+      if (cmd === "get_loom_skill_version") {
+        return "0.8.1";
+      }
+      if (cmd === "get_loom_cli_status") {
+        return { installed: true, version: "0.8.1" };
+      }
+      if (cmd === "fetch_provider_models") {
+        return [
+          { id: "gemini-2.5-pro", name: "Gemini 2.5 Pro" }
+        ];
+      }
+      if (cmd === "configure_agy_provider") {
+        return "C:\\Users\\test\\.gemini\\antigravity-cli\\settings.json";
+      }
+      if (cmd === "get_cli_tools") {
+        return [{ id: "cli-agy-id", name: "agy", path: "C:\\bin\\agy.cmd" }];
+      }
+      if (cmd === "get_templates") {
+        return [];
+      }
+      if (cmd === "create_template") {
+        return {
+          id: "tpl-1",
+          cli_id: "cli-agy-id",
+          name: "agy gemini-2.5-pro",
+          args: ["--model", "gemini-2.5-pro", "--dangerously-skip-permissions"],
+          env: {},
+          env_var_ids: [],
+          created_at: 1000,
+          updated_at: 1000,
+        };
+      }
+      return null;
+    });
+
+    const { findAllByText, findByText, getByPlaceholderText } = render(
+      <TestWrapper>
+        <AgentManagementPage active={true} />
+      </TestWrapper>
+    );
+
+    // 选中 agy
+    const agyLabels = await findAllByText("Antigravity CLI");
+    fireEvent.click(agyLabels[0]);
+
+    // 填写 Base URL 和 API Key
+    const baseUrlInput = getByPlaceholderText("请输入站点根路径");
+    fireEvent.change(baseUrlInput, { target: { value: "https://code.ai80.vip" } });
+
+    // 点击获取模型
+    const fetchBtn = await findByText("获取模型列表");
+    fireEvent.click(fetchBtn);
+
+    // 等待模型加载并勾选
+    const modelItem = await findByText("Gemini 2.5 Pro");
+    fireEvent.click(modelItem);
+
+    // 点击保存并创建模板
+    const saveBtn = await findByText(/写入 settings\.json & 自动创建 Loom 运行模板/);
+    fireEvent.click(saveBtn);
+
+    await waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith("create_template", expect.objectContaining({
+        args: ["--model", "gemini-2.5-pro", "--dangerously-skip-permissions"],
+      }));
+    });
+  });
 });

@@ -415,7 +415,7 @@ export const AgentManagementPage: React.FC<AgentManagementPageProps> = ({ onOpen
               await updateTemplate(
                 existing.id,
                 tplName,
-                ['--model', model],
+                ['--model', model, '--dangerously-skip-permissions'],
                 { ...existing.env, ...envVars },
                 existing.env_var_ids || [],
                 existing.pwd,
@@ -425,7 +425,7 @@ export const AgentManagementPage: React.FC<AgentManagementPageProps> = ({ onOpen
               await createTemplate(
                 targetToolId,
                 tplName,
-                ['--model', model],
+                ['--model', model, '--dangerously-skip-permissions'],
                 envVars,
                 [],
                 undefined,
