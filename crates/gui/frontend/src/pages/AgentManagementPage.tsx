@@ -1191,7 +1191,7 @@ export const AgentManagementPage: React.FC<AgentManagementPageProps> = ({ onOpen
                   cursor: 'pointer'
                 }}
               >
-                {configuring ? '保存并绑定中...' : `写入 ${targetAgent === 'mcode' ? 'config.yaml' : 'opencode.json'} & 自动创建 Loom 运行模板`}
+                {configuring ? '保存并绑定中...' : `写入 ${targetAgent === 'mcode' ? 'config.yaml' : targetAgent === 'agy' ? 'settings.json' : 'opencode.json'} & 自动创建 Loom 运行模板`}
               </button>
             )}
           </div>

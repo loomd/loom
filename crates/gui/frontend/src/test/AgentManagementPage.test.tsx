@@ -48,7 +48,7 @@ describe("AgentManagementPage", () => {
               version: "1.5.9",
               executable_path: "C:\\bin\\agy.cmd",
               install_command: "irm https://antigravity.google/cli/install.ps1 | iex",
-              download_url: "https://antigravity.google",
+              download_url: "https://antigravity.google/product/antigravity-cli",
             },
           ],
           npm_installed: true,

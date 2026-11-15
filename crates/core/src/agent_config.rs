@@ -480,7 +480,7 @@ pub fn discover_agents() -> DiscoveryOverview {
         } else {
             "curl -fsSL https://antigravity.google/cli/install.sh | bash".to_string()
         },
-        download_url: "https://antigravity.google/".to_string(),
+        download_url: "https://antigravity.google/product/antigravity-cli".to_string(),
     });
 
     let node_install_command = "winget install OpenJS.NodeJS".to_string();
@@ -1296,6 +1296,7 @@ mod tests {
         assert_eq!(overview.agents[1].name, "mcode");
         assert_eq!(overview.agents[1].install_command, "irm https://filecdn.minimax.chat/public/install.ps1 | iex");
         assert_eq!(overview.agents[2].name, "agy");
+        assert_eq!(overview.agents[2].download_url, "https://antigravity.google/product/antigravity-cli");
         #[cfg(target_os = "windows")]
         assert_eq!(overview.agents[2].install_command, "irm https://antigravity.google/cli/install.ps1 | iex");
     }
