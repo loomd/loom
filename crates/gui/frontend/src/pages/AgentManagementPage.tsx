@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import WindowControlButtons from '../components/WindowControlButtons';
-import { getAgentDiscoveryStatus, checkAgentLatestVersion, fetchProviderModels, configureOpencodeProvider, configureMcodeProvider, triggerInjectLoomSkills, getInjectedSkillPaths, getLoomSkillVersion, installLoomCli, getLoomCliStatus, getTemplates, createTemplate, importCliTool, getCliTools, openUrl } from '../api';
+import { getAgentDiscoveryStatus, checkAgentLatestVersion, fetchProviderModels, configureOpencodeProvider, configureMcodeProvider, configureAgyProvider, triggerInjectLoomSkills, getInjectedSkillPaths, getLoomSkillVersion, installLoomCli, getLoomCliStatus, getTemplates, createTemplate, updateTemplate, importCliTool, getCliTools, openUrl } from '../api';
 import type { AgentDiscoveryStatus, CliInstallStatus, FetchedModel } from '../types';
 import { useToast } from '../ToastContext';
 import { useI18n } from '../I18nContext';
+import { cleanBaseUrlComment, normalizeAgyBaseUrl } from '../utils';
 
 interface AgentManagementPageProps {
   onOpenTerminal?: (cmd: string) => void;
@@ -54,17 +55,18 @@ export const AgentManagementPage: React.FC<AgentManagementPageProps> = ({ onOpen
   const [cliStatus, setCliStatus] = useState<CliInstallStatus | null>(null);
   const [installingCli, setInstallingCli] = useState<boolean>(false);
 
-  // opencode / mcode 最新版本检测状态（仅切入本页时触发）
+  // opencode / mcode / agy 最新版本检测状态（仅切入本页时触发）
   const [latestVersions, setLatestVersions] = useState<Record<string, LatestVersionState>>({
     opencode: { version: null, loading: false, error: null },
     mcode: { version: null, loading: false, error: null },
+    agy: { version: null, loading: false, error: null },
   });
 
-  // Target Agent selection (opencode / mcode)
-  const [targetAgent, setTargetAgent] = useState<'opencode' | 'mcode'>(() => {
+  // Target Agent selection (opencode / mcode / agy)
+  const [targetAgent, setTargetAgent] = useState<'opencode' | 'mcode' | 'agy'>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEY_TARGET_AGENT);
-      if (saved === 'mcode' || saved === 'opencode') {
+      if (saved === 'mcode' || saved === 'opencode' || saved === 'agy') {
         return saved;
       }
       return 'opencode';
@@ -111,11 +113,13 @@ export const AgentManagementPage: React.FC<AgentManagementPageProps> = ({ onOpen
   const [selectedModels, setSelectedModels] = useState<string[]>([]);
   const [configuring, setConfiguring] = useState<boolean>(false);
 
-  const handleSelectTargetAgent = (agentKey: 'opencode' | 'mcode') => {
+  const handleSelectTargetAgent = (agentKey: 'opencode' | 'mcode' | 'agy') => {
     setTargetAgent(agentKey);
     try { localStorage.setItem(STORAGE_KEY_TARGET_AGENT, agentKey); } catch { /* ignore */ }
     if (agentKey === 'mcode' && protocol === 'gemini') {
       handleProtocolChange('openai');
+    } else if (agentKey === 'agy' && protocol !== 'gemini') {
+      handleProtocolChange('gemini');
     }
   };
 
@@ -181,7 +185,7 @@ export const AgentManagementPage: React.FC<AgentManagementPageProps> = ({ onOpen
   }, [toast, syncDiscoveredAgents]);
 
   const checkLatestVersions = useCallback(async () => {
-    const agentsToCheck = ['opencode', 'mcode'];
+    const agentsToCheck = ['opencode', 'mcode', 'agy'];
     for (const name of agentsToCheck) {
       setLatestVersions(prev => ({
         ...prev,
@@ -308,13 +312,19 @@ export const AgentManagementPage: React.FC<AgentManagementPageProps> = ({ onOpen
   };
 
   const handleFetchModels = async () => {
-    if (!baseUrl.trim()) {
+    const rawUrl = baseUrl.trim();
+    if (!rawUrl) {
       toast.error('请输入 Base URL');
       return;
     }
+    const cleanUrl = targetAgent === 'agy' ? normalizeAgyBaseUrl(rawUrl) : cleanBaseUrlComment(rawUrl);
+    if (cleanUrl !== baseUrl) {
+      setBaseUrl(cleanUrl);
+      try { localStorage.setItem(STORAGE_KEY_BASE_URL, cleanUrl); } catch { /* ignore */ }
+    }
     setFetchingModels(true);
     try {
-      const res = await fetchProviderModels(baseUrl, apiKey, protocol);
+      const res = await fetchProviderModels(cleanUrl, apiKey, protocol);
       setModels(res);
       if (res.length > 0) {
         setSelectedModels([]);
@@ -344,7 +354,13 @@ export const AgentManagementPage: React.FC<AgentManagementPageProps> = ({ onOpen
   };
 
   const handleSaveConfig = async () => {
-    if (!providerId.trim() || !baseUrl.trim() || selectedModels.length === 0) {
+    const cleanUrl = targetAgent === 'agy' ? normalizeAgyBaseUrl(baseUrl) : cleanBaseUrlComment(baseUrl);
+    if (cleanUrl !== baseUrl) {
+      setBaseUrl(cleanUrl);
+      try { localStorage.setItem(STORAGE_KEY_BASE_URL, cleanUrl); } catch { /* ignore */ }
+    }
+
+    if (!providerId.trim() || !cleanUrl.trim() || selectedModels.length === 0) {
       toast.error('请完整填写 Provider、Base URL 并至少选择一个模型');
       return;
     }
@@ -354,13 +370,21 @@ export const AgentManagementPage: React.FC<AgentManagementPageProps> = ({ onOpen
       return;
     }
 
+    if (targetAgent === 'agy' && protocol !== 'gemini') {
+      toast.error('agy 暂时仅支持 Gemini 协议');
+      return;
+    }
+
     setConfiguring(true);
     try {
       if (targetAgent === 'mcode') {
-        await configureMcodeProvider(providerId, baseUrl, apiKey, selectedModels, protocol);
+        await configureMcodeProvider(providerId, cleanUrl, apiKey, selectedModels, protocol);
         toast.success(`已自动写入 config.yaml 配置文件！(协议: ${protocol}, 已配置 ${selectedModels.length} 个模型)`);
+      } else if (targetAgent === 'agy') {
+        await configureAgyProvider(providerId, cleanUrl, apiKey, selectedModels, protocol);
+        toast.success(`已自动写入 settings.json 配置文件！(协议: ${protocol}, 已配置 ${selectedModels.length} 个模型)`);
       } else {
-        await configureOpencodeProvider(providerId, baseUrl, apiKey, selectedModels, protocol);
+        await configureOpencodeProvider(providerId, cleanUrl, apiKey, selectedModels, protocol);
         toast.success(`已自动写入 opencode.json 配置文件！(协议: ${protocol}, 已配置 ${selectedModels.length} 个模型)`);
       }
 
@@ -379,19 +403,50 @@ export const AgentManagementPage: React.FC<AgentManagementPageProps> = ({ onOpen
         for (const model of selectedModels) {
           const tplName = `${targetAgent} ${model}`;
           const existing = existingTemplates.find(t => t.cli_id === targetToolId && t.name === tplName);
-          if (!existing) {
-            const modelArg = targetAgent === 'mcode'
-              ? `custom_provider:${providerId}/${model}`
-              : `${providerId}/${model}`;
-            await createTemplate(
-              targetToolId,
-              tplName,
-              ['--model', modelArg],
-              {},
-              [],
-              undefined,
-              'inherit'
-            );
+
+          if (targetAgent === 'agy') {
+            const cleanBaseUrl = normalizeAgyBaseUrl(baseUrl);
+            const envVars: Record<string, string> = {
+              'GOOGLE_GEMINI_BASE_URL': cleanBaseUrl,
+              'GEMINI_API_KEY': apiKey,
+              'GEMINI_MODEL': model,
+            };
+            if (existing) {
+              await updateTemplate(
+                existing.id,
+                tplName,
+                ['--model', model],
+                { ...existing.env, ...envVars },
+                existing.env_var_ids || [],
+                existing.pwd,
+                existing.env_mode || 'inherit'
+              );
+            } else {
+              await createTemplate(
+                targetToolId,
+                tplName,
+                ['--model', model],
+                envVars,
+                [],
+                undefined,
+                'inherit'
+              );
+            }
+          } else {
+            if (!existing) {
+              const modelArg = targetAgent === 'mcode'
+                ? `custom_provider:${providerId}/${model}`
+                : `${providerId}/${model}`;
+              await createTemplate(
+                targetToolId,
+                tplName,
+                ['--model', modelArg],
+                {},
+                [],
+                undefined,
+                'inherit'
+              );
+            }
           }
         }
         toast.success(`已自动创建/同步 ${selectedModels.length} 个 ${targetAgent} 运行模板！`);
@@ -740,7 +795,7 @@ export const AgentManagementPage: React.FC<AgentManagementPageProps> = ({ onOpen
                           检测到新版本 v{latestInfo?.version}（当前 v{agent.version}），可点击右侧更新
                         </span>
                         <button
-                          onClick={() => onOpenTerminal?.(agent.install_command)}
+                          onClick={() => onOpenTerminal?.(agentKey === 'agy' ? 'agy update' : agent.install_command)}
                           style={{
                             padding: '3px 10px',
                             fontSize: '11px',
@@ -823,28 +878,22 @@ export const AgentManagementPage: React.FC<AgentManagementPageProps> = ({ onOpen
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
             <h2 style={{ fontSize: '18px', margin: 0, color: 'var(--text-primary)' }}>
               <span style={{ color: 'var(--accent-primary, #3b82f6)', fontWeight: 600 }}>
-                {targetAgent === 'mcode' ? 'MiniMax Code (mcode)' : 'OpenCode'}
+                {targetAgent === 'mcode' ? 'MiniMax Code' : targetAgent === 'agy' ? 'Antigravity CLI' : 'OpenCode'}
               </span> 模型自动配置
             </h2>
           </div>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-            {/* Target Agent Selector with vertical scroll and fixed selection button */}
+            {/* Target Agent Selector: 横向三个 item 点选切换 */}
             <div>
-              <label style={{ display: 'block', fontSize: '14px', marginBottom: '6px', fontWeight: 500, color: 'var(--text-secondary)' }}>
+              <label style={{ display: 'block', fontSize: '14px', marginBottom: '8px', fontWeight: 500, color: 'var(--text-secondary)' }}>
                 选择配置目标 Agent
               </label>
               <div
                 style={{
-                  maxHeight: '130px',
-                  overflowY: 'auto',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: '8px',
-                  padding: '6px',
-                  borderRadius: 'var(--radius-sm, 6px)',
-                  background: 'var(--bg-surface)',
-                  border: '1px solid var(--border-subtle)'
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(3, 1fr)',
+                  gap: '10px'
                 }}
               >
                 {[
@@ -855,70 +904,66 @@ export const AgentManagementPage: React.FC<AgentManagementPageProps> = ({ onOpen
                   },
                   {
                     key: 'mcode' as const,
-                    name: 'MiniMax Code (mcode)',
+                    name: 'MiniMax Code',
                     installed: discovery?.agents.find(a => a.name.toLowerCase().includes('mcode'))?.installed,
+                  },
+                  {
+                    key: 'agy' as const,
+                    name: 'Antigravity CLI',
+                    installed: discovery?.agents.find(a => a.name.toLowerCase().includes('agy'))?.installed,
                   },
                 ].map(agentItem => {
                   const isSelected = targetAgent === agentItem.key;
                   return (
                     <div
                       key={agentItem.key}
+                      onClick={() => handleSelectTargetAgent(agentItem.key)}
                       style={{
                         display: 'flex',
                         alignItems: 'center',
-                        justifyContent: 'space-between',
-                        padding: '8px 12px',
-                        borderRadius: '6px',
-                        background: isSelected ? 'var(--bg-elevated)' : 'transparent',
-                        border: isSelected ? '1px solid var(--accent-primary, #3b82f6)' : '1px solid transparent',
+                        gap: '10px',
+                        padding: '10px 14px',
+                        borderRadius: 'var(--radius-sm, 6px)',
+                        background: isSelected ? 'var(--bg-elevated)' : 'var(--bg-surface)',
+                        border: isSelected ? '1px solid var(--accent-primary, #3b82f6)' : '1px solid var(--border-subtle)',
+                        boxShadow: isSelected ? '0 0 0 1px var(--accent-primary, #3b82f6), 0 2px 4px rgba(0,0,0,0.08)' : 'none',
+                        cursor: 'pointer',
                         transition: 'all 0.15s ease'
                       }}
                     >
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                      <div
+                        style={{
+                          width: '8px',
+                          height: '8px',
+                          borderRadius: '50%',
+                          background: agentItem.installed ? '#10b981' : '#f59e0b',
+                          flexShrink: 0
+                        }}
+                      />
+                      <div style={{ minWidth: 0, flex: 1 }}>
                         <div
                           style={{
-                            width: '8px',
-                            height: '8px',
-                            borderRadius: '50%',
-                            background: agentItem.installed ? '#10b981' : '#f59e0b',
-                            flexShrink: 0
+                            fontSize: '13px',
+                            fontWeight: isSelected ? 600 : 500,
+                            color: isSelected ? 'var(--accent-primary, #3b82f6)' : 'var(--text-primary)',
+                            whiteSpace: 'nowrap',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis'
                           }}
-                        />
-                        <div>
-                          <div style={{ fontSize: '13px', fontWeight: isSelected ? 600 : 500, color: 'var(--text-primary)' }}>
-                            {agentItem.name}
-                          </div>
-                          <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
-                            {agentItem.installed ? '已就绪' : '未检测到'}
-                          </div>
+                        >
+                          {agentItem.name}
+                        </div>
+                        <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
+                          {agentItem.installed ? '已就绪' : '未检测到'}
                         </div>
                       </div>
-
-                      <button
-                        type="button"
-                        onClick={() => handleSelectTargetAgent(agentItem.key)}
-                        style={{
-                          padding: '4px 12px',
-                          fontSize: '12px',
-                          fontWeight: 500,
-                          borderRadius: '4px',
-                          border: 'none',
-                          background: isSelected ? 'var(--accent-primary, #3b82f6)' : 'var(--bg-card)',
-                          color: isSelected ? '#ffffff' : 'var(--text-primary)',
-                          cursor: isSelected ? 'default' : 'pointer',
-                          boxShadow: isSelected ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
-                          transition: 'all 0.15s ease'
-                        }}
-                      >
-                        {isSelected ? '已固定选择' : '选择配置'}
-                      </button>
                     </div>
                   );
                 })}
               </div>
             </div>
 
-            {/* Protocol Selector (mcode does not support gemini) */}
+            {/* Protocol Selector (mcode does not support gemini, agy only supports gemini) */}
             <div>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
                 <label style={{ fontSize: '14px', fontWeight: 500, color: 'var(--text-secondary)' }}>接口兼容性</label>
@@ -927,11 +972,16 @@ export const AgentManagementPage: React.FC<AgentManagementPageProps> = ({ onOpen
                     mcode 仅支持 OpenAI 兼容 / Anthropic
                   </span>
                 )}
+                {targetAgent === 'agy' && (
+                  <span style={{ fontSize: '11px', color: 'var(--text-tertiary, #9ca3af)' }}>
+                    agy 暂时仅支持 Gemini 原生接口
+                  </span>
+                )}
               </div>
               <div
                 style={{
                   display: 'grid',
-                  gridTemplateColumns: targetAgent === 'mcode' ? 'repeat(2, 1fr)' : 'repeat(3, 1fr)',
+                  gridTemplateColumns: targetAgent === 'agy' ? '1fr' : targetAgent === 'mcode' ? 'repeat(2, 1fr)' : 'repeat(3, 1fr)',
                   gap: '6px',
                   background: 'var(--bg-surface)',
                   padding: '4px',
@@ -939,11 +989,13 @@ export const AgentManagementPage: React.FC<AgentManagementPageProps> = ({ onOpen
                   border: '1px solid var(--border-subtle)'
                 }}
               >
-                {[
+                {(targetAgent === 'agy' ? [
+                  { id: 'gemini', label: 'Gemini' }
+                ] : [
                   { id: 'openai', label: 'OpenAI 兼容' },
                   { id: 'anthropic', label: 'Anthropic' },
                   ...(targetAgent === 'opencode' ? [{ id: 'gemini', label: 'Gemini' }] : []),
-                ].map(p => {
+                ]).map(p => {
                   const isActive = protocol === p.id;
                   return (
                     <button
@@ -995,6 +1047,12 @@ export const AgentManagementPage: React.FC<AgentManagementPageProps> = ({ onOpen
                 type="text"
                 value={baseUrl}
                 onChange={e => handleBaseUrlChange(e.target.value)}
+                onBlur={() => {
+                  const cleaned = targetAgent === 'agy' ? normalizeAgyBaseUrl(baseUrl) : cleanBaseUrlComment(baseUrl);
+                  if (cleaned !== baseUrl) {
+                    handleBaseUrlChange(cleaned);
+                  }
+                }}
                 style={{
                   width: '100%',
                   padding: '8px 12px',
@@ -1005,7 +1063,9 @@ export const AgentManagementPage: React.FC<AgentManagementPageProps> = ({ onOpen
                   outline: 'none'
                 }}
                 placeholder={
-                  protocol === 'anthropic'
+                  targetAgent === 'agy'
+                    ? '请输入站点根路径'
+                    : protocol === 'anthropic'
                     ? 'https://api.anthropic.com/v1 或兼容端点'
                     : protocol === 'gemini'
                     ? 'https://generativelanguage.googleapis.com/v1beta 或兼容端点'

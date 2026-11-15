@@ -503,3 +503,90 @@ export function buildOpencodeResumeArgs(args: string[] | undefined, sessionId: s
   return result;
 }
 
+/**
+ * 剥离用户粘贴的 URL 中的括号备注、各种注释符号以及随附文字
+ */
+export function cleanBaseUrlComment(raw: string): string {
+  let s = raw.trim();
+  if (!s) return '';
+
+  // 1. 去除包裹的引号与反引号
+  s = s.replace(/^["'`]+|["'`]+$/g, '').trim();
+
+  // 2. 去除 Markdown 列表前缀，如 "- https://...", "* https://...", "1. https://..."
+  s = s.replace(/^[-*+]\s+/, '').replace(/^\d+\.\s+/, '').trim();
+
+  // 3. 处理注释符号：
+  // 3.1 处理 '#'
+  const hashIdx = s.indexOf('#');
+  if (hashIdx !== -1) {
+    s = s.substring(0, hashIdx).trim();
+  }
+
+  // 3.2 处理 '//'（跳过 http:// 或 https:// 协议头的斜杠）
+  const schemeOffset = s.startsWith('https://') ? 8 : s.startsWith('http://') ? 7 : 0;
+  const doubleSlashIdx = s.indexOf('//', schemeOffset);
+  if (doubleSlashIdx !== -1) {
+    s = s.substring(0, doubleSlashIdx).trim();
+  }
+
+  // 3.3 处理 /* ... */ 块注释
+  const blockCommentIdx = s.indexOf('/*');
+  if (blockCommentIdx !== -1) {
+    s = s.substring(0, blockCommentIdx).trim();
+  }
+
+  // 3.4 处理 SQL / 连字符注释 '--'
+  const sqlCommentIdx = s.indexOf(' --', schemeOffset);
+  if (sqlCommentIdx !== -1) {
+    s = s.substring(0, sqlCommentIdx).trim();
+  }
+
+  // 3.5 处理分号注释 ';' 或 '；'
+  const semiIdx = s.search(/[;；]/);
+  if (semiIdx !== -1) {
+    s = s.substring(0, semiIdx).trim();
+  }
+
+  // 4. 清理各种括号备注：()、（）、[]、【】、<>、{}
+  const bracketIdx = s.search(/[([（【<{《“‘]/);
+  if (bracketIdx !== -1) {
+    s = s.substring(0, bracketIdx).trim();
+  }
+
+  // 5. 空白字符切分：URL 不含空格，空格后若有说明文字切除
+  const spaceIdx = s.search(/[\s\u3000]/);
+  if (spaceIdx !== -1) {
+    s = s.substring(0, spaceIdx).trim();
+  }
+
+  // 6. 清除末尾残留的标点符号
+  s = s.replace(/[,/，。_:\-：]+$/, '').trim();
+
+  return s;
+}
+
+/**
+ * 规范化 Antigravity CLI 的 Base URL
+ * agy 必须为站点根路径，移除 /models, /v1, /v1beta, /gemini 等后缀
+ */
+export function normalizeAgyBaseUrl(url: string): string {
+  const cleaned = cleanBaseUrlComment(url);
+  let trimmed = cleaned.replace(/\/+$/, '');
+  if (!trimmed) return '';
+  let changed = true;
+  while (changed) {
+    const before = trimmed;
+    trimmed = trimmed.replace(/\/models$/, '');
+    trimmed = trimmed.replace(/\/v1beta$/, '');
+    trimmed = trimmed.replace(/\/v1alpha$/, '');
+    trimmed = trimmed.replace(/\/v1$/, '');
+    trimmed = trimmed.replace(/\/v2$/, '');
+    trimmed = trimmed.replace(/\/gemini$/, '');
+    trimmed = trimmed.replace(/\/antigravity$/, '');
+    trimmed = trimmed.replace(/\/+$/, '');
+    changed = before !== trimmed;
+  }
+  return trimmed;
+}
+

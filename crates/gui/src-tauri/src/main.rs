@@ -6,7 +6,7 @@ static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 const MIN_WINDOW_WIDTH: u32 = 800;
 const MIN_WINDOW_HEIGHT: u32 = 560;
 
-use loom_core::agent_config::{discover_agents, fetch_agent_latest_version, fetch_models, write_mcode_config, write_opencode_config, DiscoveryOverview, FetchedModel};
+use loom_core::agent_config::{discover_agents, fetch_agent_latest_version, fetch_models, write_agy_config, write_mcode_config, write_opencode_config, DiscoveryOverview, FetchedModel};
 use loom_core::cli_install::{self as cli_install, CliInstallStatus};
 use loom_core::git::{check_git_status, pull_git_project as core_pull_git_project, GitProjectStatus, GitPullResult};
 use loom_core::skills::{get_existing_skill_paths, inject_loom_skills, LOOM_SKILL_VERSION};
@@ -1868,6 +1868,18 @@ fn execute_test_command(cmd: &str, args_json: &str) -> Result<String, String> {
             let res = write_mcode_config(provider_id, protocol, base_url, api_key, &selected_models).map_err(|e| e.to_string())?;
             serde_json::to_string(&res).map_err(|e| e.to_string())
         }
+        "configure_agy_provider" => {
+            let selected_models: Vec<String> = if let Some(arr) = args.get("selectedModels").or_else(|| args.get("selected_models")).and_then(|v| v.as_array()) {
+                arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect()
+            } else if let Some(s) = args.get("selectedModel").or_else(|| args.get("selected_model")).and_then(|v| v.as_str()) {
+                vec![s.to_string()]
+            } else {
+                vec![]
+            };
+            let default_model = selected_models.first().map(|s| s.as_str());
+            let res = write_agy_config(&selected_models, default_model).map_err(|e| e.to_string())?;
+            serde_json::to_string(&res).map_err(|e| e.to_string())
+        }
         "get_selected_project_id" => {
             let res = get_selected_project_id()?;
             serde_json::to_string(&res).map_err(|e| e.to_string())
@@ -2252,6 +2264,28 @@ async fn configure_mcode_provider(
     let proto = protocol.unwrap_or_else(|| "openai".to_string());
     let handle = std::thread::spawn(move || {
         write_mcode_config(&p_id, &proto, &url, &key, &models)
+    });
+    handle.join().map_err(|_| "写入线程执行异常".to_string())?
+}
+
+#[tauri::command]
+#[allow(non_snake_case, clippy::too_many_arguments)]
+async fn configure_agy_provider(
+    provider_id: Option<String>,
+    providerId: Option<String>,
+    protocol: Option<String>,
+    base_url: Option<String>,
+    baseUrl: Option<String>,
+    api_key: Option<String>,
+    apiKey: Option<String>,
+    selected_models: Option<Vec<String>>,
+    selectedModels: Option<Vec<String>>,
+) -> Result<String, String> {
+    let _ = (provider_id, providerId, protocol, base_url, baseUrl, api_key, apiKey);
+    let models = selected_models.or(selectedModels).unwrap_or_default();
+    let default_model = models.first().cloned();
+    let handle = std::thread::spawn(move || {
+        write_agy_config(&models, default_model.as_deref())
     });
     handle.join().map_err(|_| "写入线程执行异常".to_string())?
 }
@@ -2727,6 +2761,7 @@ fn main() {
             fetch_provider_models,
             configure_opencode_provider,
             configure_mcode_provider,
+            configure_agy_provider,
             get_selected_project_id,
             save_selected_project_id,
             get_project_terminals,

@@ -5,6 +5,7 @@ import { I18nProvider } from "../I18nContext";
 import { ToastProvider } from "../ToastContext";
 import { DialogProvider } from "../DialogContext";
 import { AgentManagementPage } from "../pages/AgentManagementPage";
+import { cleanBaseUrlComment, normalizeAgyBaseUrl } from "../utils";
 import { invoke } from "@tauri-apps/api/core";
 
 function TestWrapper({ children }: { children: React.ReactNode }) {
@@ -41,6 +42,14 @@ describe("AgentManagementPage", () => {
               install_command: "irm https://install.ps1 | iex",
               download_url: "https://minimaxi.com",
             },
+            {
+              name: "agy",
+              installed: true,
+              version: "1.5.9",
+              executable_path: "C:\\bin\\agy.cmd",
+              install_command: "irm https://antigravity.google/cli/install.ps1 | iex",
+              download_url: "https://antigravity.google",
+            },
           ],
           npm_installed: true,
           npm_path: "C:\\bin\\npm.cmd",
@@ -55,6 +64,9 @@ describe("AgentManagementPage", () => {
         }
         if (payload?.agentName === "mcode") {
           return "0.6.12"; // 0.6.10 -> 0.6.12，有新版本
+        }
+        if (payload?.agentName === "agy") {
+          return "1.5.9"; // 已是最新
         }
         return "1.0.0";
       }
@@ -139,11 +151,14 @@ describe("AgentManagementPage", () => {
     await waitFor(() => {
       // opencode: 当前 1.19.3，最新 1.19.3 -> 已是最新
       // mcode: 当前 0.6.10，最新 0.6.12 -> 有新版本
+      // agy: 当前 1.5.9，最新 1.5.9 -> 已是最新
       expect(invoke).toHaveBeenCalledWith("check_agent_latest_version", { agentName: "opencode" });
       expect(invoke).toHaveBeenCalledWith("check_agent_latest_version", { agentName: "mcode" });
+      expect(invoke).toHaveBeenCalledWith("check_agent_latest_version", { agentName: "agy" });
     });
 
-    expect(await findByText("已是最新")).toBeDefined();
+    const latestBadges = await findAllByText("已是最新");
+    expect(latestBadges.length).toBe(2);
     expect(await findByText("有新版本")).toBeDefined();
     expect(await findByText(/检测到新版本 v0.6.12/)).toBeDefined();
   });
@@ -157,5 +172,54 @@ describe("AgentManagementPage", () => {
 
     await new Promise((resolve) => setTimeout(resolve, 50));
     expect(invoke).not.toHaveBeenCalledWith("check_agent_latest_version", expect.anything());
+  });
+
+  it("切换选择 Antigravity CLI 时仅支持 Gemini 协议并提供正确的占位提示", async () => {
+    const { findByText, findAllByText, getByPlaceholderText, queryByText } = render(
+      <TestWrapper>
+        <AgentManagementPage active={true} />
+      </TestWrapper>
+    );
+
+    // 查找并点击选择 agy 卡片
+    const agyLabels = await findAllByText("Antigravity CLI");
+    expect(agyLabels.length).toBeGreaterThanOrEqual(1);
+
+    fireEvent.click(agyLabels[0]);
+
+    // 验证切换后标题变为 Antigravity CLI 模型自动配置（列表中一个，标题中一个）
+    const activeTitles = await findAllByText("Antigravity CLI");
+    expect(activeTitles.length).toBe(2);
+
+    // 验证协议兼容性限制文案
+    expect(await findByText("agy 暂时仅支持 Gemini 原生接口")).toBeDefined();
+
+    // 验证仅展示 Gemini 协议，不展示 OpenAI 兼容
+    expect(await findByText("Gemini")).toBeDefined();
+    expect(queryByText("OpenAI 兼容")).toBeNull();
+
+    // 验证 Base URL placeholder 提示
+    const baseUrlInput = getByPlaceholderText("请输入站点根路径");
+    expect(baseUrlInput).toBeDefined();
+  });
+
+  it("cleanBaseUrlComment 与 normalizeAgyBaseUrl 正确剥离各类括号备注与后缀", () => {
+    // 括号备注
+    expect(cleanBaseUrlComment("https://code.ai80.vip (站点根路径)")).toBe("https://code.ai80.vip");
+    expect(cleanBaseUrlComment("https://code.ai80.vip（官方推荐）")).toBe("https://code.ai80.vip");
+    expect(cleanBaseUrlComment("https://code.ai80.vip【推荐】")).toBe("https://code.ai80.vip");
+    expect(cleanBaseUrlComment("https://code.ai80.vip[官方]")).toBe("https://code.ai80.vip");
+
+    // 注释符号
+    expect(cleanBaseUrlComment("https://code.ai80.vip # 注意不要带v1")).toBe("https://code.ai80.vip");
+    expect(cleanBaseUrlComment("https://code.ai80.vip // 备注")).toBe("https://code.ai80.vip");
+    expect(cleanBaseUrlComment("https://code.ai80.vip/* block */")).toBe("https://code.ai80.vip");
+    expect(cleanBaseUrlComment("https://code.ai80.vip; 分号说明")).toBe("https://code.ai80.vip");
+
+    // normalizeAgyBaseUrl 清洗
+    expect(normalizeAgyBaseUrl("https://code.ai80.vip/v1/ (站点根路径)")).toBe("https://code.ai80.vip");
+    expect(normalizeAgyBaseUrl("https://code.ai80.vip/v1beta")).toBe("https://code.ai80.vip");
+    expect(normalizeAgyBaseUrl("https://code.ai80.vip/gemini")).toBe("https://code.ai80.vip");
+    expect(normalizeAgyBaseUrl("https://code.ai80.vip/models/")).toBe("https://code.ai80.vip");
   });
 });
