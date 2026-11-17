@@ -323,6 +323,73 @@ fn detect_agy_version(executable_path: Option<&str>) -> Option<String> {
     None
 }
 
+/// 静态探测 zcode 当前安装版本（读取 `~/.zcode/cli/version.json` 或 npm package.json，严禁执行外部二进制）
+///
+/// `zcode-app-cli` 每次启动会把自己的版本号写进 `~/.zcode/cli/version.json` 的 `checkedVersion`，
+/// 这是最准确的来源；找不到时回退到 npm 全局安装包的 `package.json`。
+fn detect_zcode_version(executable_path: Option<&str>) -> Option<String> {
+    // 1. 优先读取运行时自报的已安装版本
+    if let Some(home) = dirs::home_dir() {
+        let version_file = home.join(".zcode").join("cli").join("version.json");
+        if let Ok(content) = fs::read_to_string(&version_file) {
+            if let Ok(val) = serde_json::from_str::<serde_json::Value>(&content) {
+                if let Some(v) = val.get("checkedVersion").and_then(|v| v.as_str()) {
+                    let trimmed = v.trim();
+                    if !trimmed.is_empty() {
+                        return Some(trimmed.to_string());
+                    }
+                }
+            }
+        }
+    }
+
+    // 2. 回退：读取 npm 全局安装的 zcode-app-cli/package.json
+    let mut candidate_package_jsons: Vec<PathBuf> = Vec::new();
+
+    if let Some(path_str) = executable_path {
+        let exe_path = PathBuf::from(path_str);
+        if let Some(parent) = exe_path.parent() {
+            // Windows 下全局 npm 模块通常位于 bin 所在目录的同级 node_modules
+            candidate_package_jsons.push(parent.join("node_modules").join("zcode-app-cli").join("package.json"));
+            // Linux/macOS 下 bin 同级的 ../lib/node_modules
+            if let Some(grandparent) = parent.parent() {
+                candidate_package_jsons.push(grandparent.join("lib").join("node_modules").join("zcode-app-cli").join("package.json"));
+            }
+        }
+        if let Ok(real_path) = fs::canonicalize(&exe_path) {
+            if let Some(parent) = real_path.parent() {
+                candidate_package_jsons.push(parent.join("package.json"));
+                if let Some(grandparent) = parent.parent() {
+                    candidate_package_jsons.push(grandparent.join("package.json"));
+                }
+            }
+        }
+    }
+
+    #[cfg(target_os = "windows")]
+    if let Some(appdata) = dirs::data_dir() {
+        candidate_package_jsons.push(appdata.join("npm").join("node_modules").join("zcode-app-cli").join("package.json"));
+    }
+
+    if let Some(home) = dirs::home_dir() {
+        candidate_package_jsons.push(home.join(".npm-global").join("lib").join("node_modules").join("zcode-app-cli").join("package.json"));
+    }
+
+    for path in candidate_package_jsons {
+        if path.is_file() {
+            if let Ok(content) = fs::read_to_string(&path) {
+                if let Ok(val) = serde_json::from_str::<serde_json::Value>(&content) {
+                    if let Some(v) = val.get("version").and_then(|v| v.as_str()) {
+                        return Some(v.to_string());
+                    }
+                }
+            }
+        }
+    }
+
+    None
+}
+
 /// 联网查询 Agent 最新发布版本（查询 npmjs 官方 registry 或官方更新清单）
 pub fn fetch_agent_latest_version(agent_name: &str) -> Result<String, String> {
     let lower = agent_name.to_lowercase();
@@ -386,6 +453,7 @@ pub fn fetch_agent_latest_version(agent_name: &str) -> Result<String, String> {
         let (pkg_name, is_scoped) = match lower.as_str() {
             "opencode" => ("opencode-ai", false),
             "mcode" => ("@minimax-ai/code", true),
+            "zcode" => ("zcode-app-cli", false),
             other => return Err(format!("Unsupported agent: {}", other)),
         };
 
@@ -420,28 +488,7 @@ pub fn discover_agents() -> DiscoveryOverview {
     let npm_path = check_executable("npm");
     let npm_installed = npm_path.is_some();
 
-    // 1. OpenCode
-    // 仅探测可执行文件是否存在与读取静态 package.json，绝不执行 `--version` 等子命令：
-    // 1) 严格遵守安全规则（禁止执行 PATH 扫描发现的 CLI 工具）；
-    // 2) 避免启动外部进程阻塞 IPC 线程导致切页卡顿。
-    let opencode_path = check_executable("opencode");
-    let opencode_installed = opencode_path.is_some();
-    let opencode_version = if opencode_installed {
-        detect_opencode_version(opencode_path.as_deref())
-    } else {
-        None
-    };
-
-    agents.push(AgentDiscoveryStatus {
-        name: "opencode".to_string(),
-        installed: opencode_installed,
-        version: opencode_version,
-        executable_path: opencode_path,
-        install_command: "npm install -g opencode-ai".to_string(),
-        download_url: "https://opencode.ai/docs/zh-cn".to_string(),
-    });
-
-    // 2. Mcode
+    // 1. Mcode
     let mcode_path = check_executable("mcode");
     let mcode_installed = mcode_path.is_some();
     let mcode_version = if mcode_installed {
@@ -457,6 +504,25 @@ pub fn discover_agents() -> DiscoveryOverview {
         executable_path: mcode_path,
         install_command: "irm https://filecdn.minimax.chat/public/install.ps1 | iex".to_string(),
         download_url: "https://www.minimaxi.com/".to_string(),
+    });
+
+    // 2. ZCode CLI (zcode-app-cli)
+    // 与 mcode / agy 一样，仅探测可执行文件是否存在并静态读取版本文件，绝不执行 `--version`。
+    let zcode_path = check_executable("zcode");
+    let zcode_installed = zcode_path.is_some();
+    let zcode_version = if zcode_installed {
+        detect_zcode_version(zcode_path.as_deref())
+    } else {
+        None
+    };
+
+    agents.push(AgentDiscoveryStatus {
+        name: "zcode".to_string(),
+        installed: zcode_installed,
+        version: zcode_version,
+        executable_path: zcode_path,
+        install_command: "npm install -g zcode-app-cli@latest".to_string(),
+        download_url: "https://www.npmjs.com/package/zcode-app-cli".to_string(),
     });
 
     // 3. Antigravity CLI (agy)
@@ -506,6 +572,27 @@ pub fn discover_agents() -> DiscoveryOverview {
             "curl -fsSL https://antigravity.google/cli/install.sh | bash".to_string()
         },
         download_url: "https://antigravity.google/product/antigravity-cli".to_string(),
+    });
+
+    // 4. OpenCode
+    // 仅探测可执行文件是否存在与读取静态 package.json，绝不执行 `--version` 等子命令：
+    // 1) 严格遵守安全规则（禁止执行 PATH 扫描发现的 CLI 工具）；
+    // 2) 避免启动外部进程阻塞 IPC 线程导致切页卡顿。
+    let opencode_path = check_executable("opencode");
+    let opencode_installed = opencode_path.is_some();
+    let opencode_version = if opencode_installed {
+        detect_opencode_version(opencode_path.as_deref())
+    } else {
+        None
+    };
+
+    agents.push(AgentDiscoveryStatus {
+        name: "opencode".to_string(),
+        installed: opencode_installed,
+        version: opencode_version,
+        executable_path: opencode_path,
+        install_command: "npm install -g opencode-ai".to_string(),
+        download_url: "https://opencode.ai/docs/zh-cn".to_string(),
     });
 
     let node_install_command = "winget install OpenJS.NodeJS".to_string();
@@ -1143,6 +1230,229 @@ pub fn write_agy_config(
     write_agy_config_to_path(&config_file, selected_models, default_model)
 }
 
+/// zcode 的接入协议映射。
+/// 官方 provider schema 只认 `anthropic-messages` / `openai-chat-completions` / `openai-responses`，
+/// 没有 Gemini 原生协议，因此 zcode 与 mcode 一样只支持 OpenAI 兼容与 Anthropic。
+pub fn build_zcode_api_type(protocol: &str) -> &'static str {
+    match protocol.to_ascii_lowercase().as_str() {
+        "anthropic" => "anthropic-messages",
+        _ => "openai-chat-completions",
+    }
+}
+
+/// 规范化 zcode 的 API Base URL：清理用户夹带的备注，并去掉多余的 `/models` 后缀。
+pub fn normalize_zcode_base_url(base_url: &str) -> String {
+    let cleaned = clean_base_url_comment(base_url);
+    let mut trimmed = cleaned.as_str();
+    if trimmed.is_empty() {
+        return String::new();
+    }
+    if trimmed.ends_with("/models") {
+        trimmed = trimmed.strip_suffix("/models").unwrap().trim_end_matches('/');
+    }
+    trimmed.to_string()
+}
+
+/// 写入 zcode 的 provider 配置（`provider_config.json`）。
+///
+/// 该文件由 ZCode Desktop 与 CLI 共享，结构遵循官方 schema：
+/// ```text
+/// { "schemaVersion": 1,
+///   "config": {
+///     "providerOrder": ["<providerId>"],
+///     "providerConfigRules": { "providerRules": [ { "providerId", "providerName", "enabled", "config": { "access", "api", ... } } ] },
+///     "modelConfigRules": { "providerModelRules": [], "manualProviderModelRules": [ { "providerId", "modelId", "config" } ] },
+///     "defaultModelSelection": { "providerId", "modelId" } } }
+/// ```
+/// 严格保留既有 Provider 规则与模型规则，原子写入（临时文件 + rename）。
+pub fn write_zcode_config_to_path(
+    config_file: &std::path::Path,
+    provider_name: &str,
+    protocol: &str,
+    base_url: &str,
+    api_key: &str,
+    selected_models: &[String],
+) -> Result<String, String> {
+    if let Some(parent) = config_file.parent() {
+        fs::create_dir_all(parent).map_err(|e| format!("Failed to create config dir: {}", e))?;
+    }
+
+    let mut root: serde_json::Value = if config_file.exists() {
+        let content = fs::read_to_string(config_file).unwrap_or_else(|_| "{}".to_string());
+        serde_json::from_str(&content).unwrap_or_else(|_| serde_json::json!({}))
+    } else {
+        serde_json::json!({})
+    };
+    if !root.is_object() {
+        root = serde_json::json!({});
+    }
+    root["schemaVersion"] = serde_json::json!(1);
+    if !root.get("config").map(|c| c.is_object()).unwrap_or(false) {
+        root["config"] = serde_json::json!({});
+    }
+
+    let provider_key = if provider_name.trim().is_empty() {
+        "custom".to_string()
+    } else {
+        provider_name.trim().to_string()
+    };
+    let api_type = build_zcode_api_type(protocol);
+    let normalized_base_url = normalize_zcode_base_url(base_url);
+
+    let provider_rule = serde_json::json!({
+        "providerId": provider_key,
+        "templateId": serde_json::Value::Null,
+        "providerName": provider_key,
+        "enabled": true,
+        "config": {
+            "group": "standard-personal",
+            "logo": serde_json::Value::Null,
+            "access": {
+                "type": "api-key",
+                "apiKey": api_key,
+                "apiKeyManagementUrl": serde_json::Value::Null
+            },
+            "api": {
+                "type": api_type,
+                "baseUrl": normalized_base_url,
+                "headers": {}
+            },
+            "personalModelIds": selected_models,
+            "modelOrder": selected_models,
+            "visibility": "visible"
+        }
+    });
+
+    // providerConfigRules.providerRules：按 providerId 覆盖，保留其他 Provider
+    {
+        let config = root.get_mut("config").unwrap();
+        if !config.get("providerConfigRules").map(|v| v.is_object()).unwrap_or(false) {
+            config["providerConfigRules"] = serde_json::json!({});
+        }
+        let rules = config.get_mut("providerConfigRules").unwrap();
+        if !rules.get("providerRules").map(|v| v.is_array()).unwrap_or(false) {
+            rules["providerRules"] = serde_json::json!([]);
+        }
+        let arr = rules.get_mut("providerRules").unwrap().as_array_mut().unwrap();
+        arr.retain(|r| r.get("providerId").and_then(|v| v.as_str()) != Some(provider_key.as_str()));
+        arr.push(provider_rule);
+    }
+
+    // modelConfigRules.manualProviderModelRules：自定义模型通常不在内置目录中，
+    // 只写 smart overlay（providerModelRules）不足以让模型可选，这里补一份完整的手工模型配置。
+    {
+        let config = root.get_mut("config").unwrap();
+        if !config.get("modelConfigRules").map(|v| v.is_object()).unwrap_or(false) {
+            config["modelConfigRules"] = serde_json::json!({});
+        }
+        let rules = config.get_mut("modelConfigRules").unwrap();
+        for key in ["providerModelRules", "manualProviderModelRules"] {
+            if !rules.get(key).map(|v| v.is_array()).unwrap_or(false) {
+                rules[key] = serde_json::json!([]);
+            }
+        }
+        let manual = rules.get_mut("manualProviderModelRules").unwrap().as_array_mut().unwrap();
+        for model in selected_models {
+            manual.retain(|r| {
+                let same_provider = r.get("providerId").and_then(|v| v.as_str()) == Some(provider_key.as_str());
+                let same_model = r.get("modelId").and_then(|v| v.as_str()) == Some(model.as_str());
+                !(same_provider && same_model)
+            });
+            manual.push(serde_json::json!({
+                "providerId": provider_key,
+                "modelId": model,
+                "config": {
+                    "enabled": true,
+                    "properties": {
+                        "contextWindow": 200000,
+                        "inputFormat": {
+                            "supportsText": true,
+                            "supportsImage": false,
+                            "supportsVideo": false,
+                            "supportsPdf": false
+                        },
+                        "outputFormat": { "supportsText": true },
+                        "supportsToolCall": true,
+                        "supportsJsonSchemaOutput": false,
+                        "supportsNativeWebSearch": false,
+                        "supportsMidConversationSystem": false
+                    },
+                    "optionSpecs": {
+                        "maxOutputTokens": {
+                            "max": 32768,
+                            "map": "{\"max_tokens\": maxOutputTokens}"
+                        }
+                    }
+                }
+            }));
+        }
+    }
+
+    // providerOrder：新 Provider 置顶，其余保持原序
+    {
+        let config = root.get_mut("config").unwrap();
+        let mut order: Vec<String> = config
+            .get("providerOrder")
+            .and_then(|v| v.as_array())
+            .map(|arr| arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect())
+            .unwrap_or_default();
+        order.retain(|id| id != &provider_key);
+        order.insert(0, provider_key.clone());
+        config["providerOrder"] = serde_json::json!(order);
+    }
+
+    // defaultModelSelection：与其它 Agent 的行为一致，配置完成后指向首个选中模型
+    if let Some(model) = selected_models.first() {
+        let config = root.get_mut("config").unwrap();
+        config["defaultModelSelection"] = serde_json::json!({
+            "providerId": provider_key,
+            "modelId": model
+        });
+    }
+
+    let formatted_json = serde_json::to_string_pretty(&root)
+        .map_err(|e| format!("Failed to serialize provider_config.json: {}", e))?;
+
+    let tmp_file = config_file.with_extension("json.tmp");
+    fs::write(&tmp_file, &formatted_json).map_err(|e| format!("Failed to write tmp provider_config.json: {}", e))?;
+    fs::rename(&tmp_file, config_file).map_err(|e| format!("Failed to rename provider_config.json: {}", e))?;
+
+    Ok(config_file.to_string_lossy().to_string())
+}
+
+/// 写入 zcode 的 provider 配置到运行时实际读取的位置。
+/// `ZCODE_PERSONAL_PROVIDER_CONFIG_FILE` 可指定独立文件；
+/// `ZCODE_DATA_BASE_DIR` 会改变原生运行时的基目录（provider 与凭据随之迁移）。
+pub fn write_zcode_config(
+    provider_name: &str,
+    protocol: &str,
+    base_url: &str,
+    api_key: &str,
+    selected_models: &[String],
+) -> Result<String, String> {
+    if let Ok(custom_path) = std::env::var("ZCODE_PERSONAL_PROVIDER_CONFIG_FILE") {
+        let trimmed = custom_path.trim();
+        if !trimmed.is_empty() {
+            return write_zcode_config_to_path(
+                std::path::Path::new(trimmed),
+                provider_name,
+                protocol,
+                base_url,
+                api_key,
+                selected_models,
+            );
+        }
+    }
+
+    let home = dirs::home_dir().ok_or_else(|| "Could not find user home directory".to_string())?;
+    let base_dir = match std::env::var("ZCODE_DATA_BASE_DIR") {
+        Ok(dir) if !dir.trim().is_empty() => std::path::PathBuf::from(dir.trim()),
+        _ => home.join(".zcode"),
+    };
+    let config_file = base_dir.join("v2").join("provider_config.json");
+    write_zcode_config_to_path(&config_file, provider_name, protocol, base_url, api_key, selected_models)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1334,15 +1644,145 @@ mod tests {
     #[test]
     fn test_discover_agents() {
         let overview = discover_agents();
-        assert_eq!(overview.agents.len(), 3);
-        assert_eq!(overview.agents[0].name, "opencode");
-        assert_eq!(overview.agents[0].install_command, "npm install -g opencode-ai");
-        assert_eq!(overview.agents[1].name, "mcode");
-        assert_eq!(overview.agents[1].install_command, "irm https://filecdn.minimax.chat/public/install.ps1 | iex");
+        assert_eq!(overview.agents.len(), 4);
+        // 展示顺序固定为 mcode → zcode → agy → opencode
+        assert_eq!(overview.agents[0].name, "mcode");
+        assert_eq!(overview.agents[0].install_command, "irm https://filecdn.minimax.chat/public/install.ps1 | iex");
+        assert_eq!(overview.agents[1].name, "zcode");
+        assert_eq!(overview.agents[1].install_command, "npm install -g zcode-app-cli@latest");
+        assert_eq!(overview.agents[1].download_url, "https://www.npmjs.com/package/zcode-app-cli");
         assert_eq!(overview.agents[2].name, "agy");
         assert_eq!(overview.agents[2].download_url, "https://antigravity.google/product/antigravity-cli");
+        assert_eq!(overview.agents[3].name, "opencode");
+        assert_eq!(overview.agents[3].install_command, "npm install -g opencode-ai");
         #[cfg(target_os = "windows")]
         assert_eq!(overview.agents[2].install_command, "irm https://antigravity.google/cli/install.ps1 | iex");
+    }
+
+    #[test]
+    fn test_build_zcode_api_type() {
+        assert_eq!(build_zcode_api_type("openai"), "openai-chat-completions");
+        assert_eq!(build_zcode_api_type("OpenAI"), "openai-chat-completions");
+        assert_eq!(build_zcode_api_type("anthropic"), "anthropic-messages");
+        // zcode 的 provider schema 没有 Gemini 原生协议
+        assert_eq!(build_zcode_api_type("gemini"), "openai-chat-completions");
+    }
+
+    #[test]
+    fn test_normalize_zcode_base_url() {
+        assert_eq!(normalize_zcode_base_url(""), "");
+        assert_eq!(normalize_zcode_base_url("   "), "");
+        assert_eq!(normalize_zcode_base_url("https://api.example.com/v1"), "https://api.example.com/v1");
+        assert_eq!(normalize_zcode_base_url("https://api.example.com/v1/models"), "https://api.example.com/v1");
+        assert_eq!(normalize_zcode_base_url("https://api.example.com/v1 (兼容端点)"), "https://api.example.com/v1");
+    }
+
+    #[test]
+    fn test_write_zcode_config_merge_existing() {
+        let tmp_dir = tempfile::tempdir().unwrap();
+        let config_path = tmp_dir.path().join("provider_config.json");
+
+        // 模拟已存在的账号 Provider 与默认模型，验证写入时不丢失既有配置
+        let initial_json = r#"{
+  "schemaVersion": 1,
+  "config": {
+    "providerOrder": ["account:zai-individual-coding-plan"],
+    "providerConfigRules": {
+      "providerRules": [
+        {
+          "providerId": "account:zai-individual-coding-plan",
+          "providerName": "Z.AI Coding Plan",
+          "enabled": true,
+          "config": { "group": "standard-personal" }
+        }
+      ]
+    },
+    "modelConfigRules": {
+      "providerModelRules": [],
+      "manualProviderModelRules": []
+    },
+    "defaultModelSelection": {
+      "providerId": "account:zai-individual-coding-plan",
+      "modelId": "GLM-5.3"
+    }
+  }
+}"#;
+        fs::write(&config_path, initial_json).unwrap();
+
+        let models = vec!["gpt-4o".to_string(), "gpt-4o-mini".to_string()];
+        let written = write_zcode_config_to_path(
+            &config_path,
+            "loom",
+            "openai",
+            "https://api.example.com/v1",
+            "sk-test-key",
+            &models,
+        )
+        .unwrap();
+        assert_eq!(written, config_path.to_string_lossy().to_string());
+
+        let content = fs::read_to_string(&config_path).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&content).unwrap();
+
+        assert_eq!(parsed["schemaVersion"], 1);
+
+        // 既有账号 Provider 必须保留
+        let rules = parsed["config"]["providerConfigRules"]["providerRules"].as_array().unwrap();
+        assert_eq!(rules.len(), 2);
+        assert_eq!(rules[0]["providerId"], "account:zai-individual-coding-plan");
+
+        // 新 Provider 字段符合官方 schema
+        let zcode_rule = rules.iter().find(|r| r["providerId"] == "loom").unwrap();
+        assert_eq!(zcode_rule["enabled"], true);
+        assert_eq!(zcode_rule["config"]["group"], "standard-personal");
+        assert_eq!(zcode_rule["config"]["access"]["type"], "api-key");
+        assert_eq!(zcode_rule["config"]["access"]["apiKey"], "sk-test-key");
+        assert_eq!(zcode_rule["config"]["api"]["type"], "openai-chat-completions");
+        assert_eq!(zcode_rule["config"]["api"]["baseUrl"], "https://api.example.com/v1");
+        assert_eq!(zcode_rule["config"]["visibility"], "visible");
+        assert_eq!(zcode_rule["config"]["personalModelIds"], serde_json::json!(models));
+        assert_eq!(zcode_rule["config"]["modelOrder"], serde_json::json!(models));
+
+        // 每个模型都要有完整的手工模型配置，否则自定义模型不在内置目录中无法使用
+        let manual = parsed["config"]["modelConfigRules"]["manualProviderModelRules"].as_array().unwrap();
+        assert_eq!(manual.len(), 2);
+        assert_eq!(manual[0]["providerId"], "loom");
+        assert_eq!(manual[0]["modelId"], "gpt-4o");
+        assert_eq!(manual[0]["config"]["enabled"], true);
+        assert_eq!(manual[0]["config"]["properties"]["inputFormat"]["supportsText"], true);
+        assert_eq!(manual[1]["modelId"], "gpt-4o-mini");
+
+        // providerOrder 置顶新 Provider，其余保持原序
+        let order = parsed["config"]["providerOrder"].as_array().unwrap();
+        assert_eq!(order[0], "loom");
+        assert_eq!(order[1], "account:zai-individual-coding-plan");
+
+        // 默认模型指向首个选中模型
+        assert_eq!(parsed["config"]["defaultModelSelection"]["providerId"], "loom");
+        assert_eq!(parsed["config"]["defaultModelSelection"]["modelId"], "gpt-4o");
+    }
+
+    #[test]
+    fn test_write_zcode_config_overwrites_same_provider() {
+        let tmp_dir = tempfile::tempdir().unwrap();
+        let config_path = tmp_dir.path().join("provider_config.json");
+
+        let models = vec!["gpt-4o".to_string()];
+        write_zcode_config_to_path(&config_path, "loom", "openai", "https://a.example.com/v1", "k1", &models).unwrap();
+        write_zcode_config_to_path(&config_path, "loom", "anthropic", "https://b.example.com", "k2", &models).unwrap();
+
+        let content = fs::read_to_string(&config_path).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&content).unwrap();
+        let rules = parsed["config"]["providerConfigRules"]["providerRules"].as_array().unwrap();
+        // 同名 Provider 只保留一条，且被新配置覆盖
+        assert_eq!(rules.len(), 1);
+        assert_eq!(rules[0]["config"]["api"]["type"], "anthropic-messages");
+        assert_eq!(rules[0]["config"]["api"]["baseUrl"], "https://b.example.com");
+        assert_eq!(rules[0]["config"]["access"]["apiKey"], "k2");
+
+        // 同名模型的规则也不应重复
+        let manual = parsed["config"]["modelConfigRules"]["manualProviderModelRules"].as_array().unwrap();
+        assert_eq!(manual.len(), 1);
     }
 
     #[test]

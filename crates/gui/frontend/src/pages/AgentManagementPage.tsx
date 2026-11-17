@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import WindowControlButtons from '../components/WindowControlButtons';
-import { getAgentDiscoveryStatus, checkAgentLatestVersion, fetchProviderModels, configureOpencodeProvider, configureMcodeProvider, configureAgyProvider, triggerInjectLoomSkills, getInjectedSkillPaths, getLoomSkillVersion, installLoomCli, getLoomCliStatus, getTemplates, createTemplate, updateTemplate, importCliTool, getCliTools, openUrl } from '../api';
+import { getAgentDiscoveryStatus, checkAgentLatestVersion, fetchProviderModels, configureOpencodeProvider, configureMcodeProvider, configureAgyProvider, configureZcodeProvider, triggerInjectLoomSkills, getInjectedSkillPaths, getLoomSkillVersion, installLoomCli, getLoomCliStatus, getTemplates, createTemplate, updateTemplate, importCliTool, getCliTools, openUrl } from '../api';
 import type { AgentDiscoveryStatus, CliInstallStatus, FetchedModel } from '../types';
 import { useToast } from '../ToastContext';
 import { useI18n } from '../I18nContext';
@@ -55,18 +55,19 @@ export const AgentManagementPage: React.FC<AgentManagementPageProps> = ({ onOpen
   const [cliStatus, setCliStatus] = useState<CliInstallStatus | null>(null);
   const [installingCli, setInstallingCli] = useState<boolean>(false);
 
-  // opencode / mcode / agy 最新版本检测状态（仅切入本页时触发）
+  // opencode / mcode / agy / zcode 最新版本检测状态（仅切入本页时触发）
   const [latestVersions, setLatestVersions] = useState<Record<string, LatestVersionState>>({
     opencode: { version: null, loading: false, error: null },
     mcode: { version: null, loading: false, error: null },
     agy: { version: null, loading: false, error: null },
+    zcode: { version: null, loading: false, error: null },
   });
 
-  // Target Agent selection (opencode / mcode / agy)
-  const [targetAgent, setTargetAgent] = useState<'opencode' | 'mcode' | 'agy'>(() => {
+  // Target Agent selection (opencode / mcode / agy / zcode)
+  const [targetAgent, setTargetAgent] = useState<'opencode' | 'mcode' | 'agy' | 'zcode'>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEY_TARGET_AGENT);
-      if (saved === 'mcode' || saved === 'opencode' || saved === 'agy') {
+      if (saved === 'mcode' || saved === 'opencode' || saved === 'agy' || saved === 'zcode') {
         return saved;
       }
       return 'opencode';
@@ -113,13 +114,16 @@ export const AgentManagementPage: React.FC<AgentManagementPageProps> = ({ onOpen
   const [selectedModels, setSelectedModels] = useState<string[]>([]);
   const [configuring, setConfiguring] = useState<boolean>(false);
 
-  const handleSelectTargetAgent = (agentKey: 'opencode' | 'mcode' | 'agy') => {
+  const handleSelectTargetAgent = (agentKey: 'opencode' | 'mcode' | 'agy' | 'zcode') => {
     setTargetAgent(agentKey);
     try { localStorage.setItem(STORAGE_KEY_TARGET_AGENT, agentKey); } catch { /* ignore */ }
     if (agentKey === 'mcode' && protocol === 'gemini') {
       handleProtocolChange('openai');
     } else if (agentKey === 'agy' && protocol !== 'gemini') {
       handleProtocolChange('gemini');
+    } else if (agentKey === 'zcode' && protocol === 'gemini') {
+      // zcode 的 provider schema 没有 Gemini 原生协议
+      handleProtocolChange('openai');
     }
   };
 
@@ -185,7 +189,7 @@ export const AgentManagementPage: React.FC<AgentManagementPageProps> = ({ onOpen
   }, [toast, syncDiscoveredAgents]);
 
   const checkLatestVersions = useCallback(async () => {
-    const agentsToCheck = ['opencode', 'mcode', 'agy'];
+    const agentsToCheck = ['mcode', 'zcode', 'agy', 'opencode'];
     for (const name of agentsToCheck) {
       setLatestVersions(prev => ({
         ...prev,
@@ -370,6 +374,11 @@ export const AgentManagementPage: React.FC<AgentManagementPageProps> = ({ onOpen
       return;
     }
 
+    if (targetAgent === 'zcode' && protocol === 'gemini') {
+      toast.error('zcode 暂不支持 Gemini 协议，请选择 OpenAI 兼容或 Anthropic 协议');
+      return;
+    }
+
     if (targetAgent === 'agy' && protocol !== 'gemini') {
       toast.error('agy 暂时仅支持 Gemini 协议');
       return;
@@ -380,6 +389,9 @@ export const AgentManagementPage: React.FC<AgentManagementPageProps> = ({ onOpen
       if (targetAgent === 'mcode') {
         await configureMcodeProvider(providerId, cleanUrl, apiKey, selectedModels, protocol);
         toast.success(`已自动写入 config.yaml 配置文件！(协议: ${protocol}, 已配置 ${selectedModels.length} 个模型)`);
+      } else if (targetAgent === 'zcode') {
+        await configureZcodeProvider(providerId, cleanUrl, apiKey, selectedModels, protocol);
+        toast.success(`已自动写入 provider_config.json 配置文件！(协议: ${protocol}, 已配置 ${selectedModels.length} 个模型)`);
       } else if (targetAgent === 'agy') {
         await configureAgyProvider(providerId, cleanUrl, apiKey, selectedModels, protocol);
         toast.success(`已自动写入 settings.json 配置文件！(协议: ${protocol}, 已配置 ${selectedModels.length} 个模型)`);
@@ -433,14 +445,27 @@ export const AgentManagementPage: React.FC<AgentManagementPageProps> = ({ onOpen
               );
             }
           } else {
-            if (!existing) {
-              const modelArg = targetAgent === 'mcode'
-                ? `custom_provider:${providerId}/${model}`
-                : `${providerId}/${model}`;
+            const modelArg = targetAgent === 'mcode'
+              ? `custom_provider:${providerId}/${model}`
+              : `${providerId}/${model}`;
+            const modelArgs = ['--model', modelArg];
+            if (existing && targetAgent === 'zcode') {
+              // zcode 的模型由 provider 配置与 --model <providerId>/<modelId> 共同决定，
+              // 重复配置时同步更新已存在的模板，避免残留旧模型。
+              await updateTemplate(
+                existing.id,
+                tplName,
+                modelArgs,
+                existing.env,
+                existing.env_var_ids || [],
+                existing.pwd,
+                existing.env_mode || 'inherit'
+              );
+            } else if (!existing) {
               await createTemplate(
                 targetToolId,
                 tplName,
-                ['--model', modelArg],
+                modelArgs,
                 {},
                 [],
                 undefined,
@@ -508,7 +533,7 @@ export const AgentManagementPage: React.FC<AgentManagementPageProps> = ({ onOpen
             style={{ margin: 0, fontSize: '24px', fontWeight: 600, color: 'var(--text-primary)', userSelect: 'none', cursor: 'default' }}
           >配置引导</h1>
           <p data-tauri-drag-region style={{ margin: '4px 0 0', color: 'var(--text-secondary)', fontSize: '14px' }}>
-            安装并配置 Agent（OpenCode / MiniMax Code）自动注入模型
+            安装并配置 Agent（MiniMax Code / ZCode / Antigravity CLI / OpenCode）自动注入模型
           </p>
           {cliStatus?.installed && injectedPaths.length > 0 && (
             <div className="rainbow-wave-banner" style={{ marginTop: '10px' }}>
@@ -878,7 +903,7 @@ export const AgentManagementPage: React.FC<AgentManagementPageProps> = ({ onOpen
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
             <h2 style={{ fontSize: '18px', margin: 0, color: 'var(--text-primary)' }}>
               <span style={{ color: 'var(--accent-primary, #3b82f6)', fontWeight: 600 }}>
-                {targetAgent === 'mcode' ? 'MiniMax Code' : targetAgent === 'agy' ? 'Antigravity CLI' : 'OpenCode'}
+                {targetAgent === 'mcode' ? 'MiniMax Code' : targetAgent === 'zcode' ? 'ZCode' : targetAgent === 'agy' ? 'Antigravity CLI' : 'OpenCode'}
               </span> 模型自动配置
             </h2>
           </div>
@@ -892,25 +917,30 @@ export const AgentManagementPage: React.FC<AgentManagementPageProps> = ({ onOpen
               <div
                 style={{
                   display: 'grid',
-                  gridTemplateColumns: 'repeat(3, 1fr)',
+                  gridTemplateColumns: 'repeat(4, 1fr)',
                   gap: '10px'
                 }}
               >
                 {[
-                  {
-                    key: 'opencode' as const,
-                    name: 'OpenCode',
-                    installed: discovery?.agents.find(a => a.name.toLowerCase().includes('opencode'))?.installed,
-                  },
                   {
                     key: 'mcode' as const,
                     name: 'MiniMax Code',
                     installed: discovery?.agents.find(a => a.name.toLowerCase().includes('mcode'))?.installed,
                   },
                   {
+                    key: 'zcode' as const,
+                    name: 'ZCode',
+                    installed: discovery?.agents.find(a => a.name.toLowerCase().includes('zcode'))?.installed,
+                  },
+                  {
                     key: 'agy' as const,
                     name: 'Antigravity CLI',
                     installed: discovery?.agents.find(a => a.name.toLowerCase().includes('agy'))?.installed,
+                  },
+                  {
+                    key: 'opencode' as const,
+                    name: 'OpenCode',
+                    installed: discovery?.agents.find(a => a.name.toLowerCase().includes('opencode'))?.installed,
                   },
                 ].map(agentItem => {
                   const isSelected = targetAgent === agentItem.key;
@@ -972,6 +1002,11 @@ export const AgentManagementPage: React.FC<AgentManagementPageProps> = ({ onOpen
                     mcode 仅支持 OpenAI 兼容 / Anthropic
                   </span>
                 )}
+                {targetAgent === 'zcode' && (
+                  <span style={{ fontSize: '11px', color: 'var(--text-tertiary, #9ca3af)' }}>
+                    zcode 仅支持 OpenAI 兼容 / Anthropic
+                  </span>
+                )}
                 {targetAgent === 'agy' && (
                   <span style={{ fontSize: '11px', color: 'var(--text-tertiary, #9ca3af)' }}>
                     agy 暂时仅支持 Gemini 原生接口
@@ -981,7 +1016,7 @@ export const AgentManagementPage: React.FC<AgentManagementPageProps> = ({ onOpen
               <div
                 style={{
                   display: 'grid',
-                  gridTemplateColumns: targetAgent === 'agy' ? '1fr' : targetAgent === 'mcode' ? 'repeat(2, 1fr)' : 'repeat(3, 1fr)',
+                  gridTemplateColumns: targetAgent === 'agy' ? '1fr' : (targetAgent === 'mcode' || targetAgent === 'zcode') ? 'repeat(2, 1fr)' : 'repeat(3, 1fr)',
                   gap: '6px',
                   background: 'var(--bg-surface)',
                   padding: '4px',

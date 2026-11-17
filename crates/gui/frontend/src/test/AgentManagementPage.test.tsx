@@ -27,14 +27,6 @@ describe("AgentManagementPage", () => {
         return {
           agents: [
             {
-              name: "opencode",
-              installed: true,
-              version: "1.19.3",
-              executable_path: "C:\\bin\\opencode.cmd",
-              install_command: "npm install -g opencode-ai",
-              download_url: "https://opencode.ai",
-            },
-            {
               name: "mcode",
               installed: true,
               version: "0.6.10",
@@ -43,12 +35,28 @@ describe("AgentManagementPage", () => {
               download_url: "https://minimaxi.com",
             },
             {
+              name: "zcode",
+              installed: true,
+              version: "3.18.2-47",
+              executable_path: "C:\\bin\\zcode.cmd",
+              install_command: "npm install -g zcode-app-cli@latest",
+              download_url: "https://www.npmjs.com/package/zcode-app-cli",
+            },
+            {
               name: "agy",
               installed: true,
               version: "1.5.9",
               executable_path: "C:\\bin\\agy.cmd",
               install_command: "irm https://antigravity.google/cli/install.ps1 | iex",
               download_url: "https://antigravity.google/product/antigravity-cli",
+            },
+            {
+              name: "opencode",
+              installed: true,
+              version: "1.19.3",
+              executable_path: "C:\\bin\\opencode.cmd",
+              install_command: "npm install -g opencode-ai",
+              download_url: "https://opencode.ai",
             },
           ],
           npm_installed: true,
@@ -67,6 +75,9 @@ describe("AgentManagementPage", () => {
         }
         if (payload?.agentName === "agy") {
           return "1.5.9"; // 已是最新
+        }
+        if (payload?.agentName === "zcode") {
+          return "3.18.2-47"; // 已是最新
         }
         return "1.0.0";
       }
@@ -152,13 +163,15 @@ describe("AgentManagementPage", () => {
       // opencode: 当前 1.19.3，最新 1.19.3 -> 已是最新
       // mcode: 当前 0.6.10，最新 0.6.12 -> 有新版本
       // agy: 当前 1.5.9，最新 1.5.9 -> 已是最新
+      // zcode: 当前 3.18.2-47，最新 3.18.2-47 -> 已是最新
       expect(invoke).toHaveBeenCalledWith("check_agent_latest_version", { agentName: "opencode" });
       expect(invoke).toHaveBeenCalledWith("check_agent_latest_version", { agentName: "mcode" });
       expect(invoke).toHaveBeenCalledWith("check_agent_latest_version", { agentName: "agy" });
+      expect(invoke).toHaveBeenCalledWith("check_agent_latest_version", { agentName: "zcode" });
     });
 
     const latestBadges = await findAllByText("已是最新");
-    expect(latestBadges.length).toBe(2);
+    expect(latestBadges.length).toBe(3);
     expect(await findByText("有新版本")).toBeDefined();
     expect(await findByText(/检测到新版本 v0.6.12/)).toBeDefined();
   });

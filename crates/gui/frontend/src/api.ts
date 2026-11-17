@@ -567,6 +567,15 @@ export const configureAgyProvider = (
 ): Promise<void> =>
 	invoke("configure_agy_provider", { providerId, baseUrl, apiKey, selectedModels, protocol });
 
+export const configureZcodeProvider = (
+	providerId: string,
+	baseUrl: string,
+	apiKey: string,
+	selectedModels: string[],
+	protocol?: string,
+): Promise<void> =>
+	invoke("configure_zcode_provider", { providerId, baseUrl, apiKey, selectedModels, protocol });
+
 export const getSelectedProjectId = (): Promise<string | null> =>
 	invoke("get_selected_project_id");
 

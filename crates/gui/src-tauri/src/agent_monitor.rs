@@ -510,6 +510,16 @@ pub struct AgentStateInfo {
 static OPENCODE_CACHED_CONN: OnceLock<Mutex<Option<(PathBuf, Connection)>>> = OnceLock::new();
 static MCODE_CACHED_CONN: OnceLock<Mutex<Option<(PathBuf, Connection)>>> = OnceLock::new();
 static AGY_CACHED_CONN: OnceLock<Mutex<Option<(PathBuf, Connection)>>> = OnceLock::new();
+static ZCODE_CACHED_CONN: OnceLock<Mutex<Option<(PathBuf, Connection)>>> = OnceLock::new();
+
+/// zcode 会话 ID 前缀（形如 `sess_<uuid>`）。
+/// 与 opencode 的 `ses_` / `session_` 不冲突，可据此区分会话来源。
+const ZCODE_SESSION_PREFIX: &str = "sess_";
+
+/// 判断是否为 zcode 会话 ID。
+pub fn is_zcode_session_id(session_id: &str) -> bool {
+    session_id.starts_with(ZCODE_SESSION_PREFIX)
+}
 
 /// 从 opencode、mcode 或 agy 本地数据库查询指定 session 的真实标题
 pub fn get_session_title(agent_type: &str, session_id: &str) -> Option<String> {
@@ -519,10 +529,11 @@ pub fn get_session_title(agent_type: &str, session_id: &str) -> Option<String> {
     let is_agy = agent_type.eq_ignore_ascii_case("agy")
         || agent_type.eq_ignore_ascii_case("antigravity")
         || is_uuid_format(session_id);
-    let is_mcode = !is_agy && (agent_type.eq_ignore_ascii_case("mcode") || session_id.starts_with("mvs_"));
-    let is_opencode = !is_agy && (agent_type.eq_ignore_ascii_case("opencode") || session_id.starts_with("ses_") || session_id.starts_with("session_"));
+    let is_zcode = !is_agy && (agent_type.eq_ignore_ascii_case("zcode") || is_zcode_session_id(session_id));
+    let is_mcode = !is_agy && !is_zcode && (agent_type.eq_ignore_ascii_case("mcode") || session_id.starts_with("mvs_"));
+    let is_opencode = !is_agy && !is_zcode && !is_mcode && (agent_type.eq_ignore_ascii_case("opencode") || session_id.starts_with("ses_") || session_id.starts_with("session_"));
 
-    AgentMonitor::with_cached_conns(|op_conn, mc_conn, agy_conn| {
+    AgentMonitor::with_cached_conns(|op_conn, mc_conn, agy_conn, zcode_conn| {
         if is_agy {
             if let Some(conn) = agy_conn {
                 if let Ok(mut stmt) = conn.prepare("SELECT title, preview FROM conversation_summaries WHERE conversation_id = ?1 LIMIT 1") {
@@ -542,6 +553,30 @@ pub fn get_session_title(agent_type: &str, session_id: &str) -> Option<String> {
                             if !tr.is_empty() {
                                 return Some(tr);
                             }
+                        }
+                    }
+                }
+            }
+        }
+
+        if is_zcode {
+            if let Some(conn) = zcode_conn {
+                if let Ok(mut stmt) = conn.prepare("SELECT title FROM session WHERE id = ?1 LIMIT 1") {
+                    if let Ok(Some(t)) = stmt.query_row(rusqlite::params![session_id], |row| row.get::<_, Option<String>>(0)) {
+                        let trimmed = t.trim().to_string();
+                        if !trimmed.is_empty() {
+                            return Some(trimmed);
+                        }
+                    }
+                }
+                // 标题为空时回退到该会话最早的一条输入
+                if let Ok(mut stmt) = conn.prepare(
+                    "SELECT text FROM input_history WHERE session_id = ?1 ORDER BY time_created ASC LIMIT 1"
+                ) {
+                    if let Ok(Some(t)) = stmt.query_row(rusqlite::params![session_id], |row| row.get::<_, Option<String>>(0)) {
+                        let trimmed = t.trim().chars().take(30).collect::<String>();
+                        if !trimmed.is_empty() {
+                            return Some(trimmed);
                         }
                     }
                 }
@@ -701,6 +736,7 @@ enum SessionSource {
     OpenCode,
     Mcode,
     Agy,
+    Zcode,
 }
 
 impl AgentMonitor {
@@ -758,6 +794,35 @@ impl AgentMonitor {
         None
     }
 
+    /// zcode 的会话库位置：`~/.zcode/cli/db/db.sqlite`。
+    /// `ZCODE_SESSION_DB_PATH` 可直接指定库文件，`ZCODE_DATA_BASE_DIR` 可改变运行时基目录。
+    fn get_zcode_db_path() -> Option<PathBuf> {
+        if let Ok(p) = std::env::var("ZCODE_SESSION_DB_PATH") {
+            let path = PathBuf::from(p.trim());
+            if path.is_file() { return Some(path); }
+        }
+
+        let mut base_dirs: Vec<PathBuf> = Vec::new();
+        if let Ok(dir) = std::env::var("ZCODE_DATA_BASE_DIR") {
+            let trimmed = dir.trim();
+            if !trimmed.is_empty() {
+                base_dirs.push(PathBuf::from(trimmed));
+            }
+        }
+        if let Ok(h) = std::env::var("USERPROFILE") {
+            base_dirs.push(PathBuf::from(&h).join(".zcode"));
+        }
+        if let Ok(h) = std::env::var("HOME") {
+            base_dirs.push(PathBuf::from(&h).join(".zcode"));
+        }
+
+        for base in base_dirs {
+            let p = base.join("cli").join("db").join("db.sqlite");
+            if p.is_file() { return Some(p); }
+        }
+        None
+    }
+
     fn open_readonly_conn(db_path: &Path) -> Result<Connection, rusqlite::Error> {
         let flags = OpenFlags::SQLITE_OPEN_READ_ONLY
             | OpenFlags::SQLITE_OPEN_URI;
@@ -769,16 +834,18 @@ impl AgentMonitor {
     /// 获取缓存的只读 SQLite 数据库连接执行闭包。
     /// 采用连接单例与全局锁，避免高频并发打开与关闭连接造成堆碎片和损坏。
     pub fn with_cached_conns<R>(
-        f: impl FnOnce(Option<&Connection>, Option<&Connection>, Option<&Connection>) -> R,
+        f: impl FnOnce(Option<&Connection>, Option<&Connection>, Option<&Connection>, Option<&Connection>) -> R,
     ) -> R {
         let opencode_cell = OPENCODE_CACHED_CONN.get_or_init(|| Mutex::new(None));
         let mcode_cell = MCODE_CACHED_CONN.get_or_init(|| Mutex::new(None));
         let agy_cell = AGY_CACHED_CONN.get_or_init(|| Mutex::new(None));
+        let zcode_cell = ZCODE_CACHED_CONN.get_or_init(|| Mutex::new(None));
 
-        // 固定加锁顺序以避免死锁：先 opencode，再 mcode，最后 agy
+        // 固定加锁顺序以避免死锁：先 opencode，再 mcode，再 agy，最后 zcode
         let mut opencode_guard = opencode_cell.lock().unwrap();
         let mut mcode_guard = mcode_cell.lock().unwrap();
         let mut agy_guard = agy_cell.lock().unwrap();
+        let mut zcode_guard = zcode_cell.lock().unwrap();
 
         // 维护 opencode 连接缓存
         if let Some(path) = Self::get_db_path() {
@@ -819,11 +886,25 @@ impl AgentMonitor {
             *agy_guard = None;
         }
 
+        // 维护 zcode 连接缓存
+        if let Some(path) = Self::get_zcode_db_path() {
+            let valid = match zcode_guard.as_ref() {
+                Some((cached_path, conn)) => cached_path == &path && conn.execute_batch("").is_ok(),
+                None => false,
+            };
+            if !valid {
+                *zcode_guard = Self::open_readonly_conn(&path).ok().map(|c| (path, c));
+            }
+        } else {
+            *zcode_guard = None;
+        }
+
         let op_conn = opencode_guard.as_ref().map(|(_, c)| c);
         let mc_conn = mcode_guard.as_ref().map(|(_, c)| c);
         let agy_conn = agy_guard.as_ref().map(|(_, c)| c);
+        let zcode_conn = zcode_guard.as_ref().map(|(_, c)| c);
 
-        f(op_conn, mc_conn, agy_conn)
+        f(op_conn, mc_conn, agy_conn, zcode_conn)
     }
 
     fn find_latest_opencode_session(conn: &Connection, workspace_dir: &str) -> Option<(String, i64)> {
@@ -1006,6 +1087,51 @@ impl AgentMonitor {
         list
     }
 
+    /// zcode 会话查找：按工作区目录匹配 `session` 表。
+    /// 「活跃」判定：存在 running 状态的回合 / 工具调用，或被运行态进程持有。
+    fn find_candidate_zcode_sessions(conn: &Connection, workspace_dir: &str) -> Vec<(String, i64, bool)> {
+        let ws_clean = workspace_dir.trim().to_lowercase();
+        let ws_slash = ws_clean.replace('\\', "/");
+        let ws_backslash = ws_clean.replace('/', "\\");
+        let pattern_slash = format!("{}%", ws_slash);
+        let pattern_backslash = format!("{}%", ws_backslash);
+
+        let mut stmt = match conn.prepare(
+            "SELECT s.id, s.time_updated, \
+             (EXISTS(SELECT 1 FROM turn_usage tu WHERE tu.session_id = s.id AND tu.status = 'running') \
+              OR EXISTS(SELECT 1 FROM tool_usage ku WHERE ku.session_id = s.id AND ku.status = 'running') \
+              OR EXISTS(SELECT 1 FROM session_runtime_presence rp WHERE rp.session_id = s.id)) \
+             FROM session s \
+             WHERE (LOWER(s.directory) LIKE ?1 OR LOWER(s.directory) LIKE ?2) \
+             AND (s.parent_id IS NULL OR s.parent_id = '') \
+             AND (s.time_deleted IS NULL OR s.time_deleted = 0) \
+             ORDER BY s.time_updated DESC LIMIT 10"
+        ) {
+            Ok(s) => s,
+            Err(_) => return Vec::new(),
+        };
+
+        let mut rows = match stmt.query(rusqlite::params![pattern_slash, pattern_backslash]) {
+            Ok(r) => r,
+            Err(_) => return Vec::new(),
+        };
+
+        let mut list = Vec::new();
+        while let Ok(Some(row)) = rows.next() {
+            if let (Ok(id), Ok(ts), Ok(started)) = (row.get(0), row.get(1), row.get::<_, i64>(2).map(|v| v != 0)) {
+                list.push((id, ts, started));
+            }
+        }
+        list
+    }
+
+    fn find_latest_zcode_session(conn: &Connection, workspace_dir: &str) -> Option<(String, i64)> {
+        Self::find_candidate_zcode_sessions(conn, workspace_dir)
+            .into_iter()
+            .max_by_key(|(_, ts, _)| *ts)
+            .map(|(id, ts, _)| (id, ts))
+    }
+
     pub fn poll_state(&self, workspace_dir: &str, agent_type: Option<&str>) -> Option<AgentStateInfo> {
         let waiting = || AgentStateInfo {
             state: AgentState::Waiting,
@@ -1013,13 +1139,13 @@ impl AgentMonitor {
             session_title: None,
         };
 
-        Self::with_cached_conns(|opencode_conn, mcode_conn, agy_conn| {
-            if opencode_conn.is_none() && mcode_conn.is_none() && agy_conn.is_none() {
+        Self::with_cached_conns(|opencode_conn, mcode_conn, agy_conn, zcode_conn| {
+            if opencode_conn.is_none() && mcode_conn.is_none() && agy_conn.is_none() && zcode_conn.is_none() {
                 eprintln!("[AgentPoll] no DB path, Waiting");
                 return Some(waiting());
             }
 
-            self.poll_state_with_conns(opencode_conn, mcode_conn, agy_conn, workspace_dir, agent_type)
+            self.poll_state_with_conns(opencode_conn, mcode_conn, agy_conn, zcode_conn, workspace_dir, agent_type)
         })
     }
 
@@ -1028,6 +1154,7 @@ impl AgentMonitor {
         opencode_conn: Option<&Connection>,
         mcode_conn: Option<&Connection>,
         agy_conn: Option<&Connection>,
+        zcode_conn: Option<&Connection>,
         workspace_dir: &str,
         agent_type: Option<&str>,
     ) -> Option<AgentStateInfo> {
@@ -1040,6 +1167,7 @@ impl AgentMonitor {
         let is_agy = agent_type.is_none_or(|t| t.eq_ignore_ascii_case("agy") || t.eq_ignore_ascii_case("antigravity"));
         let is_opencode = agent_type.is_none_or(|t| t.eq_ignore_ascii_case("opencode"));
         let is_mcode = agent_type.is_none_or(|t| t.eq_ignore_ascii_case("mcode"));
+        let is_zcode = agent_type.is_none_or(|t| t.eq_ignore_ascii_case("zcode"));
 
         let mut latest_agy = None;
         if is_agy {
@@ -1062,6 +1190,13 @@ impl AgentMonitor {
             }
         }
 
+        let mut latest_zcode = None;
+        if is_zcode {
+            if let Some(conn) = zcode_conn {
+                latest_zcode = Self::find_latest_zcode_session(conn, workspace_dir);
+            }
+        }
+
         let mut all_latests: Vec<(String, i64, SessionSource)> = Vec::new();
         if let Some((aid, ats)) = latest_agy {
             all_latests.push((aid, ats, SessionSource::Agy));
@@ -1071,6 +1206,9 @@ impl AgentMonitor {
         }
         if let Some((mid, mts)) = latest_mcode {
             all_latests.push((mid, mts, SessionSource::Mcode));
+        }
+        if let Some((zid, zts)) = latest_zcode {
+            all_latests.push((zid, zts, SessionSource::Zcode));
         }
 
         all_latests.sort_by_key(|a| std::cmp::Reverse(a.1));
@@ -1098,6 +1236,13 @@ impl AgentMonitor {
                     Some(waiting())
                 }
             }
+            Some((sid, SessionSource::Zcode)) => {
+                if let Some(conn) = zcode_conn {
+                    self.poll_zcode_session(conn, &sid)
+                } else {
+                    Some(waiting())
+                }
+            }
             None => {
                 eprintln!("[AgentPoll] no session for workspace, Waiting");
                 Some(waiting())
@@ -1108,7 +1253,7 @@ impl AgentMonitor {
     /// Legacy single-connection helper (primarily used in tests)
     #[allow(dead_code)]
     pub fn poll_state_with_conn(&self, conn: &Connection, workspace_dir: &str) -> Option<AgentStateInfo> {
-        self.poll_state_with_conns(Some(conn), None, None, workspace_dir, None)
+        self.poll_state_with_conns(Some(conn), None, None, None, workspace_dir, None)
     }
 
     /// Poll agent state scoped to a specific PTY terminal.
@@ -1119,21 +1264,23 @@ impl AgentMonitor {
             session_title: None,
         };
 
-        Self::with_cached_conns(|opencode_conn, mcode_conn, agy_conn| {
-            if opencode_conn.is_none() && mcode_conn.is_none() && agy_conn.is_none() {
+        Self::with_cached_conns(|opencode_conn, mcode_conn, agy_conn, zcode_conn| {
+            if opencode_conn.is_none() && mcode_conn.is_none() && agy_conn.is_none() && zcode_conn.is_none() {
                 eprintln!("[AgentPoll:pty={}] no DB path, Waiting", pty_session_id);
                 return Some(waiting());
             }
 
-            self.poll_state_for_pty_with_conns(opencode_conn, mcode_conn, agy_conn, workspace_dir, pty_session_id, agent_type)
+            self.poll_state_for_pty_with_conns(opencode_conn, mcode_conn, agy_conn, zcode_conn, workspace_dir, pty_session_id, agent_type)
         })
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn poll_state_for_pty_with_conns(
         &self,
         opencode_conn: Option<&Connection>,
         mcode_conn: Option<&Connection>,
         agy_conn: Option<&Connection>,
+        zcode_conn: Option<&Connection>,
         workspace_dir: &str,
         pty_session_id: &str,
         agent_type: Option<&str>,
@@ -1152,8 +1299,14 @@ impl AgentMonitor {
         let is_agy = agent_type.is_none_or(|t| t.eq_ignore_ascii_case("agy") || t.eq_ignore_ascii_case("antigravity"));
         let is_opencode = agent_type.is_none_or(|t| t.eq_ignore_ascii_case("opencode"));
         let is_mcode = agent_type.is_none_or(|t| t.eq_ignore_ascii_case("mcode"));
+        let is_zcode = agent_type.is_none_or(|t| t.eq_ignore_ascii_case("zcode"));
 
         let poll_by_sid = |sid: &str| -> Option<AgentStateInfo> {
+            if is_zcode_session_id(sid) {
+                if let Some(conn) = zcode_conn {
+                    return self.poll_zcode_session(conn, sid);
+                }
+            }
             if is_uuid_format(sid) || (opencode_conn.is_none() && mcode_conn.is_none()) {
                 if let Some(conn) = agy_conn {
                     return self.poll_agy_session(conn, sid);
@@ -1173,6 +1326,9 @@ impl AgentMonitor {
             if let Some(conn) = agy_conn {
                 return self.poll_agy_session(conn, sid);
             }
+            if let Some(conn) = zcode_conn {
+                return self.poll_zcode_session(conn, sid);
+            }
             Some(waiting())
         };
 
@@ -1182,12 +1338,15 @@ impl AgentMonitor {
             if let Some((cached, _)) = cache_guard.get(pty_session_id) {
                 let cached_is_agy = is_uuid_format(cached);
                 let cached_is_mcode = cached.starts_with("mvs_");
+                let cached_is_zcode = is_zcode_session_id(cached);
                 let mismatch = if at.eq_ignore_ascii_case("agy") || at.eq_ignore_ascii_case("antigravity") {
                     !cached_is_agy
                 } else if at.eq_ignore_ascii_case("opencode") {
-                    cached_is_mcode || cached_is_agy
+                    cached_is_mcode || cached_is_agy || cached_is_zcode
                 } else if at.eq_ignore_ascii_case("mcode") {
                     !cached_is_mcode
+                } else if at.eq_ignore_ascii_case("zcode") {
+                    !cached_is_zcode
                 } else {
                     false
                 };
@@ -1306,6 +1465,13 @@ impl AgentMonitor {
                 }
             }
         }
+        if is_zcode {
+            if let Some(conn) = zcode_conn {
+                for (id, ts, started) in Self::find_candidate_zcode_sessions(conn, workspace_dir) {
+                    candidates.push((id, ts, SessionSource::Zcode, started));
+                }
+            }
+        }
 
         if candidates.is_empty() {
             let cache_guard = cache.lock().unwrap();
@@ -1346,9 +1512,10 @@ impl AgentMonitor {
             };
 
             if other_pty_alive {
-                let is_isolated = matches!(cand_source, SessionSource::Mcode | SessionSource::Agy)
+                let is_isolated = matches!(cand_source, SessionSource::Mcode | SessionSource::Agy | SessionSource::Zcode)
                     || cand_sid.starts_with("mvs_")
-                    || is_uuid_format(&cand_sid);
+                    || is_uuid_format(&cand_sid)
+                    || is_zcode_session_id(&cand_sid);
 
                 if is_isolated {
                     // For mcode and agy, multiple PTYs run distinct instances.
@@ -1421,7 +1588,79 @@ impl AgentMonitor {
     /// Legacy single-connection helper (primarily used in tests)
     #[cfg(test)]
     pub fn poll_state_for_pty_with_conn(&self, conn: &Connection, workspace_dir: &str, pty_session_id: &str) -> Option<AgentStateInfo> {
-        self.poll_state_for_pty_with_conns(Some(conn), None, None, workspace_dir, pty_session_id, None)
+        self.poll_state_for_pty_with_conns(Some(conn), None, None, None, workspace_dir, pty_session_id, None)
+    }
+
+    /// 读取 zcode 会话状态。
+    /// 状态来源（全部为只读查询）：
+    /// - `turn_usage.status = 'running'` 或 `tool_usage.status = 'running'` → 运行中
+    /// - `session_input` 中存在已接收但待引导的输入 → 等待用户交互
+    /// - 最近一次回合为 `error` → 异常
+    /// - 其余 → 待命
+    fn poll_zcode_session(&self, conn: &Connection, session_id: &str) -> Option<AgentStateInfo> {
+        let mut session_title: Option<String> = None;
+
+        if let Ok(mut stmt) = conn.prepare("SELECT title FROM session WHERE id = ?1 LIMIT 1") {
+            if let Ok(Some(t)) = stmt.query_row(rusqlite::params![session_id], |row| row.get::<_, Option<String>>(0)) {
+                let trimmed = t.trim().to_string();
+                if !trimmed.is_empty() {
+                    session_title = Some(trimmed);
+                }
+            }
+        }
+        if session_title.is_none() {
+            if let Ok(mut stmt) = conn.prepare(
+                "SELECT text FROM input_history WHERE session_id = ?1 ORDER BY time_created ASC LIMIT 1"
+            ) {
+                if let Ok(Some(t)) = stmt.query_row(rusqlite::params![session_id], |row| row.get::<_, Option<String>>(0)) {
+                    let trimmed = t.trim().chars().take(30).collect::<String>();
+                    if !trimmed.is_empty() {
+                        session_title = Some(trimmed);
+                    }
+                }
+            }
+        }
+
+        let exists_row = |sql: &str| -> bool {
+            if let Ok(mut stmt) = conn.prepare(sql) {
+                if let Ok(mut rows) = stmt.query(rusqlite::params![session_id]) {
+                    return matches!(rows.next(), Ok(Some(_)));
+                }
+            }
+            false
+        };
+
+        let running_turn = exists_row("SELECT 1 FROM turn_usage WHERE session_id = ?1 AND status = 'running' LIMIT 1");
+        let running_tool = exists_row("SELECT 1 FROM tool_usage WHERE session_id = ?1 AND status = 'running' LIMIT 1");
+        let awaiting_input = exists_row(
+            "SELECT 1 FROM session_input WHERE session_id = ?1 AND status = 'admitted' AND delivery = 'guide' LIMIT 1",
+        );
+
+        let mut last_error = false;
+        if let Ok(mut stmt) = conn.prepare(
+            "SELECT status FROM turn_usage WHERE session_id = ?1 ORDER BY started_at DESC LIMIT 1"
+        ) {
+            if let Ok(Some(status)) = stmt.query_row(rusqlite::params![session_id], |row| row.get::<_, Option<String>>(0)) {
+                last_error = status == "error";
+            }
+        }
+
+        let state = if running_turn || running_tool {
+            AgentState::Running
+        } else if awaiting_input {
+            AgentState::Question
+        } else if last_error {
+            AgentState::Error
+        } else {
+            AgentState::Waiting
+        };
+
+        eprintln!("[AgentPoll:zcode] {:?}, session: {}", state, session_id);
+        Some(AgentStateInfo {
+            state,
+            session_id: session_id.to_string(),
+            session_title,
+        })
     }
 
     fn poll_agy_session(&self, conn: &Connection, conversation_id: &str) -> Option<AgentStateInfo> {
@@ -1951,6 +2190,192 @@ mod tests {
         conn
     }
 
+    /// zcode 会话库最小 Schema（只保留灯态读取所需的表与字段）。
+    fn setup_test_zcode_db() -> Connection {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute(
+            "CREATE TABLE session (
+                id TEXT PRIMARY KEY,
+                directory TEXT NOT NULL,
+                parent_id TEXT,
+                title TEXT NOT NULL DEFAULT '',
+                time_created INTEGER NOT NULL,
+                time_updated INTEGER NOT NULL,
+                time_deleted INTEGER
+            )",
+            [],
+        ).unwrap();
+        conn.execute(
+            "CREATE TABLE session_runtime_presence (
+                session_id TEXT NOT NULL,
+                owner_id TEXT NOT NULL,
+                process_id INTEGER NOT NULL
+            )",
+            [],
+        ).unwrap();
+        conn.execute(
+            "CREATE TABLE turn_usage (
+                session_id TEXT NOT NULL,
+                turn_id TEXT NOT NULL,
+                status TEXT NOT NULL,
+                started_at INTEGER NOT NULL,
+                completed_at INTEGER,
+                PRIMARY KEY(session_id, turn_id)
+            )",
+            [],
+        ).unwrap();
+        conn.execute(
+            "CREATE TABLE tool_usage (
+                id TEXT PRIMARY KEY,
+                session_id TEXT NOT NULL,
+                tool_call_id TEXT NOT NULL,
+                status TEXT NOT NULL,
+                started_at INTEGER NOT NULL
+            )",
+            [],
+        ).unwrap();
+        conn.execute(
+            "CREATE TABLE session_input (
+                id TEXT PRIMARY KEY,
+                session_id TEXT NOT NULL,
+                kind TEXT NOT NULL,
+                delivery TEXT NOT NULL,
+                payload TEXT NOT NULL,
+                status TEXT NOT NULL,
+                time_created INTEGER NOT NULL
+            )",
+            [],
+        ).unwrap();
+        conn.execute(
+            "CREATE TABLE input_history (
+                id TEXT PRIMARY KEY,
+                project_id TEXT NOT NULL,
+                session_id TEXT,
+                text TEXT NOT NULL,
+                kind TEXT NOT NULL,
+                time_created INTEGER NOT NULL
+            )",
+            [],
+        ).unwrap();
+        conn
+    }
+
+    #[test]
+    fn test_zcode_session_state_mapping() {
+        let _lock = TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+        let conn = setup_test_zcode_db();
+        let monitor = AgentMonitor::new();
+        let ws_dir = "d:/test/zcode-workspace";
+        let session_id = "sess_11111111-2222-3333-4444-555555555555";
+
+        conn.execute(
+            "INSERT INTO session (id, directory, parent_id, title, time_created, time_updated, time_deleted) \
+             VALUES (?1, ?2, '', 'zcode 任务', 100, 100, NULL)",
+            rusqlite::params![session_id, ws_dir],
+        ).unwrap();
+
+        // 1. 没有任何进行中的回合 → 待命
+        let state = monitor.poll_zcode_session(&conn, session_id).unwrap();
+        assert_eq!(state.state, AgentState::Waiting);
+        assert_eq!(state.session_id, session_id);
+        assert_eq!(state.session_title.as_deref(), Some("zcode 任务"));
+
+        // 2. 存在 running 回合 → 运行中
+        conn.execute(
+            "INSERT INTO turn_usage (session_id, turn_id, status, started_at) VALUES (?1, 't1', 'running', 200)",
+            rusqlite::params![session_id],
+        ).unwrap();
+        let state = monitor.poll_zcode_session(&conn, session_id).unwrap();
+        assert_eq!(state.state, AgentState::Running);
+
+        // 3. 回合结束 → 回到待命
+        conn.execute(
+            "UPDATE turn_usage SET status = 'completed', completed_at = 300 WHERE turn_id = 't1'",
+            [],
+        ).unwrap();
+        let state = monitor.poll_zcode_session(&conn, session_id).unwrap();
+        assert_eq!(state.state, AgentState::Waiting);
+
+        // 4. 最近一次回合失败 → 异常
+        conn.execute(
+            "INSERT INTO turn_usage (session_id, turn_id, status, started_at) VALUES (?1, 't2', 'error', 400)",
+            rusqlite::params![session_id],
+        ).unwrap();
+        let state = monitor.poll_zcode_session(&conn, session_id).unwrap();
+        assert_eq!(state.state, AgentState::Error);
+
+        // 5. 等待用户引导的输入 → 需要确认
+        conn.execute(
+            "INSERT INTO turn_usage (session_id, turn_id, status, started_at) VALUES (?1, 't3', 'completed', 500)",
+            rusqlite::params![session_id],
+        ).unwrap();
+        conn.execute(
+            "INSERT INTO session_input (id, session_id, kind, delivery, payload, status, time_created) \
+             VALUES ('in_1', ?1, 'text', 'guide', '{}', 'admitted', 600)",
+            rusqlite::params![session_id],
+        ).unwrap();
+        let state = monitor.poll_zcode_session(&conn, session_id).unwrap();
+        assert_eq!(state.state, AgentState::Question);
+
+        // 6. 工具调用进行中 → 运行中（优先级高于待命）
+        conn.execute(
+            "DELETE FROM session_input WHERE id = 'in_1'",
+            [],
+        ).unwrap();
+        conn.execute(
+            "INSERT INTO tool_usage (id, session_id, tool_call_id, status, started_at) \
+             VALUES ('tool_1', ?1, 'call_1', 'running', 700)",
+            rusqlite::params![session_id],
+        ).unwrap();
+        let state = monitor.poll_zcode_session(&conn, session_id).unwrap();
+        assert_eq!(state.state, AgentState::Running);
+    }
+
+    #[test]
+    fn test_zcode_candidate_sessions_matching_workspace() {
+        let _lock = TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+        let conn = setup_test_zcode_db();
+        let ws_dir = "D:/Test/Zcode-Workspace";
+
+        conn.execute(
+            "INSERT INTO session (id, directory, parent_id, title, time_created, time_updated, time_deleted) \
+             VALUES ('sess_aaaa', 'D:/Test/Zcode-Workspace', '', '命中', 100, 100, NULL)",
+            [],
+        ).unwrap();
+        conn.execute(
+            "INSERT INTO session (id, directory, parent_id, title, time_created, time_updated, time_deleted) \
+             VALUES ('sess_bbbb', 'D:/Other/Workspace', '', '不命中', 100, 100, NULL)",
+            [],
+        ).unwrap();
+        conn.execute(
+            "INSERT INTO session (id, directory, parent_id, title, time_created, time_updated, time_deleted) \
+             VALUES ('sess_cccc', 'D:/Test/Zcode-Workspace', 'sess_aaaa', '子会话', 100, 100, NULL)",
+            [],
+        ).unwrap();
+        conn.execute(
+            "INSERT INTO session (id, directory, parent_id, title, time_created, time_updated, time_deleted) \
+             VALUES ('sess_dddd', 'D:/Test/Zcode-Workspace', '', '已删除', 100, 100, 123)",
+            [],
+        ).unwrap();
+
+        let candidates = AgentMonitor::find_candidate_zcode_sessions(&conn, ws_dir);
+        let ids: Vec<&str> = candidates.iter().map(|(id, _, _)| id.as_str()).collect();
+        // 大小写与斜杠差异都能命中；子会话与已删除会话被排除
+        assert_eq!(ids, vec!["sess_aaaa"]);
+
+        let (id, _) = AgentMonitor::find_latest_zcode_session(&conn, ws_dir).unwrap();
+        assert_eq!(id, "sess_aaaa");
+    }
+
+    #[test]
+    fn test_zcode_session_id_prefix() {
+        assert!(is_zcode_session_id("sess_4788964c-e6e7-4c7e-9651-b93ba0fb4c69"));
+        assert!(!is_zcode_session_id("ses_opencode_1"));
+        assert!(!is_zcode_session_id("session_abc"));
+        assert!(!is_zcode_session_id("mvs_123"));
+        assert!(!is_zcode_session_id("b9bd2863-8cfb-45ce-a019-959bf2024c1a"));
+    }
+
     #[test]
     fn test_resumed_historical_session_is_claimed_and_tracked() {
         let _lock = TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
@@ -2025,7 +2450,7 @@ mod tests {
         ).unwrap();
 
         // 3. 轮询 -> 识别为 Running
-        let state1 = monitor.poll_state_for_pty_with_conns(None, Some(&mcode_conn), None, ws_dir, pty_id, Some("mcode")).unwrap();
+        let state1 = monitor.poll_state_for_pty_with_conns(None, Some(&mcode_conn), None, None, ws_dir, pty_id, Some("mcode")).unwrap();
         assert_eq!(state1.state, AgentState::Running);
         assert_eq!(state1.session_id, "mvs_test_001");
 
@@ -2034,7 +2459,7 @@ mod tests {
             "INSERT INTO questionnaire_requests (request_id, session_id, status) VALUES (?1, ?2, ?3)",
             rusqlite::params!["req_01", "mvs_test_001", "pending"],
         ).unwrap();
-        let state2 = monitor.poll_state_for_pty_with_conns(None, Some(&mcode_conn), None, ws_dir, pty_id, Some("mcode")).unwrap();
+        let state2 = monitor.poll_state_for_pty_with_conns(None, Some(&mcode_conn), None, None, ws_dir, pty_id, Some("mcode")).unwrap();
         assert_eq!(state2.state, AgentState::Question);
 
         // 5. 问题处理完毕，插入子 Agent 任务 (running)
@@ -2046,7 +2471,7 @@ mod tests {
             "INSERT INTO local_runtime_background_tasks (task_id, owner_session_id, status) VALUES (?1, ?2, ?3)",
             rusqlite::params!["task_01", "mvs_test_001", "running"],
         ).unwrap();
-        let state3 = monitor.poll_state_for_pty_with_conns(None, Some(&mcode_conn), None, ws_dir, pty_id, Some("mcode")).unwrap();
+        let state3 = monitor.poll_state_for_pty_with_conns(None, Some(&mcode_conn), None, None, ws_dir, pty_id, Some("mcode")).unwrap();
         assert_eq!(state3.state, AgentState::AgentCall);
 
         // 6. 任务完成，会话变为 idle，即使历史上存在 error_message 报错信息，正常结束后仍应为 Waiting（不亮红灯）
@@ -2058,7 +2483,7 @@ mod tests {
             "UPDATE local_runtime_sessions SET status = 'idle', error_message = 'Request timed out' WHERE session_id = 'mvs_test_001'",
             [],
         ).unwrap();
-        let state4 = monitor.poll_state_for_pty_with_conns(None, Some(&mcode_conn), None, ws_dir, pty_id, Some("mcode")).unwrap();
+        let state4 = monitor.poll_state_for_pty_with_conns(None, Some(&mcode_conn), None, None, ws_dir, pty_id, Some("mcode")).unwrap();
         assert_eq!(state4.state, AgentState::Waiting);
 
         // 7. 若会话最终真正发生致命异常终止，status 变为 error 时才显示 Error（红灯）
@@ -2066,7 +2491,7 @@ mod tests {
             "UPDATE local_runtime_sessions SET status = 'error', error_message = 'Fatal crash' WHERE session_id = 'mvs_test_001'",
             [],
         ).unwrap();
-        let state5 = monitor.poll_state_for_pty_with_conns(None, Some(&mcode_conn), None, ws_dir, pty_id, Some("mcode")).unwrap();
+        let state5 = monitor.poll_state_for_pty_with_conns(None, Some(&mcode_conn), None, None, ws_dir, pty_id, Some("mcode")).unwrap();
         assert_eq!(state5.state, AgentState::Error);
 
         cleanup_pty(pty_id);
@@ -2171,6 +2596,7 @@ mod tests {
             Some(&opencode_conn),
             Some(&mcode_conn),
             None,
+            None,
             ws_dir,
             pty_opencode,
             Some("opencode"),
@@ -2182,6 +2608,7 @@ mod tests {
         let state_mc = monitor.poll_state_for_pty_with_conns(
             Some(&opencode_conn),
             Some(&mcode_conn),
+            None,
             None,
             ws_dir,
             pty_mcode,
@@ -2201,6 +2628,7 @@ mod tests {
             Some(&opencode_conn),
             Some(&mcode_conn),
             None,
+            None,
             ws_dir,
             pty_opencode,
             Some("opencode"),
@@ -2212,6 +2640,7 @@ mod tests {
         let state_mc2 = monitor.poll_state_for_pty_with_conns(
             Some(&opencode_conn),
             Some(&mcode_conn),
+            None,
             None,
             ws_dir,
             pty_mcode,
@@ -2252,7 +2681,7 @@ mod tests {
         ).unwrap();
 
         // 3. 轮询 -> 应优先认领 running 中的会话 mvs_running_old，状态为 Running
-        let state = monitor.poll_state_for_pty_with_conns(None, Some(&mcode_conn), None, ws_dir, pty_id, Some("mcode")).unwrap();
+        let state = monitor.poll_state_for_pty_with_conns(None, Some(&mcode_conn), None, None, ws_dir, pty_id, Some("mcode")).unwrap();
         assert_eq!(state.state, AgentState::Running);
         assert_eq!(state.session_id, "mvs_running_old");
 
@@ -2281,7 +2710,7 @@ mod tests {
         mark_pty_active(pty_id);
 
         // 3. 轮询 -> 因为该会话正在运行，应放行认领，状态仍为 Running，而不应被拦截为 Waiting
-        let state = monitor.poll_state_for_pty_with_conns(None, Some(&mcode_conn), None, ws_dir, pty_id, Some("mcode")).unwrap();
+        let state = monitor.poll_state_for_pty_with_conns(None, Some(&mcode_conn), None, None, ws_dir, pty_id, Some("mcode")).unwrap();
         assert_eq!(state.state, AgentState::Running);
         assert_eq!(state.session_id, "mvs_spawn_after");
 
@@ -2310,7 +2739,7 @@ mod tests {
         ).unwrap();
 
         // Shell 1 轮询 -> 正确认领 mvs_shell_1，状态为 Running
-        let state_1 = monitor.poll_state_for_pty_with_conns(None, Some(&mcode_conn), None, ws_dir, pty_shell_1, Some("mcode")).unwrap();
+        let state_1 = monitor.poll_state_for_pty_with_conns(None, Some(&mcode_conn), None, None, ws_dir, pty_shell_1, Some("mcode")).unwrap();
         assert_eq!(state_1.state, AgentState::Running);
         assert_eq!(state_1.session_id, "mvs_shell_1");
 
@@ -2321,12 +2750,12 @@ mod tests {
         mark_pty_active(pty_shell_2);
 
         // 3. Shell 2 轮询 -> 必须为 Waiting，绝不能抢占 Shell 1 正在运行的会话！
-        let state_2 = monitor.poll_state_for_pty_with_conns(None, Some(&mcode_conn), None, ws_dir, pty_shell_2, Some("mcode")).unwrap();
+        let state_2 = monitor.poll_state_for_pty_with_conns(None, Some(&mcode_conn), None, None, ws_dir, pty_shell_2, Some("mcode")).unwrap();
         assert_eq!(state_2.state, AgentState::Waiting);
         assert_ne!(state_2.session_id, "mvs_shell_1");
 
         // 4. Shell 1 再次轮询 -> 依然稳定保持为 Running，session_id 依然是 mvs_shell_1
-        let state_1_again = monitor.poll_state_for_pty_with_conns(None, Some(&mcode_conn), None, ws_dir, pty_shell_1, Some("mcode")).unwrap();
+        let state_1_again = monitor.poll_state_for_pty_with_conns(None, Some(&mcode_conn), None, None, ws_dir, pty_shell_1, Some("mcode")).unwrap();
         assert_eq!(state_1_again.state, AgentState::Running);
         assert_eq!(state_1_again.session_id, "mvs_shell_1");
 
@@ -2338,12 +2767,12 @@ mod tests {
         ).unwrap();
 
         // 6. Shell 2 轮询 -> 认领自己刚创建的会话 mvs_shell_2，状态为 Running
-        let state_2_own = monitor.poll_state_for_pty_with_conns(None, Some(&mcode_conn), None, ws_dir, pty_shell_2, Some("mcode")).unwrap();
+        let state_2_own = monitor.poll_state_for_pty_with_conns(None, Some(&mcode_conn), None, None, ws_dir, pty_shell_2, Some("mcode")).unwrap();
         assert_eq!(state_2_own.state, AgentState::Running);
         assert_eq!(state_2_own.session_id, "mvs_shell_2");
 
         // 7. Shell 1 轮询 -> 依然保持 mvs_shell_1，各自独立运行，状态均为 Running！
-        let state_1_final = monitor.poll_state_for_pty_with_conns(None, Some(&mcode_conn), None, ws_dir, pty_shell_1, Some("mcode")).unwrap();
+        let state_1_final = monitor.poll_state_for_pty_with_conns(None, Some(&mcode_conn), None, None, ws_dir, pty_shell_1, Some("mcode")).unwrap();
         assert_eq!(state_1_final.state, AgentState::Running);
         assert_eq!(state_1_final.session_id, "mvs_shell_1");
 
@@ -2379,7 +2808,7 @@ mod tests {
             ],
         ).unwrap();
 
-        let state1 = monitor.poll_state_for_pty_with_conns(None, None, Some(&agy_conn), ws_dir, pty_id, Some("agy")).unwrap();
+        let state1 = monitor.poll_state_for_pty_with_conns(None, None, Some(&agy_conn), None, ws_dir, pty_id, Some("agy")).unwrap();
         assert_eq!(state1.state, AgentState::Running);
         assert_eq!(state1.session_id, "b9bd2863-8cfb-45ce-a019-959bf2024c1a");
         assert_eq!(state1.session_title.as_deref(), Some("适配agy灯态系统"));
@@ -2389,7 +2818,7 @@ mod tests {
             "UPDATE conversation_summaries SET status = 'CASCADE_RUN_STATUS_IDLE', not_fully_idle = 0 WHERE conversation_id = 'b9bd2863-8cfb-45ce-a019-959bf2024c1a'",
             [],
         ).unwrap();
-        let state2 = monitor.poll_state_for_pty_with_conns(None, None, Some(&agy_conn), ws_dir, pty_id, Some("agy")).unwrap();
+        let state2 = monitor.poll_state_for_pty_with_conns(None, None, Some(&agy_conn), None, ws_dir, pty_id, Some("agy")).unwrap();
         assert_eq!(state2.state, AgentState::Waiting);
 
         // 3. 验证 killed 异常会话映射为 Error
@@ -2397,7 +2826,7 @@ mod tests {
             "UPDATE conversation_summaries SET killed = 1 WHERE conversation_id = 'b9bd2863-8cfb-45ce-a019-959bf2024c1a'",
             [],
         ).unwrap();
-        let state3 = monitor.poll_state_for_pty_with_conns(None, None, Some(&agy_conn), ws_dir, pty_id, Some("agy")).unwrap();
+        let state3 = monitor.poll_state_for_pty_with_conns(None, None, Some(&agy_conn), None, ws_dir, pty_id, Some("agy")).unwrap();
         assert_eq!(state3.state, AgentState::Error);
 
         cleanup_pty(pty_id);
@@ -2451,6 +2880,7 @@ mod tests {
             None,
             Some(&mcode_conn),
             Some(&agy_conn),
+            None,
             ws_dir,
             pty_agy,
             Some("agy"),
@@ -2463,6 +2893,7 @@ mod tests {
             None,
             Some(&mcode_conn),
             Some(&agy_conn),
+            None,
             ws_dir,
             pty_mcode,
             Some("mcode"),

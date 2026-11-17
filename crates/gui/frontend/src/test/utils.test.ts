@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildAgyResumeArgs, buildMcodeResumeArgs, buildOpencodeResumeArgs, mergeCliArgs, projectPathKey } from "../utils";
+import { buildAgyResumeArgs, buildMcodeResumeArgs, buildOpencodeResumeArgs, buildZcodeResumeArgs, mergeCliArgs, projectPathKey } from "../utils";
 
 describe("mergeCliArgs", () => {
   it("merges empty arrays", () => {
@@ -171,6 +171,37 @@ describe("buildAgyResumeArgs", () => {
   it("handles undefined or empty args cleanly", () => {
     expect(buildAgyResumeArgs(undefined, "conv-123")).toEqual(["--conversation", "conv-123"]);
     expect(buildAgyResumeArgs([], "conv-123")).toEqual(["--conversation", "conv-123"]);
+  });
+});
+
+describe("buildZcodeResumeArgs", () => {
+  it("replaces old --resume with new sessionId and retains model/mode", () => {
+    const raw = ["--resume", "sess_old", "--model", "glm-5.3", "--mode", "plan"];
+    const result = buildZcodeResumeArgs(raw, "sess_4788964c-e6e7-4c7e-9651-b93ba0fb4c69");
+    expect(result).toEqual([
+      "--model",
+      "glm-5.3",
+      "--mode",
+      "plan",
+      "--resume",
+      "sess_4788964c-e6e7-4c7e-9651-b93ba0fb4c69",
+    ]);
+  });
+
+  it("removes conflicting -r / -c / --continue / -p flags", () => {
+    const raw = ["-r", "-c", "--continue", "-p", "hello", "--model", "glm-5.3"];
+    const result = buildZcodeResumeArgs(raw, "sess_new_123");
+    expect(result).toEqual([
+      "--model",
+      "glm-5.3",
+      "--resume",
+      "sess_new_123",
+    ]);
+  });
+
+  it("handles undefined or empty args cleanly", () => {
+    expect(buildZcodeResumeArgs(undefined, "sess_1")).toEqual(["--resume", "sess_1"]);
+    expect(buildZcodeResumeArgs([], "sess_1")).toEqual(["--resume", "sess_1"]);
   });
 });
 

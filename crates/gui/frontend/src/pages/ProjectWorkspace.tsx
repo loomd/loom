@@ -11,7 +11,7 @@ import { useI18n } from '../I18nContext';
 import { TemplateModal } from './TemplatesPage';
 import { EditorPlaceholder } from '../components/EditorPlaceholder';
 import { clearProjectTerminals, deleteProjectAgentHistory, getProjectAgentHistory, getProjectLayout, getProjectTerminals, getRestoreTerminals, pollAgentState, saveProjectAgentHistory, saveProjectLayout, saveProjectTerminals } from '../api';
-import { buildAgyResumeArgs, buildMcodeResumeArgs, buildOpencodeResumeArgs } from '../utils';
+import { buildAgyResumeArgs, buildMcodeResumeArgs, buildOpencodeResumeArgs, buildZcodeResumeArgs } from '../utils';
 import { syncProjectShells } from '../hooks/useProjectCompositeStates';
 import type { CompositeState } from '../hooks/useProjectCompositeStates';
 import type { Project, AgentStateInfo, PersistedTerminal, AgentHistoryEntry } from '../types';
@@ -48,7 +48,7 @@ export default function ProjectWorkspace({ project, isVisible, onUnregisterProje
 	const isAgentTerminal = useCallback((t: { isOpencode?: boolean; title?: string; command?: string }) => {
 		if (t.isOpencode) return true;
 		const str = `${t.title || ''} ${t.command || ''}`.toLowerCase();
-		return str.includes('opencode') || str.includes('mcode') || str.includes('minimax') || str.includes('agy') || str.includes('antigravity');
+		return str.includes('opencode') || str.includes('mcode') || str.includes('minimax') || str.includes('agy') || str.includes('antigravity') || str.includes('zcode');
 	}, []);
 
 	const [agentStateMap, setAgentStateMap] = useState<Record<string, AgentStateInfo>>({});
@@ -57,16 +57,19 @@ export default function ProjectWorkspace({ project, isVisible, onUnregisterProje
 		agentStateMapRef.current = agentStateMap;
 	}, [agentStateMap]);
 
-	const getTerminalAgentType = useCallback((t: ConsoleTab): 'opencode' | 'mcode' | 'agy' | undefined => {
+	const getTerminalAgentType = useCallback((t: ConsoleTab): 'opencode' | 'mcode' | 'agy' | 'zcode' | undefined => {
 		const sessionId = t.opencodeSessionId || agentStateMapRef.current[t.id]?.session_id;
 		if (sessionId && sessionId.startsWith('mvs_')) return 'mcode';
 		if (sessionId && (sessionId.startsWith('ses_') || sessionId.startsWith('session_'))) return 'opencode';
+		// zcode 会话 ID 为 sess_<uuid> 前缀
+		if (sessionId && sessionId.startsWith('sess_')) return 'zcode';
 		// agy 会话 ID 为 36 位的标准 UUID 格式
 		if (sessionId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(sessionId)) return 'agy';
 
 		const str = `${t.title || ''} ${t.command || ''} ${t.initialCommand || ''} ${(t.args || []).join(' ')}`.toLowerCase();
 		if (str.includes('agy') || str.includes('antigravity')) return 'agy';
 		if (str.includes('mcode') || str.includes('minimax')) return 'mcode';
+		if (str.includes('zcode')) return 'zcode';
 		if (str.includes('opencode')) return 'opencode';
 		return undefined;
 	}, []);
@@ -111,8 +114,8 @@ const performRestore = useCallback((list: PersistedTerminal[], layout: GridLayou
     const isAgent = Boolean(
       p.is_opencode ||
       (sessionId != null && sessionId.length > 0) ||
-      (p.title && (p.title.toLowerCase().includes('mcode') || p.title.toLowerCase().includes('opencode') || p.title.toLowerCase().includes('minimax') || p.title.toLowerCase().includes('agy') || p.title.toLowerCase().includes('antigravity'))) ||
-      (initialCommand && (initialCommand.toLowerCase().includes('mcode') || initialCommand.toLowerCase().includes('opencode') || initialCommand.toLowerCase().includes('minimax') || initialCommand.toLowerCase().includes('agy') || initialCommand.toLowerCase().includes('antigravity')))
+      (p.title && (p.title.toLowerCase().includes('mcode') || p.title.toLowerCase().includes('opencode') || p.title.toLowerCase().includes('minimax') || p.title.toLowerCase().includes('agy') || p.title.toLowerCase().includes('antigravity') || p.title.toLowerCase().includes('zcode'))) ||
+      (initialCommand && (initialCommand.toLowerCase().includes('mcode') || initialCommand.toLowerCase().includes('opencode') || initialCommand.toLowerCase().includes('minimax') || initialCommand.toLowerCase().includes('agy') || initialCommand.toLowerCase().includes('antigravity') || initialCommand.toLowerCase().includes('zcode')))
     );
 
     if (isAgent) {
@@ -121,7 +124,12 @@ const performRestore = useCallback((list: PersistedTerminal[], layout: GridLayou
         (command && (command.toLowerCase().includes('agy') || command.toLowerCase().includes('antigravity'))) ||
         (initialCommand && (initialCommand.toLowerCase().includes('agy') || initialCommand.toLowerCase().includes('antigravity')));
 
-      const isMcode = !isAgy && ((sessionId && sessionId.startsWith('mvs_')) ||
+      const isZcode = !isAgy && ((sessionId && sessionId.startsWith('sess_')) ||
+        (p.title && p.title.toLowerCase().includes('zcode')) ||
+        (command && command.toLowerCase().includes('zcode')) ||
+        (initialCommand && initialCommand.toLowerCase().includes('zcode')));
+
+      const isMcode = !isAgy && !isZcode && ((sessionId && sessionId.startsWith('mvs_')) ||
         (p.title && (p.title.toLowerCase().includes('mcode') || p.title.toLowerCase().includes('minimax'))) ||
         (command && (command.toLowerCase().includes('mcode') || command.toLowerCase().includes('minimax'))) ||
         (initialCommand && (initialCommand.toLowerCase().includes('mcode') || initialCommand.toLowerCase().includes('minimax'))));
@@ -135,6 +143,16 @@ const performRestore = useCallback((list: PersistedTerminal[], layout: GridLayou
           }
         } else if (!command && !initialCommand) {
           initialCommand = 'agy';
+        }
+      } else if (isZcode) {
+        if (sessionId) {
+          if (command && command.toLowerCase().includes('zcode')) {
+            args = buildZcodeResumeArgs(args, sessionId);
+          } else {
+            initialCommand = `zcode --resume ${sessionId}`;
+          }
+        } else if (!command && !initialCommand) {
+          initialCommand = 'zcode';
         }
       } else if (isMcode) {
         if (sessionId) {
@@ -805,7 +823,8 @@ const closeActiveByShortcut = useCallback(() => {
                         return `${Math.floor(diff / 86400)} 天前`;
                       })();
                       const isAgy = entry.agent_type === 'agy' || /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(entry.session_id);
-                      const isMcode = !isAgy && (entry.agent_type === 'mcode' || entry.session_id.startsWith('mvs_'));
+                      const isZcode = !isAgy && (entry.agent_type === 'zcode' || entry.session_id.startsWith('sess_'));
+                      const isMcode = !isAgy && !isZcode && (entry.agent_type === 'mcode' || entry.session_id.startsWith('mvs_'));
                       const isRealTitle = !!(entry.session_title && !entry.session_title.startsWith('New session - '));
                       const displayTitle = isRealTitle ? entry.session_title! : (entry.title || entry.session_id);
                       return (
@@ -814,7 +833,8 @@ const closeActiveByShortcut = useCallback(() => {
                           onClick={() => {
                             const newId = crypto.randomUUID();
                             const isEntryAgy = entry.agent_type === 'agy' || /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(entry.session_id);
-                            const isEntryMcode = !isEntryAgy && (entry.agent_type === 'mcode' || entry.session_id.startsWith('mvs_'));
+                            const isEntryZcode = !isEntryAgy && (entry.agent_type === 'zcode' || entry.session_id.startsWith('sess_'));
+                            const isEntryMcode = !isEntryAgy && !isEntryZcode && (entry.agent_type === 'mcode' || entry.session_id.startsWith('mvs_'));
                             let command = entry.command;
                             let args = entry.args ? [...entry.args] : undefined;
                             let initialCommand: string | undefined = undefined;
@@ -826,6 +846,9 @@ const closeActiveByShortcut = useCallback(() => {
                               const matchingTpl = data.templates.find(t => {
                                 if (isEntryAgy) {
                                   return t.name.toLowerCase().includes('agy') || t.name.toLowerCase().includes('antigravity');
+                                }
+                                if (isEntryZcode) {
+                                  return t.name.toLowerCase().includes('zcode');
                                 }
                                 if (isEntryMcode) {
                                   return t.name.toLowerCase().includes('mcode') || t.name.toLowerCase().includes('minimax');
@@ -845,6 +868,15 @@ const closeActiveByShortcut = useCallback(() => {
                                 args = buildAgyResumeArgs(args, sessionId);
                               } else {
                                 initialCommand = `agy --conversation ${sessionId}`;
+                              }
+                            } else if (isEntryZcode) {
+                              if (command && command.toLowerCase().includes('zcode')) {
+                                args = buildZcodeResumeArgs(args, sessionId);
+                              } else if (!command) {
+                                command = 'zcode';
+                                args = buildZcodeResumeArgs(args, sessionId);
+                              } else {
+                                initialCommand = `zcode --resume ${sessionId}`;
                               }
                             } else if (isEntryMcode) {
                               if (command && (command.toLowerCase().includes('mcode') || command.toLowerCase().includes('minimax'))) {

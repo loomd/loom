@@ -616,6 +616,58 @@ export function buildAgyResumeArgs(args: string[] | undefined, sessionId: string
 }
 
 /**
+ * 组装 zcode 恢复会话参数。
+ * 剔除旧的 --resume / -r / -c / --continue 等冲突参数，
+ * 保留其他有效参数（如 --model, --mode 等），并注入 [--resume, sessionId]。
+ */
+export function buildZcodeResumeArgs(args: string[] | undefined, sessionId: string): string[] {
+  const result: string[] = [];
+  if (args && args.length > 0) {
+    let i = 0;
+    while (i < args.length) {
+      const item = args[i];
+      if (!item) {
+        i++;
+        continue;
+      }
+      // 1. 过滤旧的 --resume (以及 --resume=xxx)
+      if (item === '--resume') {
+        i++;
+        if (i < args.length && !args[i].startsWith('-')) {
+          i++;
+        }
+        continue;
+      }
+      if (item.startsWith('--resume=')) {
+        i++;
+        continue;
+      }
+      // 2. 过滤 -r, -c, --continue
+      if (item === '-r' || item === '-c' || item === '--continue') {
+        i++;
+        if (item !== '-r' && i < args.length && !args[i].startsWith('-')) {
+          i++;
+        }
+        continue;
+      }
+      // 3. 过滤 prompt 运行模式参数
+      if (item === '-p' || item === '--print' || item === '--prompt') {
+        i++;
+        if (i < args.length && !args[i].startsWith('-')) {
+          i++;
+        }
+        continue;
+      }
+
+      result.push(item);
+      i++;
+    }
+  }
+  result.push('--resume', sessionId);
+  return result;
+}
+
+/**
  * 规范化 Antigravity CLI 的 Base URL
  * agy 必须为站点根路径，移除 /models, /v1, /v1beta, /gemini 等后缀
  */

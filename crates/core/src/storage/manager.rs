@@ -203,6 +203,7 @@ const KNOWN_AGENTS: &[&str] = &[
     "codex",
     "gemini",
     "agy",
+    "zcode",
     "grok",
     "copilot",
     "kimi",
