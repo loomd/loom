@@ -379,6 +379,9 @@ pub struct AgentHistoryEntry {
     /// 恢复时使用的 args（可选）
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub args: Option<Vec<String>>,
+    /// 恢复时使用的环境变量（可选，确保 agy/mcode 恢复会话时携带必要的 API_KEY/BASE_URL）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub env: Option<HashMap<String, String>>,
     /// 最后活跃时间戳（Unix 秒）
     pub last_seen: u64,
 }

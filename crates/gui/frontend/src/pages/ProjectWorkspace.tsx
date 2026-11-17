@@ -405,6 +405,7 @@ const closeActiveByShortcut = useCallback(() => {
                 cwd: term.cwd,
                 command: term.command,
                 args: term.args,
+                env: term.env,
                 last_seen: Math.floor(Date.now() / 1000),
               };
               saveProjectAgentHistory(project.id, entry)
@@ -819,6 +820,23 @@ const closeActiveByShortcut = useCallback(() => {
                             let initialCommand: string | undefined = undefined;
                             const sessionId = entry.session_id;
 
+                            // 优先从历史 entry 中恢复环境变量；若 entry 无 env（旧数据），则从当前模板/工具中匹配继承环境变量
+                            let customEnvs: Record<string, string> | undefined = entry.env ? { ...entry.env } : undefined;
+                            if (!customEnvs || Object.keys(customEnvs).length === 0) {
+                              const matchingTpl = data.templates.find(t => {
+                                if (isEntryAgy) {
+                                  return t.name.toLowerCase().includes('agy') || t.name.toLowerCase().includes('antigravity');
+                                }
+                                if (isEntryMcode) {
+                                  return t.name.toLowerCase().includes('mcode') || t.name.toLowerCase().includes('minimax');
+                                }
+                                return t.name.toLowerCase().includes('opencode');
+                              });
+                              if (matchingTpl && matchingTpl.env && Object.keys(matchingTpl.env).length > 0) {
+                                customEnvs = { ...matchingTpl.env };
+                              }
+                            }
+
                             if (isEntryAgy) {
                               if (command && (command.toLowerCase().includes('agy') || command.toLowerCase().includes('antigravity'))) {
                                 args = buildAgyResumeArgs(args, sessionId);
@@ -857,6 +875,7 @@ const closeActiveByShortcut = useCallback(() => {
                               cwd: entry.cwd || project.root_path,
                               command,
                               args,
+                              env: customEnvs,
                               initialCommand,
                               isOpencode: true,
                               opencodeSessionId: sessionId,

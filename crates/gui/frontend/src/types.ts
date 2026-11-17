@@ -200,6 +200,7 @@ export interface AgentHistoryEntry {
   cwd: string;
   command?: string;
   args?: string[];
+  env?: Record<string, string>;
   last_seen: number; // Unix 秒
 }
 

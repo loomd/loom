@@ -644,6 +644,7 @@ fn test_save_project_agent_history_limit() {
                 cwd: ".".to_string(),
                 command: None,
                 args: None,
+                env: None,
                 last_seen: i as u64,
             };
             save_project_agent_history(proj_id, entry).unwrap();

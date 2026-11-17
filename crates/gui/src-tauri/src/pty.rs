@@ -361,6 +361,10 @@ fn build_command_line(
     let Some(target_cmd) = cmd_to_run else {
         return shell_path.to_string();
     };
+    // 自动解析 Scoop shim（若存在配套 .shim，替换为真实目标可执行文件，避免 shim 中间进程跨进程唤起外部 Console 窗口闪烁）
+    let resolved_cmd = loom_core::agent_config::resolve_scoop_shim(target_cmd);
+    let target_cmd = resolved_cmd.as_str();
+
     let path_lower = shell_path.to_lowercase();
     let is_pwsh = path_lower.contains("pwsh") || path_lower.contains("powershell");
 

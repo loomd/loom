@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct AgentDiscoveryStatus {
@@ -51,6 +51,28 @@ fn search_dirs() -> Vec<PathBuf> {
     }
 
     dirs
+}
+
+/// 若指定路径为 Windows Scoop shim（例如 `...\scoop\shims\agy.exe` 配合 `agy.shim`），
+/// 解析 `.shim` 内容获取指向的真实目标可执行文件路径；若不是 shim 或目标不存在，则返回原路径。
+pub fn resolve_scoop_shim(path: &str) -> String {
+    let p = Path::new(path);
+    let shim_path = p.with_extension("shim");
+    if shim_path.is_file() {
+        if let Ok(content) = fs::read_to_string(&shim_path) {
+            for line in content.lines() {
+                let trimmed = line.trim();
+                if trimmed.starts_with("path =") || trimmed.starts_with("path=") {
+                    let raw = trimmed.split('=').nth(1).unwrap_or("").trim().trim_matches('"');
+                    let target = PathBuf::from(raw);
+                    if target.is_file() {
+                        return target.to_string_lossy().to_string();
+                    }
+                }
+            }
+        }
+    }
+    path.to_string()
 }
 
 fn check_executable(name: &str) -> Option<String> {
@@ -230,45 +252,10 @@ fn detect_agy_version(executable_path: Option<&str>) -> Option<String> {
         candidate_package_jsons.push(home.join(".antigravity").join("package.json"));
     }
 
-    // 优先从 scoop manifest / install json 读取 version
-    for path in candidate_manifest_jsons {
-        if path.is_file() {
-            if let Ok(content) = fs::read_to_string(&path) {
-                if let Ok(val) = serde_json::from_str::<serde_json::Value>(&content) {
-                    if let Some(v) = val.get("version").and_then(|v| v.as_str()) {
-                        let trimmed = v.trim();
-                        if !trimmed.is_empty() {
-                            return Some(trimmed.to_string());
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    for path in candidate_package_jsons {
-        if path.is_file() {
-            if let Ok(content) = fs::read_to_string(&path) {
-                if let Ok(val) = serde_json::from_str::<serde_json::Value>(&content) {
-                    if let Some(v) = val.get("version").and_then(|v| v.as_str()) {
-                        return Some(v.to_string());
-                    }
-                }
-            }
-        }
-    }
-
-    // 尝试从 ~/.gemini/antigravity-cli/version 读取
+    // 1. 优先尝试从 ~/.gemini/antigravity-cli/log 查找最新日志中的 "Language server version: x.y.z"。
+    // 原因：agy 具备静默自热升级能力，自身升级后 Scoop 的 manifest.json 仍会滞后停留在旧版本，
+    // 因此最新真实运行日志中的版本最准确。
     if let Some(home) = dirs::home_dir() {
-        let ver_file = home.join(".gemini").join("antigravity-cli").join("version");
-        if let Ok(content) = fs::read_to_string(&ver_file) {
-            let trimmed = content.trim();
-            if !trimmed.is_empty() {
-                return Some(trimmed.to_string());
-            }
-        }
-
-        // 尝试从 ~/.gemini/antigravity-cli/log 查找最新日志中的 "Language server version: x.y.z"
         let log_dir = home.join(".gemini").join("antigravity-cli").join("log");
         if let Ok(entries) = fs::read_dir(&log_dir) {
             let mut log_files: Vec<PathBuf> = entries
@@ -289,6 +276,44 @@ fn detect_agy_version(executable_path: Option<&str>) -> Option<String> {
                                 return Some(ver.to_string());
                             }
                         }
+                    }
+                }
+            }
+        }
+
+        // 2. 尝试从 ~/.gemini/antigravity-cli/version 读取
+        let ver_file = home.join(".gemini").join("antigravity-cli").join("version");
+        if let Ok(content) = fs::read_to_string(&ver_file) {
+            let trimmed = content.trim();
+            if !trimmed.is_empty() {
+                return Some(trimmed.to_string());
+            }
+        }
+    }
+
+    // 3. 从 scoop manifest / install json 读取 version（无运行日志时的初次安装回退）
+    for path in candidate_manifest_jsons {
+        if path.is_file() {
+            if let Ok(content) = fs::read_to_string(&path) {
+                if let Ok(val) = serde_json::from_str::<serde_json::Value>(&content) {
+                    if let Some(v) = val.get("version").and_then(|v| v.as_str()) {
+                        let trimmed = v.trim();
+                        if !trimmed.is_empty() {
+                            return Some(trimmed.to_string());
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // 4. 从 npm package.json 读取 version
+    for path in candidate_package_jsons {
+        if path.is_file() {
+            if let Ok(content) = fs::read_to_string(&path) {
+                if let Ok(val) = serde_json::from_str::<serde_json::Value>(&content) {
+                    if let Some(v) = val.get("version").and_then(|v| v.as_str()) {
+                        return Some(v.to_string());
                     }
                 }
             }
@@ -462,7 +487,7 @@ pub fn discover_agents() -> DiscoveryOverview {
             }
         }
         None
-    });
+    }).map(|p| resolve_scoop_shim(&p));
     let agy_installed = agy_path.is_some();
     let agy_version = if agy_installed {
         detect_agy_version(agy_path.as_deref())
@@ -1266,6 +1291,25 @@ mod tests {
     fn test_resolve_models_request_openai_with_v1() {
         let (url, _, _) = resolve_models_request("https://api.openai.com/v1", "sk-test", Some("openai"));
         assert_eq!(url, "https://api.openai.com/v1/models");
+    }
+
+    #[test]
+    fn test_resolve_scoop_shim() {
+        let tmp = tempfile::tempdir().unwrap();
+        let target_exe = tmp.path().join("real_app.exe");
+        fs::write(&target_exe, b"MZ").unwrap();
+
+        let shim_exe = tmp.path().join("app.exe");
+        let shim_file = tmp.path().join("app.shim");
+        fs::write(&shim_file, format!("path = \"{}\"\r\n", target_exe.to_string_lossy())).unwrap();
+
+        // 存在配套 .shim 时应解析为真实二进制路径
+        let resolved = resolve_scoop_shim(&shim_exe.to_string_lossy());
+        assert_eq!(resolved, target_exe.to_string_lossy());
+
+        // 没有 .shim 时应保持原路径不变
+        let non_shim = tmp.path().join("other.exe");
+        assert_eq!(resolve_scoop_shim(&non_shim.to_string_lossy()), non_shim.to_string_lossy());
     }
 
     #[test]
