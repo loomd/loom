@@ -934,7 +934,7 @@ const closeActiveByShortcut = useCallback(() => {
                               {displayTitle}
                             </span>
                             <span style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-tertiary)', marginTop: '1px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                              {isAgy ? 'agy' : isMcode ? 'mcode' : 'opencode'} · {entry.title} · {timeAgo}
+                              {isAgy ? 'agy' : isZcode ? 'zcode' : isMcode ? 'mcode' : 'opencode'} · {entry.title} · {timeAgo}
                             </span>
                           </span>
                         </button>

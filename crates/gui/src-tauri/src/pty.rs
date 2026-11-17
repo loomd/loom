@@ -1,6 +1,7 @@
 use loom_core::storage::expand_env_vars;
 use std::collections::{HashMap, VecDeque};
 use std::ptr;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use tauri::{AppHandle, Emitter};
 use winapi::ctypes::c_void;
@@ -313,6 +314,9 @@ pub struct PtySession {
     pub buffer: Arc<Mutex<TerminalBuffer>>,
     pub is_running: Arc<Mutex<bool>>,
     pub child_pid: u32,
+    /// 读线程是否已退出。关闭 ConPTY 句柄前需要等读线程结束，
+    /// 避免关闭句柄时与阻塞在 ReadFile 的读线程并发使用同一句柄。
+    reader_done: Arc<AtomicBool>,
 }
 
 #[derive(Default)]
@@ -453,12 +457,14 @@ pub fn spawn_pty_session(
 
     let ring_buffer = Arc::new(Mutex::new(TerminalBuffer::new(1024 * 512)));
     let is_running = Arc::new(Mutex::new(true));
+    let reader_done = Arc::new(AtomicBool::new(false));
 
     let session = Arc::new(PtySession {
         conpty: Mutex::new(conpty),
         buffer: ring_buffer.clone(),
         is_running: is_running.clone(),
         child_pid,
+        reader_done: reader_done.clone(),
     });
 
     state
@@ -480,6 +486,7 @@ pub fn spawn_pty_session(
     // Read loop thread
     let session_id_clone = session_id.clone();
     let is_running_clone = is_running.clone();
+    let reader_done_clone = reader_done.clone();
 
     std::thread::spawn(move || {
         let stdout_handle = stdout_read_val as HANDLE;
@@ -503,6 +510,7 @@ pub fn spawn_pty_session(
             let _ = app.emit(&format!("pty-data-{}", session_id_clone), chunk.to_vec());
         }
         *is_running_clone.lock().unwrap() = false;
+        reader_done_clone.store(true, Ordering::Relaxed);
         let _ = app.emit(&format!("pty-exit-{}", session_id_clone), ());
     });
 
@@ -712,10 +720,12 @@ pub fn pty_close(state: tauri::State<'_, PtyState>, session_id: String) -> Resul
     let session = state.sessions.lock().unwrap().remove(&session_id);
     if let Some(s) = session {
         *s.is_running.lock().unwrap() = false;
-        // 先显式关闭 ConPTY 管道与伪终端句柄，促使阻塞在 ReadFile 的读线程立即收到 EOF 退出，杜绝 UAF 悬垂句柄
-        if let Ok(mut conpty) = s.conpty.lock() {
-            conpty.close();
-        }
+
+        // 先终止进程，再关闭 ConPTY。
+        // 反序（先关 ConPTY 再杀进程）会让仍在运行的 shell 立刻失去伪终端句柄：
+        // PowerShell 恢复输入循环时调用 GetConsoleScreenBufferInfo 会抛
+        // Win32Exception(233)，进而 FailFast，终端里表现为
+        // "ResourceUnavailable: Process terminated." 加一串 .NET 调用栈。
         let pid = s.child_pid;
         unsafe {
             let handle = OpenProcess(PROCESS_TERMINATE, 0, pid);
@@ -723,6 +733,18 @@ pub fn pty_close(state: tauri::State<'_, PtyState>, session_id: String) -> Resul
                 TerminateProcess(handle, 1);
                 CloseHandle(handle);
             }
+        }
+
+        // 等读线程因管道 EOF 自然退出，避免关闭句柄时与阻塞在 ReadFile 的读线程并发。
+        // 若超时（例如子进程仍占用伪终端）则继续关闭，行为与旧实现一致。
+        let deadline = std::time::Instant::now() + std::time::Duration::from_millis(300);
+        while std::time::Instant::now() < deadline && !s.reader_done.load(Ordering::Relaxed) {
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+
+        // 最后关闭 ConPTY 管道与伪终端句柄，回收句柄
+        if let Ok(mut conpty) = s.conpty.lock() {
+            conpty.close();
         }
     }
     crate::agent_monitor::cleanup_pty(&session_id);

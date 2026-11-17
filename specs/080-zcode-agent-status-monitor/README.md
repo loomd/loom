@@ -30,13 +30,14 @@ Loom 侧边栏终端的呼吸灯态、项目复合灯态与历史会话恢复已
 - [x] 数据库路径：`~/.zcode/cli/db/db.sqlite`，支持 `ZCODE_SESSION_DB_PATH` 与 `ZCODE_DATA_BASE_DIR` 覆盖。
 - [x] 会话表 `session` 关键字段：`id`（形如 `sess_<uuid>`）、`directory`（工作区绝对路径）、`title`、`time_updated`、`time_deleted`、`last_outcome`。
 - [x] 工作区匹配：`directory` 前缀匹配，兼容正反斜杠与大小写差异。
-- [x] 运行态判定：`turn_usage.status = 'running'` 或 `tool_usage.status = 'running'` 表示 Agent 正在工作；`session_runtime_presence` 表示会话仍被运行时进程持有。
+- [x] **「运行中」的判定来自运行时日志**，而不是数据库：zcode 的 `turn_usage` / `model_usage` / `tool_usage` 都是回合结束后才落库，回合进行中数据库里没有任何 `running` 记录（实测确认）。真正实时的是 `~/.zcode/cli/log/zcode-<日期>.jsonl` 里成对出现的 `turn.started` 与 `turn.completed` / `turn.failed` 事件（带 `sessionId` / `turnId`）。有 started 无终态即判定为运行中；超过 15 分钟未落终态视为陈旧（进程被强杀）。
 - [x] 状态映射：
-  - 存在 running 回合或 running 工具调用 → `AgentState::Running`（翠绿呼吸灯）
+  - 运行时日志中存在未结束的回合 → `AgentState::Running`（翠绿呼吸灯）
   - `session_input` 存在 `status = 'admitted'` 且 `delivery = 'guide'` 的待引导输入 → `AgentState::Question`（琥珀色）
   - 最近一次 `turn_usage.status = 'error'` → `AgentState::Error`（红静灯）
   - 其余 → `AgentState::Waiting`（天蓝静灯）
 - [x] 会话标题取 `session.title`，为空时回退 `input_history` 中该会话首条输入的前 30 字符。
+- [x] 日志不可用时退化为「`session.time_updated` 在 10 秒内更新」。
 
 ### 2. 并发仲裁
 - [x] zcode 与 mcode / agy 同属隔离型会话：多终端并存时不得抢占其他 PTY 正在工作的会话。
@@ -44,8 +45,13 @@ Loom 侧边栏终端的呼吸灯态、项目复合灯态与历史会话恢复已
 
 ### 3. 前端与恢复
 - [x] `isAgentTerminal` 识别 `zcode`；`getTerminalAgentType` 支持 `sess_` 前缀会话 ID 与启动命令返回 `'zcode'`。
+- [x] 历史会话列表的来源标签区分 `agy` / `zcode` / `mcode` / `opencode`，zcode 不再落入 opencode 兜底分支。
 - [x] 历史会话恢复命令：`zcode --resume <sessionId>`，需剔除与恢复冲突的旧参数。
 - [x] 运行 zcode 模板时自动标记终端 `isOpencode: true` 开启状态监听。
+
+### 4. PTY 关闭顺序（顺带修复的崩溃）
+- [x] `pty_close` 改为「先终止进程 → 等读线程退出 → 再关闭 ConPTY」。旧实现先关 ConPTY 再杀进程，会让仍在运行的 shell 立刻失去伪终端句柄，PowerShell 恢复输入循环时 `GetConsoleScreenBufferInfo` 抛 `Win32Exception(233)` 并 FailFast，终端里表现为 `ResourceUnavailable: Process terminated.` 加一串 .NET 调用栈。
+- [x] `PtySession` 增加 `reader_done` 标志，关闭 ConPTY 句柄前等待读线程结束，避免与阻塞在 `ReadFile` 的读线程并发使用同一句柄。
 
 ## 非目标
 - 不写入 zcode 的任何数据库，不改动 ZCode 的配置与凭据。
@@ -66,12 +72,15 @@ Loom 侧边栏终端的呼吸灯态、项目复合灯态与历史会话恢复已
 - `crates/gui/frontend/src/test/utils.test.ts`：`buildZcodeResumeArgs` 测试。
 
 ### 关键决策
-- **不用进程存活判定「运行中」**：zcode 的 TUI 空闲时进程仍然存活，若以进程存活作为「运行中」会导致灯常亮。工作态取自 `turn_usage` / `tool_usage` 的 `running` 状态，与 mcode / agy 的语义一致。
+- **不用进程存活判定「运行中」**：zcode 的 TUI 空闲时进程仍然存活，若以进程存活作为「运行中」会导致灯常亮。
+- **不用数据库的 running 状态**：zcode 的 turn_usage / model_usage / tool_usage 均为回合结束后落库，回合进行中数据库无 running 记录；改用运行时日志的 turn.started / turn.completed 配对。
+- **日志读取要点**：运行时写日志时持有文件，读取需用允许共享读写的打开方式（Rust `File::open` 默认 FILE_SHARE_READ|WRITE|DELETE，兼容）；只解析尾部 2MB，并对每行先做字符串预筛，避免每 2 秒全量解析。
 - **会话 ID 前缀不冲突**：zcode 为 `sess_<uuid>`，opencode 为 `ses_` / `session_`，mcode 为 `mvs_`，agy 为裸 UUID，四者可无歧义区分。
 - **候选会话过滤**：排除子会话（`parent_id` 非空）与已删除会话（`time_deleted` 非空），避免抢占历史会话。
 - **隔离型仲裁**：zcode 与 mcode / agy 一样按隔离型处理，工作中的会话不会被其它 PTY 抢占。
 
 ### 验证
-- 单元测试：`test_zcode_session_state_mapping`（六种状态迁移）、`test_zcode_candidate_sessions_matching_workspace`（大小写/斜杠匹配、子会话与已删除会话排除）、`test_zcode_session_id_prefix`（前缀不冲突）。
-- 前端测试：`buildZcodeResumeArgs` 三项用例。
+- 单元测试：`test_zcode_session_state_mapping`（日志驱动的六种状态迁移）、`test_zcode_candidate_sessions_matching_workspace`（大小写/斜杠匹配、子会话与已删除会话排除）、`test_zcode_session_id_prefix`（前缀不冲突）、`test_zcode_busy_turns_from_runtime_log`（日志配对）、`test_parse_iso8601_utc_ms`（时间戳解析）。
+- 真机观测：启动一次真实 zcode 回合并以 300ms 间隔采样运行时日志，35 次采样中有 25 次捕捉到「有 started 无 completed」的忙碌态（约覆盖整个回合时长），回合结束后立即归零。
+
 

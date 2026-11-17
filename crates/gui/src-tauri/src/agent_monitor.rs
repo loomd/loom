@@ -521,6 +521,169 @@ pub fn is_zcode_session_id(session_id: &str) -> bool {
     session_id.starts_with(ZCODE_SESSION_PREFIX)
 }
 
+/// zcode 回合超过该时长仍未结束即视为陈旧（进程被强杀时不会写结束事件）。
+const ZCODE_TURN_STALE_MS: i64 = 15 * 60 * 1000;
+
+/// 读取 zcode 运行时日志目录（`~/.zcode/cli/log`）。
+fn get_zcode_log_dir() -> Option<PathBuf> {
+    let mut candidates: Vec<PathBuf> = Vec::new();
+    if let Ok(dir) = std::env::var("ZCODE_DATA_BASE_DIR") {
+        let trimmed = dir.trim();
+        if !trimmed.is_empty() {
+            candidates.push(PathBuf::from(trimmed).join("cli").join("log"));
+        }
+    }
+    if let Ok(h) = std::env::var("USERPROFILE") {
+        candidates.push(PathBuf::from(&h).join(".zcode").join("cli").join("log"));
+    }
+    if let Ok(h) = std::env::var("HOME") {
+        candidates.push(PathBuf::from(&h).join(".zcode").join("cli").join("log"));
+    }
+    candidates.into_iter().find(|p| p.is_dir())
+}
+
+/// 解析 zcode 运行时日志里的 ISO-8601 UTC 时间戳（形如 `2026-11-17T12:03:56.353Z`），返回 Unix 毫秒。
+/// 只支持运行时实际使用的 `Z` 后缀格式，避免为此引入额外依赖。
+fn parse_iso8601_utc_ms(ts: &str) -> Option<i64> {
+    let bytes = ts.as_bytes();
+    if bytes.len() < 19 {
+        return None;
+    }
+    let year: i64 = ts.get(0..4)?.parse().ok()?;
+    let month: i64 = ts.get(5..7)?.parse().ok()?;
+    let day: i64 = ts.get(8..10)?.parse().ok()?;
+    let hour: i64 = ts.get(11..13)?.parse().ok()?;
+    let minute: i64 = ts.get(14..16)?.parse().ok()?;
+    let second: i64 = ts.get(17..19)?.parse().ok()?;
+    let millis: i64 = if bytes.len() > 20 && bytes[19] == b'.' {
+        let frac: String = ts[20..].chars().take_while(|c| c.is_ascii_digit()).collect();
+        let padded = format!("{:0<3}", frac);
+        padded.get(0..3)?.parse().ok()?
+    } else {
+        0
+    };
+
+    // days_from_civil（Howard Hinnant）：计算距 1970-01-01 的天数
+    let y = if month <= 2 { year - 1 } else { year };
+    let era = if y >= 0 { y } else { y - 399 } / 400;
+    let yoe = y - era * 400;
+    let mp = (month + 9) % 12;
+    let doy = (153 * mp + 2) / 5 + day - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    let days = era * 146097 + doe - 719468;
+    Some((days * 86400 + hour * 3600 + minute * 60 + second) * 1000 + millis)
+}
+
+/// 扫描 zcode 运行时日志，返回「已开始但未结束」的回合：`session_id -> 回合起始时间戳(ms)`。
+///
+/// zcode 的 `turn_usage` / `model_usage` / `tool_usage` 都是回合结束后才落库，
+/// 回合进行中数据库没有任何 running 记录；真正能实时反映工作状态的是运行时日志里
+/// 成对出现的 `turn.started` 与 `turn.completed` / `turn.failed` 事件。
+/// 日志不可用时返回 None，由调用方退化为按会话更新时间判断。
+fn zcode_busy_turns() -> Option<HashMap<String, i64>> {
+    let log_dir = get_zcode_log_dir()?;
+
+    let mut files: Vec<(std::time::SystemTime, PathBuf)> = Vec::new();
+    for entry in std::fs::read_dir(&log_dir).ok()? {
+        let entry = match entry {
+            Ok(e) => e,
+            Err(_) => continue,
+        };
+        let path = entry.path();
+        let name = match path.file_name().and_then(|n| n.to_str()) {
+            Some(n) => n,
+            None => continue,
+        };
+        if !name.starts_with("zcode-") || !name.ends_with(".jsonl") {
+            continue;
+        }
+        let modified = match entry.metadata().and_then(|m| m.modified()) {
+            Ok(t) => t,
+            Err(_) => continue,
+        };
+        // 只看最近两小时内写过的日志文件，避免扫描历史大文件
+        let stale = std::time::SystemTime::now()
+            .duration_since(modified)
+            .map(|d| d.as_secs() > 7200)
+            .unwrap_or(false);
+        if stale {
+            continue;
+        }
+        files.push((modified, path));
+    }
+    if files.is_empty() {
+        return Some(HashMap::new());
+    }
+    files.sort_by_key(|f| f.0);
+
+    // (session_id, turn_id) -> 起始时间戳
+    let mut started: HashMap<(String, String), i64> = HashMap::new();
+
+    for (_, path) in files {
+        let content = match std::fs::read_to_string(&path) {
+            Ok(c) => c,
+            Err(_) => continue,
+        };
+        // 只解析尾部：回合的 start/complete 事件相邻，窗口外的旧事件不影响判定
+        let tail = if content.len() > 2 * 1024 * 1024 {
+            let start = content.len() - 2 * 1024 * 1024;
+            let start = content
+                .char_indices()
+                .map(|(i, _)| i)
+                .find(|i| *i >= start)
+                .unwrap_or(start);
+            &content[start..]
+        } else {
+            &content[..]
+        };
+
+        for line in tail.lines() {
+            // 先做廉价的字符串预筛，避免对绝大多数行做 JSON 解析
+            if !(line.contains("turn.started") || line.contains("turn.completed") || line.contains("turn.failed")) {
+                continue;
+            }
+            let value: serde_json::Value = match serde_json::from_str(line) {
+                Ok(v) => v,
+                Err(_) => continue,
+            };
+            let event = value.get("event").and_then(|v| v.as_str()).unwrap_or("");
+            let session_id = value.get("sessionId").and_then(|v| v.as_str()).unwrap_or("");
+            let turn_id = value.get("turnId").and_then(|v| v.as_str()).unwrap_or("");
+            if session_id.is_empty() || turn_id.is_empty() {
+                continue;
+            }
+            let key = (session_id.to_string(), turn_id.to_string());
+            match event {
+                "turn.started" => {
+                    let ts = value
+                        .get("timestamp")
+                        .and_then(|v| v.as_str())
+                        .and_then(parse_iso8601_utc_ms)
+                        .unwrap_or_else(now_ms);
+                    started.insert(key, ts);
+                }
+                "turn.completed" | "turn.failed" => {
+                    started.remove(&key);
+                }
+                _ => {}
+            }
+        }
+    }
+
+    let now = now_ms();
+    let mut busy: HashMap<String, i64> = HashMap::new();
+    for ((session_id, _turn_id), ts) in started {
+        if now - ts > ZCODE_TURN_STALE_MS {
+            continue;
+        }
+        let entry = busy.entry(session_id).or_insert(ts);
+        if *entry < ts {
+            *entry = ts;
+        }
+    }
+    Some(busy)
+}
+
 /// 从 opencode、mcode 或 agy 本地数据库查询指定 session 的真实标题
 pub fn get_session_title(agent_type: &str, session_id: &str) -> Option<String> {
     if session_id.is_empty() {
@@ -1088,7 +1251,8 @@ impl AgentMonitor {
     }
 
     /// zcode 会话查找：按工作区目录匹配 `session` 表。
-    /// 「活跃」判定：存在 running 状态的回合 / 工具调用，或被运行态进程持有。
+    /// 「活跃」判定：`session.time_updated` 在 12 秒内更新，说明会话还在被写入（回合进行中）。
+    /// 注意 zcode 的 turn_usage / tool_usage 都是回合结束后才落库，不能用于实时判定。
     fn find_candidate_zcode_sessions(conn: &Connection, workspace_dir: &str) -> Vec<(String, i64, bool)> {
         let ws_clean = workspace_dir.trim().to_lowercase();
         let ws_slash = ws_clean.replace('\\', "/");
@@ -1098,9 +1262,7 @@ impl AgentMonitor {
 
         let mut stmt = match conn.prepare(
             "SELECT s.id, s.time_updated, \
-             (EXISTS(SELECT 1 FROM turn_usage tu WHERE tu.session_id = s.id AND tu.status = 'running') \
-              OR EXISTS(SELECT 1 FROM tool_usage ku WHERE ku.session_id = s.id AND ku.status = 'running') \
-              OR EXISTS(SELECT 1 FROM session_runtime_presence rp WHERE rp.session_id = s.id)) \
+             (s.time_updated > (unixepoch('now') * 1000 - 12000)) \
              FROM session s \
              WHERE (LOWER(s.directory) LIKE ?1 OR LOWER(s.directory) LIKE ?2) \
              AND (s.parent_id IS NULL OR s.parent_id = '') \
@@ -1599,13 +1761,21 @@ impl AgentMonitor {
     /// - 其余 → 待命
     fn poll_zcode_session(&self, conn: &Connection, session_id: &str) -> Option<AgentStateInfo> {
         let mut session_title: Option<String> = None;
+        let mut time_updated: i64 = 0;
 
-        if let Ok(mut stmt) = conn.prepare("SELECT title FROM session WHERE id = ?1 LIMIT 1") {
-            if let Ok(Some(t)) = stmt.query_row(rusqlite::params![session_id], |row| row.get::<_, Option<String>>(0)) {
-                let trimmed = t.trim().to_string();
-                if !trimmed.is_empty() {
-                    session_title = Some(trimmed);
+        if let Ok(mut stmt) = conn.prepare("SELECT title, time_updated FROM session WHERE id = ?1 LIMIT 1") {
+            if let Ok(row) = stmt.query_row(rusqlite::params![session_id], |row| {
+                let t: Option<String> = row.get(0).ok();
+                let u: i64 = row.get(1).unwrap_or(0);
+                Ok((t, u))
+            }) {
+                if let Some(t) = row.0 {
+                    let trimmed = t.trim().to_string();
+                    if !trimmed.is_empty() {
+                        session_title = Some(trimmed);
+                    }
                 }
+                time_updated = row.1;
             }
         }
         if session_title.is_none() {
@@ -1630,8 +1800,6 @@ impl AgentMonitor {
             false
         };
 
-        let running_turn = exists_row("SELECT 1 FROM turn_usage WHERE session_id = ?1 AND status = 'running' LIMIT 1");
-        let running_tool = exists_row("SELECT 1 FROM tool_usage WHERE session_id = ?1 AND status = 'running' LIMIT 1");
         let awaiting_input = exists_row(
             "SELECT 1 FROM session_input WHERE session_id = ?1 AND status = 'admitted' AND delivery = 'guide' LIMIT 1",
         );
@@ -1645,7 +1813,16 @@ impl AgentMonitor {
             }
         }
 
-        let state = if running_turn || running_tool {
+        // 「正在工作」的判定：zcode 的 turn_usage / tool_usage 都是回合结束后才落库，
+        // 回合进行中数据库没有任何 running 记录，因此以运行时日志里
+        // 已开始但未结束的回合为准；日志不可用时退化为「会话最近仍在更新」。
+        let now = now_ms();
+        let busy = match zcode_busy_turns() {
+            Some(busy_turns) => busy_turns.contains_key(session_id),
+            None => time_updated > 0 && (now - time_updated) <= 10_000,
+        };
+
+        let state = if busy {
             AgentState::Running
         } else if awaiting_input {
             AgentState::Question
@@ -2260,6 +2437,36 @@ mod tests {
         conn
     }
 
+    /// 生成当前时刻的 ISO-8601 UTC 时间戳（形如 `2026-11-17T12:03:56.353Z`）。
+    fn iso8601_utc_now() -> String {
+        let now = now_ms();
+        let millis = now.rem_euclid(1000);
+        let secs = now.div_euclid(1000);
+        let days = secs.div_euclid(86400);
+        let sod = secs.rem_euclid(86400);
+        // civil_from_days（Howard Hinnant）：由天数反推年月日
+        let z = days + 719468;
+        let era = if z >= 0 { z } else { z - 146096 } / 146097;
+        let doe = z - era * 146097;
+        let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+        let y = yoe + era * 400;
+        let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+        let mp = (5 * doy + 2) / 153;
+        let d = doy - (153 * mp + 2) / 5 + 1;
+        let m = if mp < 10 { mp + 3 } else { mp - 9 };
+        let y = if m <= 2 { y + 1 } else { y };
+        format!(
+            "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}.{:03}Z",
+            y,
+            m,
+            d,
+            sod / 3600,
+            (sod % 3600) / 60,
+            sod % 60,
+            millis
+        )
+    }
+
     #[test]
     fn test_zcode_session_state_mapping() {
         let _lock = TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
@@ -2268,33 +2475,56 @@ mod tests {
         let ws_dir = "d:/test/zcode-workspace";
         let session_id = "sess_11111111-2222-3333-4444-555555555555";
 
+        // zcode 的「运行中」判定来自运行时日志，需要准备一份日志文件
+        let tmp_dir = std::env::temp_dir().join(format!("loom-zcode-state-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp_dir);
+        let log_dir = tmp_dir.join("cli").join("log");
+        std::fs::create_dir_all(&log_dir).unwrap();
+        let log_path = log_dir.join("zcode-2026-11-17.jsonl");
+        let previous = std::env::var("ZCODE_DATA_BASE_DIR").ok();
+        std::env::set_var("ZCODE_DATA_BASE_DIR", &tmp_dir);
+
         conn.execute(
             "INSERT INTO session (id, directory, parent_id, title, time_created, time_updated, time_deleted) \
              VALUES (?1, ?2, '', 'zcode 任务', 100, 100, NULL)",
             rusqlite::params![session_id, ws_dir],
         ).unwrap();
 
-        // 1. 没有任何进行中的回合 → 待命
+        let write_log = |content: String| {
+            std::fs::write(&log_path, content).unwrap();
+        };
+        let started_event = format!(
+            r#"{{"timestamp":"{}","event":"turn.started","sessionId":"{}","turnId":"t1"}}"#,
+            iso8601_utc_now(),
+            session_id
+        );
+        let completed_event = format!(
+            r#"{{"timestamp":"{}","event":"turn.completed","sessionId":"{}","turnId":"t1"}}"#,
+            iso8601_utc_now(),
+            session_id
+        );
+
+        // 1. 日志里只有 turn.started（没有结束事件）→ 回合进行中
+        write_log(format!("{}\n", started_event));
         let state = monitor.poll_zcode_session(&conn, session_id).unwrap();
-        assert_eq!(state.state, AgentState::Waiting);
+        assert_eq!(state.state, AgentState::Running);
         assert_eq!(state.session_id, session_id);
         assert_eq!(state.session_title.as_deref(), Some("zcode 任务"));
 
-        // 2. 存在 running 回合 → 运行中
+        // 2. 回合已结束 → 待命
+        write_log(format!("{}\n{}\n", started_event, completed_event));
+        let state = monitor.poll_zcode_session(&conn, session_id).unwrap();
+        assert_eq!(state.state, AgentState::Waiting);
+
+        // 3. 存在待引导的输入 → 需要确认
         conn.execute(
-            "INSERT INTO turn_usage (session_id, turn_id, status, started_at) VALUES (?1, 't1', 'running', 200)",
+            "INSERT INTO session_input (id, session_id, kind, delivery, payload, status, time_created) \
+             VALUES ('in_1', ?1, 'text', 'guide', '{}', 'admitted', 600)",
             rusqlite::params![session_id],
         ).unwrap();
         let state = monitor.poll_zcode_session(&conn, session_id).unwrap();
-        assert_eq!(state.state, AgentState::Running);
-
-        // 3. 回合结束 → 回到待命
-        conn.execute(
-            "UPDATE turn_usage SET status = 'completed', completed_at = 300 WHERE turn_id = 't1'",
-            [],
-        ).unwrap();
-        let state = monitor.poll_zcode_session(&conn, session_id).unwrap();
-        assert_eq!(state.state, AgentState::Waiting);
+        assert_eq!(state.state, AgentState::Question);
+        conn.execute("DELETE FROM session_input WHERE id = 'in_1'", []).unwrap();
 
         // 4. 最近一次回合失败 → 异常
         conn.execute(
@@ -2304,31 +2534,54 @@ mod tests {
         let state = monitor.poll_zcode_session(&conn, session_id).unwrap();
         assert_eq!(state.state, AgentState::Error);
 
-        // 5. 等待用户引导的输入 → 需要确认
-        conn.execute(
-            "INSERT INTO turn_usage (session_id, turn_id, status, started_at) VALUES (?1, 't3', 'completed', 500)",
-            rusqlite::params![session_id],
-        ).unwrap();
-        conn.execute(
-            "INSERT INTO session_input (id, session_id, kind, delivery, payload, status, time_created) \
-             VALUES ('in_1', ?1, 'text', 'guide', '{}', 'admitted', 600)",
-            rusqlite::params![session_id],
-        ).unwrap();
-        let state = monitor.poll_zcode_session(&conn, session_id).unwrap();
-        assert_eq!(state.state, AgentState::Question);
+        match previous {
+            Some(v) => std::env::set_var("ZCODE_DATA_BASE_DIR", v),
+            None => std::env::remove_var("ZCODE_DATA_BASE_DIR"),
+        }
+        let _ = std::fs::remove_dir_all(&tmp_dir);
+    }
 
-        // 6. 工具调用进行中 → 运行中（优先级高于待命）
-        conn.execute(
-            "DELETE FROM session_input WHERE id = 'in_1'",
-            [],
-        ).unwrap();
-        conn.execute(
-            "INSERT INTO tool_usage (id, session_id, tool_call_id, status, started_at) \
-             VALUES ('tool_1', ?1, 'call_1', 'running', 700)",
-            rusqlite::params![session_id],
-        ).unwrap();
-        let state = monitor.poll_zcode_session(&conn, session_id).unwrap();
-        assert_eq!(state.state, AgentState::Running);
+    #[test]
+    fn test_parse_iso8601_utc_ms() {
+        // 2026-11-17T12:03:56.353Z
+        let ts = parse_iso8601_utc_ms("2026-11-17T12:03:56.353Z").unwrap();
+        // 2026-11-17T12:03:56Z（无毫秒）
+        let ts2 = parse_iso8601_utc_ms("2026-11-17T12:03:56Z").unwrap();
+        assert_eq!(ts2, ts - 353);
+        // 纪元起点
+        assert_eq!(parse_iso8601_utc_ms("1970-01-01T00:00:00.000Z").unwrap(), 0);
+        assert!(parse_iso8601_utc_ms("bad").is_none());
+    }
+
+    #[test]
+    fn test_zcode_busy_turns_from_runtime_log() {
+        let _lock = TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+
+        let tmp_dir = std::env::temp_dir().join(format!("loom-zcode-log-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp_dir);
+        let log_dir = tmp_dir.join("cli").join("log");
+        std::fs::create_dir_all(&log_dir).unwrap();
+
+        let turn_started = r#"{"timestamp":"2026-11-17T12:03:56.332Z","event":"turn.started","sessionId":"sess_busy","turnId":"turn_1"}"#;
+        let turn_completed = r#"{"timestamp":"2026-11-17T12:04:11.000Z","event":"turn.completed","sessionId":"sess_done","turnId":"turn_2"}"#;
+
+        let log_path = log_dir.join("zcode-2026-11-17.jsonl");
+        std::fs::write(&log_path, format!("{}\n{}\n", turn_started, turn_completed)).unwrap();
+
+        let previous = std::env::var("ZCODE_DATA_BASE_DIR").ok();
+        std::env::set_var("ZCODE_DATA_BASE_DIR", &tmp_dir);
+        let busy = zcode_busy_turns();
+        match previous {
+            Some(v) => std::env::set_var("ZCODE_DATA_BASE_DIR", v),
+            None => std::env::remove_var("ZCODE_DATA_BASE_DIR"),
+        }
+        let _ = std::fs::remove_dir_all(&tmp_dir);
+
+        let busy = busy.expect("应能读取运行时日志");
+        // 有 turn.started 但没有 turn.completed → 回合进行中
+        assert!(busy.contains_key("sess_busy"));
+        // 已经完成 → 不在忙碌集合里
+        assert!(!busy.contains_key("sess_done"));
     }
 
     #[test]
