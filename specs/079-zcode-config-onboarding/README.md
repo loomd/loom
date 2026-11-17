@@ -40,12 +40,15 @@ Loom「配置引导」页（AgentManagementPage）当前只支持 opencode / mco
   - `config.providerConfigRules.providerRules` 写入一个 `standard-personal` 个人 Provider，字段遵循官方 provider schema（`access` / `api` / `personalModelIds` / `modelOrder` / `visibility`）。
   - `config.modelConfigRules.manualProviderModelRules` 为每个选中模型写入完整模型配置（自定义模型通常不在内置目录中，仅 smart overlay 不足以使其可用）。
   - `config.providerOrder` 与 `config.defaultModelSelection` 同步更新。
+- [x] **手工模型配置的字段必须严格落在 zcode 允许的集合内**：`enabled` / `properties{contextWindow, supportsJsonSchemaOutput, supportsNativeWebSearch, supportsMidConversationSystem, inputFormat{supportsImage, supportsVideo, supportsPdf}}` / `optionSpecs{reasoningLevel, maxOutputTokens{max}}`。该 schema 为 strict，多写一个字段（如 `supportsText`、`outputFormat`、`maxOutputTokens.map`）会导致整个 `provider_config.json` 被拒绝，Provider 注册不上，表现为 `Provider Registry 不存在 Model: <provider>/<model>`。
 - [x] 协议映射：OpenAI 兼容 → `openai-chat-completions`；Anthropic → `anthropic-messages`；不支持 Gemini。
 - [x] 写入必须原子（临时文件 + rename），且严格保留既有 provider 规则与模型规则。
-- [x] 配置成功后为每个选中模型创建 Loom 运行模板，参数为 `--model <providerId>/<modelId>`。
+- [x] zcode **只维护一个 `zcode` 模板且不带任何参数**：zcode 的 TUI 不接受 `--model`（只有 headless 的 `--prompt`/`-p` 模式允许，传入会直接报 `--model requires --prompt or -p` 并退出），模型由共享的 `defaultModelSelection` 决定，需要切换时在 TUI 内使用 `/model`。
+- [x] 旧版本生成的、携带无效 `--model` 参数的 zcode 模板在保存配置时自动清理。
 
 ### 4. 前端
 - [x] 「配置引导」页目标 Agent 选择器增加 ZCode，配套安装 / 更新 / 版本检测按钮与提示文案。
+- [x] 保存按钮文案按目标 Agent 显示对应的配置文件名（`config.yaml` / `provider_config.json` / `settings.json` / `opencode.json`）。
 - [x] 更新命令使用 `npm install -g zcode-app-cli@latest`（`zcode-app-cli` 本身没有 `update` 子命令，`zcode update` 属于 Rust CLI 的自更新，不可混用）。
 
 ## 非目标
@@ -70,11 +73,13 @@ Loom「配置引导」页（AgentManagementPage）当前只支持 opencode / mco
 
 ### 关键决策
 - **配置目标文件**：优先 `ZCODE_PERSONAL_PROVIDER_CONFIG_FILE`，其次 `ZCODE_DATA_BASE_DIR/v2/provider_config.json`，默认 `~/.zcode/v2/provider_config.json`。前者用于把某个模板的 provider 隔离到独立文件。
-- **模型配置用 manual 规则**：自定义模型不在 zcode 内置目录中，仅写 smart overlay（`providerModelRules`）时模型不可选，因此每个模型都补一份完整的 `manualProviderModelRules`。
+- **模型配置用 manual 规则**：自定义模型不在 zcode 内置目录中，仅写 smart overlay（`providerModelRules`）时模型不可选，因此每个模型都补一份完整的 `manualProviderModelRules`；字段必须严格等于 manual schema 的允许集合，否则整个文件被 strict schema 拒绝。
 - **协议不含 Gemini**：官方 provider schema 只认 `anthropic-messages` / `openai-chat-completions` / `openai-responses`，与 mcode 一样只开放 OpenAI 兼容与 Anthropic。
-- **模板参数**：`--model <providerId>/<modelId>`，与 zcode 的 `--model <provider/model>` 语义一致；重复配置时同步更新既有模板。
+- **模板不带 `--model`**：zcode TUI 拒绝 `--model`（仅 headless 可用），因此模板是纯净的 `zcode`，模型由共享默认配置决定。
 
 ### 验证
-- 单元测试：`test_discover_agents`、`test_build_zcode_api_type`、`test_normalize_zcode_base_url`、`test_write_zcode_config_merge_existing`、`test_write_zcode_config_overwrites_same_provider`。
-- 真机探针：调用真实 `discover_agents()` 得到 `mcode / zcode / agy / opencode` 顺序，zcode 命中 `C:\nvm4w\nodejs\zcode.cmd`、版本 `3.18.2-47`；写入的 provider 配置经与官方 `provider.example.json` 对照，字段结构一致。
+- 单元测试：`test_discover_agents`、`test_build_zcode_api_type`、`test_normalize_zcode_base_url`、`test_write_zcode_config_merge_existing`、`test_write_zcode_config_overwrites_same_provider`（含手工模型配置字段白名单断言）。
+- 真机探针：调用真实 `discover_agents()` 得到 `mcode / zcode / agy / opencode` 顺序，zcode 命中 `C:\nvm4w\nodejs\zcode.cmd`、版本 `3.18.2-47`。
+- 真机端到端：以真实 provider 配置运行 `zcode --prompt '只回复 ok' --model loom/gemini-3.8-flash-high --mode guarded --output-format json`，返回 `response: "ok"`、`contextWindow: 200000`（说明 manual 规则已生效），并创建了会话 `sess_c345409a-...`。
+
 

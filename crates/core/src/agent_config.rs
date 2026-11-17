@@ -1361,27 +1361,29 @@ pub fn write_zcode_config_to_path(
             manual.push(serde_json::json!({
                 "providerId": provider_key,
                 "modelId": model,
+                // 手工模型配置的字段集合受 zcode 严格 schema 约束，多写一个字段就会导致
+                // 整个 provider_config.json 被拒绝、Provider 注册不上（表现为
+                // "Provider Registry 不存在 Model: <provider>/<model>"）。
+                // 允许的键：enabled / properties{contextWindow, supportsJsonSchemaOutput,
+                // supportsNativeWebSearch, supportsMidConversationSystem,
+                // inputFormat{supportsImage, supportsVideo, supportsPdf}} /
+                // optionSpecs{reasoningLevel, maxOutputTokens{max}}。
                 "config": {
                     "enabled": true,
                     "properties": {
                         "contextWindow": 200000,
                         "inputFormat": {
-                            "supportsText": true,
                             "supportsImage": false,
                             "supportsVideo": false,
                             "supportsPdf": false
                         },
-                        "outputFormat": { "supportsText": true },
-                        "supportsToolCall": true,
                         "supportsJsonSchemaOutput": false,
                         "supportsNativeWebSearch": false,
                         "supportsMidConversationSystem": false
                     },
                     "optionSpecs": {
-                        "maxOutputTokens": {
-                            "max": 32768,
-                            "map": "{\"max_tokens\": maxOutputTokens}"
-                        }
+                        "maxOutputTokens": { "max": 32768 },
+                        "reasoningLevel": { "values": ["disabled"], "map": "{}" }
                     }
                 }
             }));
@@ -1749,8 +1751,42 @@ mod tests {
         assert_eq!(manual[0]["providerId"], "loom");
         assert_eq!(manual[0]["modelId"], "gpt-4o");
         assert_eq!(manual[0]["config"]["enabled"], true);
-        assert_eq!(manual[0]["config"]["properties"]["inputFormat"]["supportsText"], true);
+        assert_eq!(manual[0]["config"]["properties"]["contextWindow"], 200000);
+        assert_eq!(manual[0]["config"]["properties"]["inputFormat"]["supportsImage"], false);
         assert_eq!(manual[1]["modelId"], "gpt-4o-mini");
+
+        // 手工模型配置的字段必须严格落在 zcode 允许的集合内，
+        // 多写一个字段会让整个 provider_config.json 被严格 schema 拒绝，Provider 注册不上。
+        let allowed_properties = ["contextWindow", "supportsJsonSchemaOutput", "supportsNativeWebSearch", "supportsMidConversationSystem", "inputFormat"];
+        let allowed_input_format = ["supportsImage", "supportsVideo", "supportsPdf"];
+        let allowed_option_specs = ["reasoningLevel", "maxOutputTokens"];
+        for rule in manual {
+            let cfg = rule.get("config").unwrap().as_object().unwrap();
+            for key in cfg.keys() {
+                assert!(
+                    key == "enabled" || key == "properties" || key == "optionSpecs",
+                    "手工模型配置出现非法字段: {}",
+                    key
+                );
+            }
+            let props = cfg.get("properties").unwrap().as_object().unwrap();
+            for key in props.keys() {
+                assert!(allowed_properties.contains(&key.as_str()), "properties 出现非法字段: {}", key);
+            }
+            let input_format = props.get("inputFormat").unwrap().as_object().unwrap();
+            for key in input_format.keys() {
+                assert!(allowed_input_format.contains(&key.as_str()), "inputFormat 出现非法字段: {}", key);
+            }
+            let option_specs = cfg.get("optionSpecs").unwrap().as_object().unwrap();
+            for key in option_specs.keys() {
+                assert!(allowed_option_specs.contains(&key.as_str()), "optionSpecs 出现非法字段: {}", key);
+            }
+            // maxOutputTokens 只允许 max，不允许 map
+            let max_output = option_specs.get("maxOutputTokens").unwrap().as_object().unwrap();
+            for key in max_output.keys() {
+                assert_eq!(key.as_str(), "max", "maxOutputTokens 出现非法字段: {}", key);
+            }
+        }
 
         // providerOrder 置顶新 Provider，其余保持原序
         let order = parsed["config"]["providerOrder"].as_array().unwrap();
