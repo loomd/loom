@@ -31,11 +31,13 @@ Loom 侧边栏终端的呼吸灯态、项目复合灯态与历史会话恢复已
 - [x] 会话表 `session` 关键字段：`id`（形如 `sess_<uuid>`）、`directory`（工作区绝对路径）、`title`、`time_updated`、`time_deleted`、`last_outcome`。
 - [x] 工作区匹配：`directory` 前缀匹配，兼容正反斜杠与大小写差异。
 - [x] **「运行中」的判定来自运行时日志**，而不是数据库：zcode 的 `turn_usage` / `model_usage` / `tool_usage` 都是回合结束后才落库，回合进行中数据库里没有任何 `running` 记录（实测确认）。真正实时的是 `~/.zcode/cli/log/zcode-<日期>.jsonl` 里成对出现的 `turn.started` 与 `turn.completed` / `turn.failed` 事件（带 `sessionId` / `turnId`）。有 started 无终态即判定为运行中；超过 15 分钟未落终态视为陈旧（进程被强杀）。
-- [x] 状态映射：
+- [x] 状态映射（优先级：等待用户回答 > 运行中 > 异常 > 待命）：
   - 运行时日志中存在未结束的回合 → `AgentState::Running`（翠绿呼吸灯）
-  - `session_input` 存在 `status = 'admitted'` 且 `delivery = 'guide'` 的待引导输入 → `AgentState::Question`（琥珀色）
+  - `part` 表中存在 `tool = "AskUserQuestion"` 且 `state.status = "running"` 的工具调用 → `AgentState::Question`（琥珀色）
+  - `session_input` 存在 `status = 'admitted'` 且 `delivery = 'guide'` 的待引导输入 → `AgentState::Question`
   - 最近一次 `turn_usage.status = 'error'` → `AgentState::Error`（红静灯）
   - 其余 → `AgentState::Waiting`（天蓝静灯）
+- [x] **等待回答必须优先于运行中**：zcode 的交互式问卷由 `AskUserQuestion` 工具实现，等待用户回答期间回合在运行时日志里仍未结束（回合阻塞在工具调用上），若把「运行中」排在前面，问卷等待只会显示绿灯，永远等不到黄灯。
 - [x] 会话标题取 `session.title`，为空时回退 `input_history` 中该会话首条输入的前 30 字符。
 - [x] 日志不可用时退化为「`session.time_updated` 在 10 秒内更新」。
 
@@ -76,6 +78,7 @@ Loom 侧边栏终端的呼吸灯态、项目复合灯态与历史会话恢复已
 - **不用数据库的 running 状态**：zcode 的 turn_usage / model_usage / tool_usage 均为回合结束后落库，回合进行中数据库无 running 记录；改用运行时日志的 turn.started / turn.completed 配对。
 - **日志读取要点**：运行时写日志时持有文件，读取需用允许共享读写的打开方式（Rust `File::open` 默认 FILE_SHARE_READ|WRITE|DELETE，兼容）；只解析尾部 2MB，并对每行先做字符串预筛，避免每 2 秒全量解析。
 - **会话 ID 前缀不冲突**：zcode 为 `sess_<uuid>`，opencode 为 `ses_` / `session_`，mcode 为 `mvs_`，agy 为裸 UUID，四者可无歧义区分。
+- **问卷判定查 `part` 表**：`session_input` 只记录排队输入（实测为 `queue` / `discarded`），真正的交互式问卷是 `part` 表里 `tool = "AskUserQuestion"` 的工具调用，用户回答前保持 `state.status = "running"`。查询优先用 `json_extract`，SQLite 未启用 JSON 函数时退化为字符串匹配。
 - **候选会话过滤**：排除子会话（`parent_id` 非空）与已删除会话（`time_deleted` 非空），避免抢占历史会话。
 - **隔离型仲裁**：zcode 与 mcode / agy 一样按隔离型处理，工作中的会话不会被其它 PTY 抢占。
 

@@ -1753,10 +1753,37 @@ impl AgentMonitor {
         self.poll_state_for_pty_with_conns(Some(conn), None, None, None, workspace_dir, pty_session_id, None)
     }
 
+    /// 判断会话是否有待用户回答的提问。
+    /// zcode 的交互式问答由 `AskUserQuestion` 工具实现：用户回答前，该工具调用在
+    /// `part` 表里一直保持 `state.status = "running"`。
+    fn zcode_has_pending_question(conn: &Connection, session_id: &str) -> bool {
+        // 首选 JSON 提取；SQLite 未启用 JSON 函数时退化为字符串匹配。
+        let queries = [
+            "SELECT 1 FROM part \
+             WHERE session_id = ?1 \
+             AND json_extract(data, '$.tool') = 'AskUserQuestion' \
+             AND json_extract(data, '$.state.status') = 'running' LIMIT 1",
+            "SELECT 1 FROM part \
+             WHERE session_id = ?1 \
+             AND data LIKE '%\"tool\":\"AskUserQuestion\"%' \
+             AND data LIKE '%\"status\":\"running\"%' LIMIT 1",
+        ];
+        for sql in queries {
+            if let Ok(mut stmt) = conn.prepare(sql) {
+                if let Ok(mut rows) = stmt.query(rusqlite::params![session_id]) {
+                    if matches!(rows.next(), Ok(Some(_))) {
+                        return true;
+                    }
+                }
+            }
+        }
+        false
+    }
+
     /// 读取 zcode 会话状态。
     /// 状态来源（全部为只读查询）：
-    /// - `turn_usage.status = 'running'` 或 `tool_usage.status = 'running'` → 运行中
-    /// - `session_input` 中存在已接收但待引导的输入 → 等待用户交互
+    /// - 运行时日志里存在未结束的回合 → 运行中
+    /// - `part` 中存在待回答的 `AskUserQuestion` → 等待用户交互
     /// - 最近一次回合为 `error` → 异常
     /// - 其余 → 待命
     fn poll_zcode_session(&self, conn: &Connection, session_id: &str) -> Option<AgentStateInfo> {
@@ -1802,7 +1829,7 @@ impl AgentMonitor {
 
         let awaiting_input = exists_row(
             "SELECT 1 FROM session_input WHERE session_id = ?1 AND status = 'admitted' AND delivery = 'guide' LIMIT 1",
-        );
+        ) || Self::zcode_has_pending_question(conn, session_id);
 
         let mut last_error = false;
         if let Ok(mut stmt) = conn.prepare(
@@ -1822,10 +1849,13 @@ impl AgentMonitor {
             None => time_updated > 0 && (now - time_updated) <= 10_000,
         };
 
-        let state = if busy {
-            AgentState::Running
-        } else if awaiting_input {
+        // 优先级：等待用户回答 > 运行中 > 异常 > 待命。
+        // 等待回答时回合在运行时日志里仍未结束（回合是阻塞在工具调用上的），
+        // 若把「运行中」排在前面，问卷等待就只会显示绿灯，永远等不到黄灯。
+        let state = if awaiting_input {
             AgentState::Question
+        } else if busy {
+            AgentState::Running
         } else if last_error {
             AgentState::Error
         } else {
@@ -2383,6 +2413,28 @@ mod tests {
             [],
         ).unwrap();
         conn.execute(
+            "CREATE TABLE message (
+                id TEXT PRIMARY KEY,
+                session_id TEXT NOT NULL,
+                time_created INTEGER NOT NULL,
+                time_updated INTEGER NOT NULL,
+                data TEXT NOT NULL
+            )",
+            [],
+        ).unwrap();
+        conn.execute(
+            "CREATE TABLE part (
+                id TEXT PRIMARY KEY,
+                message_id TEXT NOT NULL,
+                session_id TEXT NOT NULL,
+                time_created INTEGER NOT NULL,
+                time_updated INTEGER NOT NULL,
+                data TEXT NOT NULL,
+                sequence INTEGER
+            )",
+            [],
+        ).unwrap();
+        conn.execute(
             "CREATE TABLE session_runtime_presence (
                 session_id TEXT NOT NULL,
                 owner_id TEXT NOT NULL,
@@ -2526,7 +2578,30 @@ mod tests {
         assert_eq!(state.state, AgentState::Question);
         conn.execute("DELETE FROM session_input WHERE id = 'in_1'", []).unwrap();
 
-        // 4. 最近一次回合失败 → 异常
+        // 3.1 zcode 的交互式问卷由 AskUserQuestion 工具实现，用户回答前一直是 running。
+        // 此时回合在运行时日志里仍未结束，必须优先判为「需要确认」而不是「运行中」。
+        conn.execute(
+            "INSERT INTO part (id, message_id, session_id, time_created, time_updated, data, sequence) \
+             VALUES ('p_q', 'm_1', ?1, 700, 700, \
+             '{\"type\":\"tool\",\"tool\":\"AskUserQuestion\",\"state\":{\"status\":\"running\"}}', 1)",
+            rusqlite::params![session_id],
+        ).unwrap();
+        write_log(format!("{}\n", started_event));
+        let state = monitor.poll_zcode_session(&conn, session_id).unwrap();
+        assert_eq!(state.state, AgentState::Question);
+
+        // 3.2 问卷被回答后（状态变为 completed）→ 回到运行中
+        conn.execute(
+            "UPDATE part SET data = '{\"type\":\"tool\",\"tool\":\"AskUserQuestion\",\"state\":{\"status\":\"completed\"}}' \
+             WHERE id = 'p_q'",
+            [],
+        ).unwrap();
+        let state = monitor.poll_zcode_session(&conn, session_id).unwrap();
+        assert_eq!(state.state, AgentState::Running);
+        conn.execute("DELETE FROM part WHERE id = 'p_q'", []).unwrap();
+
+        // 4. 最近一次回合失败 → 异常（失败的回合在日志里会写终态，因此不再算运行中）
+        write_log(format!("{}\n{}\n", started_event, completed_event));
         conn.execute(
             "INSERT INTO turn_usage (session_id, turn_id, status, started_at) VALUES (?1, 't2', 'error', 400)",
             rusqlite::params![session_id],
@@ -2562,8 +2637,14 @@ mod tests {
         let log_dir = tmp_dir.join("cli").join("log");
         std::fs::create_dir_all(&log_dir).unwrap();
 
-        let turn_started = r#"{"timestamp":"2026-11-17T12:03:56.332Z","event":"turn.started","sessionId":"sess_busy","turnId":"turn_1"}"#;
-        let turn_completed = r#"{"timestamp":"2026-11-17T12:04:11.000Z","event":"turn.completed","sessionId":"sess_done","turnId":"turn_2"}"#;
+        let turn_started = format!(
+            r#"{{"timestamp":"{}","event":"turn.started","sessionId":"sess_busy","turnId":"turn_1"}}"#,
+            iso8601_utc_now()
+        );
+        let turn_completed = format!(
+            r#"{{"timestamp":"{}","event":"turn.completed","sessionId":"sess_done","turnId":"turn_2"}}"#,
+            iso8601_utc_now()
+        );
 
         let log_path = log_dir.join("zcode-2026-11-17.jsonl");
         std::fs::write(&log_path, format!("{}\n{}\n", turn_started, turn_completed)).unwrap();
