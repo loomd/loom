@@ -40,6 +40,9 @@ e2e/active_instances.json
 # Handoff runtime state (AI session collaboration data)
 /.handoff/
 
+# ZCode runtime state (local plans/session data)
+/.zcode/
+
 # Logs
 /log/
 /logs/

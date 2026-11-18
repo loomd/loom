@@ -4,6 +4,7 @@ import Editor, { loader } from '@monaco-editor/react';
 import { readTextFile, writeTextFile } from '../api';
 import { useToast } from '../ToastContext';
 import { useI18n } from '../I18nContext';
+import '../monacoEnv';
 
 loader.config({ monaco });
 
