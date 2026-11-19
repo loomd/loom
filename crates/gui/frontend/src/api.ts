@@ -635,6 +635,12 @@ export const getShellBorderWidth = (): Promise<string> =>
 export const setShellBorderWidth = (width: string): Promise<void> =>
 	invoke("set_shell_border_width", { width });
 
+export const openProjectWindow = (projectId: string, title: string): Promise<void> =>
+	invoke("open_project_window", { projectId, title });
+
+export const getOpenProjectWindows = (): Promise<string[]> =>
+	invoke("get_open_project_windows");
+
 export const getAgentNotificationEnabled = (): Promise<boolean> =>
 	invoke("get_agent_notification_enabled");
 

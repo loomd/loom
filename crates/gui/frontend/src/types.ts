@@ -257,4 +257,16 @@ export interface RelayLoginRequest {
   password: string;
 }
 
+export interface ProjectWindowInitData {
+  projectId: string;
+  windowType: 'project';
+}
+
+declare global {
+  interface Window {
+    __LOOM_PROJECT_WINDOW__?: ProjectWindowInitData;
+  }
+}
+
+
 

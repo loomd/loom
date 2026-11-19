@@ -36,6 +36,7 @@ import {
 	getTopPanelEnabled, setTopPanelEnabled as apiSetTopPanelEnabled,
 	getBottomPanelEnabled, setBottomPanelEnabled as apiSetBottomPanelEnabled,
 	getRightSidebarWidth, setRightSidebarWidth as apiSetRightSidebarWidth,
+	getOpenProjectWindows,
 } from "./api";
 import { AgentManagementPage } from "./pages/AgentManagementPage";
 import RemoteConnectionPage from "./pages/RemoteConnectionPage";
@@ -71,9 +72,31 @@ function safeSetItem(key: string, value: string): void {
 	}
 }
 
+function getStandaloneProjectInfo(): { isStandalone: boolean; projectId?: string } {
+	if (typeof window === "undefined") return { isStandalone: false };
+	if (window.__LOOM_PROJECT_WINDOW__?.windowType === "project" && window.__LOOM_PROJECT_WINDOW__?.projectId) {
+		return { isStandalone: true, projectId: window.__LOOM_PROJECT_WINDOW__.projectId };
+	}
+	try {
+		const search = new URLSearchParams(window.location.search);
+		const winType = search.get("windowType");
+		const projId = search.get("projectId");
+		if (winType === "project" && projId) {
+			return { isStandalone: true, projectId: projId };
+		}
+	} catch {
+		// ignore
+	}
+	return { isStandalone: false };
+}
+
 function App() {
 	const { t } = useI18n();
 	const toast = useToast();
+
+	const standaloneInfo = getStandaloneProjectInfo();
+	const isStandaloneProject = standaloneInfo.isStandalone;
+	const standaloneProjectId = standaloneInfo.projectId;
 
 	const [page, setPage] = useState<Page>("workspace");
 	const p = useProjects(toast, t);
@@ -81,6 +104,49 @@ function App() {
 	const updater = useUpdateChecker(t, toast);
 	const { whatsNewState, dismissWhatsNew } = useWhatsNew();
 	const compositeStates = useProjectCompositeStates(p.projects);
+
+	const [openSubWindowProjectIds, setOpenSubWindowProjectIds] = useState<string[]>([]);
+
+	// 监听子窗口状态与初始化
+	useEffect(() => {
+		if (isStandaloneProject) return;
+
+		getOpenProjectWindows()
+			.then((res) => {
+				if (Array.isArray(res)) setOpenSubWindowProjectIds(res);
+			})
+			.catch(() => {});
+
+		let unlisten: (() => void) | undefined;
+		listen<string[]>("open-project-windows-changed", (event) => {
+			if (Array.isArray(event.payload)) {
+				setOpenSubWindowProjectIds(event.payload);
+			}
+		}).then((fn) => {
+			unlisten = fn;
+		});
+
+		return () => {
+			unlisten?.();
+		};
+	}, [isStandaloneProject]);
+
+	// 主窗口避让逻辑：如果当前选中的项目已被子窗口接管，主窗口自动切走
+	const { selectedProjectId, projects, setSelectedProjectId } = p;
+	useEffect(() => {
+		if (isStandaloneProject) return;
+		const openIds = Array.isArray(openSubWindowProjectIds) ? openSubWindowProjectIds : [];
+		if (selectedProjectId && openIds.includes(selectedProjectId)) {
+			const nextAvailable = projects.find(
+				(proj) => !openIds.includes(proj.id) && proj.id !== selectedProjectId
+			);
+			if (nextAvailable) {
+				setSelectedProjectId(nextAvailable.id);
+			} else {
+				setSelectedProjectId("");
+			}
+		}
+	}, [isStandaloneProject, selectedProjectId, openSubWindowProjectIds, projects, setSelectedProjectId]);
 
 	useEffect(() => {
 		markStartup("App mounted (first React commit)");
@@ -583,6 +649,56 @@ function App() {
 
 	const actualCollapsed = !leftPanelEnabled || isCollapsed;
 
+	if (isStandaloneProject) {
+		const targetProj = p.projects.find((proj) => proj.id === standaloneProjectId || proj.name === standaloneProjectId);
+		return (
+			<div className="app-container" style={{ userSelect: isResizing ? "none" : "auto" }}>
+				<GlobalErrorHandler />
+				<AppLayout
+					sidebar={undefined}
+					isCollapsed={true}
+					sidebarWidth={0}
+					onResizerMouseDown={() => {}}
+					onResizerDoubleClick={() => {}}
+					mainContent={
+						<div style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0, overflow: "hidden" }}>
+							{targetProj ? (
+								<ProjectWorkspace
+									isSidebarCollapsed={true}
+									isSubWindow={true}
+									compositeState={compositeStates[targetProj.id]}
+									project={targetProj}
+									isVisible={true}
+									onUnregisterProject={p.handleUnregisterProject}
+									theme={theme.theme}
+									fontSize={theme.terminalFontSize}
+									fontFamily={theme.effectiveTerminalFontFamily}
+									bottomPanelEmbedded={false}
+									bottomPanelHeight={0}
+									shellBorderEnabled={shellBorderEnabled}
+									shellBorderColor={shellBorderColor}
+									shellBorderWidth={shellBorderWidth}
+								/>
+							) : (
+								<div style={{ display: "flex", alignItems: "center", justifyContent: "center", flex: 1, color: "var(--text-tertiary)", fontSize: "0.95rem" }}>
+									{p.projects.length === 0 ? "Loading project..." : `Project not found (${standaloneProjectId || "unknown"})`}
+								</div>
+							)}
+						</div>
+					}
+					rightSidebar={undefined}
+				/>
+				{showSpawnPanel && (
+					<SpawnAgentPanel
+						onSpawn={handleSpawnAgent}
+						onSpawnBlank={handleSpawnBlankTerminal}
+						onClose={() => setShowSpawnPanel(false)}
+					/>
+				)}
+			</div>
+		);
+	}
+
 	return (
 		<div className="app-container" style={{ userSelect: isResizing ? "none" : "auto" }}>
 			<GlobalErrorHandler />
@@ -603,6 +719,7 @@ function App() {
 				sidebar={leftPanelEnabled ? (
 					<Sidebar
 						projects={p.projects} selectedProjectId={p.selectedProjectId} page={page}
+						openSubWindowProjectIds={openSubWindowProjectIds}
 						projectColumnAlign={theme.projectColumnAlign}
 						draggedIndex={p.draggedIndex} dragOverIndex={p.dragOverIndex}
 						compositeStates={compositeStates}
