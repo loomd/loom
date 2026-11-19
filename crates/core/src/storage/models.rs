@@ -52,6 +52,8 @@ pub struct Template {
     pub last_run: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub env_mode: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub color: Option<String>,
 }
 
 pub fn default_language() -> String {

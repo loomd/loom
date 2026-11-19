@@ -326,6 +326,7 @@ pub fn create_agent_templates(
             pwd: None,
             last_run: None,
             env_mode: None,
+            color: None,
         };
         config.templates.push(template.clone());
         created.push(template);
@@ -1204,6 +1205,19 @@ pub fn assign_cli_category(cli_id: String, cat_id: Option<String>) -> Result<()>
     Ok(())
 }
 
+pub fn set_template_color(template_id: String, color: Option<String>) -> Result<()> {
+    let mut config = load_config()?;
+    let template_idx = config
+        .templates
+        .iter()
+        .position(|t| t.id == template_id)
+        .ok_or_else(|| StorageError::TemplateNotFound(template_id.clone()))?;
+
+    config.templates[template_idx].color = color;
+    save_config(&config)?;
+    Ok(())
+}
+
 pub fn update_cli_env(cli_id: String, env: HashMap<String, String>) -> Result<()> {
     let mut config = load_config()?;
     let tool_index = config
@@ -1332,6 +1346,7 @@ pub fn create_template(
         pwd: pwd_path,
         last_run: None,
         env_mode,
+        color: None,
     };
 
     config.templates.push(new_template.clone());

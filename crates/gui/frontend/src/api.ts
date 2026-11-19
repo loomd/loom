@@ -67,6 +67,11 @@ export const assignCliCategory = (
 	catId: string | null,
 ): Promise<void> => invoke("assign_cli_category", { cliId, catId });
 
+export const setTemplateColor = (
+	templateId: string,
+	color: string | null,
+): Promise<void> => invoke("set_template_color", { templateId, color });
+
 export const updateCategory = (
 	catId: string,
 	name: string,

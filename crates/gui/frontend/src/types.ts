@@ -37,6 +37,7 @@ export interface Template {
   pwd?: string;
   last_run?: string;
   env_mode?: 'inherit' | 'isolated';
+  color?: string | null;
 }
 
 export interface ActiveInstance {

@@ -1436,6 +1436,7 @@ mod tests {
                 pwd: None,
                 last_run: None,
                 env_mode: None,
+                color: None,
             };
             let _g = TestGuard::with_tools_and_templates(vec![tool], vec![tpl]);
 
@@ -1462,6 +1463,7 @@ mod tests {
                 pwd: None,
                 last_run: None,
                 env_mode: None,
+                color: None,
             };
             let _g = TestGuard::with_tools_and_templates(vec![tool], vec![tpl]);
 
@@ -1492,6 +1494,7 @@ mod tests {
                 pwd: None,
                 last_run: None,
                 env_mode: None,
+                color: None,
             };
             let tpl2 = Template {
                 id: tid2.clone(),
@@ -1503,6 +1506,7 @@ mod tests {
                 pwd: None,
                 last_run: None,
                 env_mode: None,
+                color: None,
             };
             let _g = TestGuard::with_tools_and_templates(vec![tool], vec![tpl1, tpl2]);
 

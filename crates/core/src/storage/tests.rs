@@ -64,6 +64,7 @@ fn test_serialization_fidelity() {
         pwd: Some(PathBuf::from("/projects/my-app")),
         last_run: Some("1687258210".to_string()),
         env_mode: None,
+        color: None,
     };
 
 let original = AppConfig {

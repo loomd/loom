@@ -41,7 +41,7 @@ pub use manager::{
     set_autostart_enabled, set_font_family, set_font_size, set_terminal_font_size, set_terminal_font_family, set_terminal_cjk_font_family, set_language, set_onboarded_status,
     set_skipped_version, set_theme, smart_classify, spawn_project_agent, sync_running_processes, toggle_project_skill,
     set_last_version, update_category, update_cli_args, update_cli_env, update_global_doc, update_global_env_var,
-    update_global_skill, update_cli_alias, update_template, StorageManager, ScanResult,
+    update_global_skill, update_cli_alias, update_template, set_template_color, StorageManager, ScanResult,
 };
 pub use models::{
     AgentDoc, AgentHistoryEntry, AgentInstance, AppConfig, Category, CliTool, CurrentState, GlobalDocTemplate, GlobalEnvVar,

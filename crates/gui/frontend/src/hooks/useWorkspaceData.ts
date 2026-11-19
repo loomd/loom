@@ -18,6 +18,7 @@ import {
   getGlobalDocs,
   importGlobalSkillToProject,
   importGlobalDocToProject,
+  setTemplateColor,
 } from '../api';
 import type { FileEntry } from '../api';
 import type { Project, CliTool, Template, ProjectSkill, AgentDoc, GlobalSkillTemplate, GlobalDocTemplate, GlobalEnvVar } from '../types';
@@ -404,8 +405,8 @@ export function useWorkspaceData(
     e.preventDefault();
     e.stopPropagation();
     setContextMenu(null);
-    const menuHeight = 120;
-    const menuWidth = 140;
+    const menuHeight = 210;
+    const menuWidth = 160;
     const padding = 12;
     const y =
       typeof window !== "undefined" && e.clientY + menuHeight > window.innerHeight - padding
@@ -437,6 +438,16 @@ export function useWorkspaceData(
     setTemplateContextMenu(null);
     setEditingTemplate(tpl);
     setShowEditTemplateModal(true);
+  };
+
+  const handleSetTemplateColor = async (tpl: Template, color: string | null) => {
+    setTemplateContextMenu(null);
+    try {
+      await setTemplateColor(tpl.id, color);
+      await loadToolsAndTemplates();
+    } catch (e) {
+      toast.error(`设置模板颜色失败: ${String(e)}`);
+    }
   };
 
   const handleDuplicateTemplate = async (tpl: Template) => {
@@ -613,6 +624,7 @@ export function useWorkspaceData(
     handleTemplateContextMenu,
     handleCloseTemplateContextMenu,
     handleOpenEditTemplate,
+    handleSetTemplateColor,
     handleDuplicateTemplate,
     handleDeleteTemplate,
     handleSaveTemplate,

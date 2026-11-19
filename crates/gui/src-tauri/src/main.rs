@@ -96,6 +96,11 @@ fn assign_cli_category(cli_id: String, cat_id: Option<String>) -> Result<(), Str
 }
 
 #[tauri::command]
+fn set_template_color(template_id: String, color: Option<String>) -> Result<(), String> {
+    cstore::set_template_color(template_id, color).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 fn update_cli_env(cli_id: String, env: HashMap<String, String>) -> Result<(), String> {
     cstore::update_cli_env(cli_id, env).map_err(|e| e.to_string())
 }
@@ -1235,6 +1240,14 @@ fn execute_test_command(cmd: &str, args_json: &str) -> Result<String, String> {
                 .ok_or_else(|| "Missing argument 'cli_id'".to_string())?;
             let cat_id = args["cat_id"].as_str().map(|s| s.to_string());
             assign_cli_category(cli_id.to_string(), cat_id)?;
+            Ok("null".to_string())
+        }
+        "set_template_color" => {
+            let template_id = args["template_id"]
+                .as_str()
+                .ok_or_else(|| "Missing argument 'template_id'".to_string())?;
+            let color = args["color"].as_str().map(|s| s.to_string());
+            set_template_color(template_id.to_string(), color)?;
             Ok("null".to_string())
         }
         "update_cli_env" => {
@@ -2687,6 +2700,7 @@ fn main() {
             scan_directory,
             create_category,
             assign_cli_category,
+            set_template_color,
             update_cli_env,
             update_cli_args,
             update_cli_alias,

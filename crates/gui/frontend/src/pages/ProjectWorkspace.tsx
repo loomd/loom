@@ -9,6 +9,21 @@ import { GitStatusBar } from '../components/GitStatusBar';
 import { useToast } from '../ToastContext';
 import { useI18n } from '../I18nContext';
 import { TemplateModal } from './TemplatesPage';
+
+const TEMPLATE_PRESET_COLORS = [
+  '#3b82f6', // 蓝
+  '#8b5cf6', // 紫
+  '#ec4899', // 粉
+  '#ef4444', // 红
+  '#f97316', // 橙
+  '#eab308', // 黄
+  '#22c55e', // 绿
+  '#14b8a6', // 青
+  '#06b6d4', // 湖蓝
+  '#6366f1', // 靛蓝
+  '#d946ef', // 桃红
+  '#84cc16', // 草绿
+];
 import { EditorPlaceholder } from '../components/EditorPlaceholder';
 import { clearProjectTerminals, deleteProjectAgentHistory, getProjectAgentHistory, getProjectLayout, getProjectTerminals, getRestoreTerminals, pollAgentState, saveProjectAgentHistory, saveProjectLayout, saveProjectTerminals } from '../api';
 import { buildAgyResumeArgs, buildMcodeResumeArgs, buildOpencodeResumeArgs, buildZcodeResumeArgs, isUuidFormat } from '../utils';
@@ -750,6 +765,7 @@ const closeActiveByShortcut = useCallback(() => {
                   const isDragOver = data.dragOverIndex === i;
                   const showTopLine = isDragOver && data.draggedIndex !== null && data.draggedIndex > i;
                   const showBottomLine = isDragOver && data.draggedIndex !== null && data.draggedIndex < i;
+                  const customColor = tpl.color;
                   return (
                     <button key={tpl.id} draggable={true}
                       data-tour-target="run-btn"
@@ -767,13 +783,19 @@ const closeActiveByShortcut = useCallback(() => {
                         borderRadius: 'var(--radius-sm, 6px)',
                         border: isDragging
                           ? '1px dashed var(--accent-purple, #6366f1)'
-                          : '1px solid var(--border-subtle, #27272a)',
-                        backgroundColor: 'var(--bg-elevated, rgba(255,255,255,0.04))',
+                          : customColor
+                            ? `1px solid ${customColor}55`
+                            : '1px solid var(--border-subtle, #27272a)',
+                        backgroundColor: customColor
+                          ? `${customColor}14`
+                          : 'var(--bg-elevated, rgba(255,255,255,0.04))',
                         boxShadow: showTopLine
                           ? '0 -2px 0 0 var(--accent-purple, #6366f1)'
                           : showBottomLine
                             ? '0 2px 0 0 var(--accent-purple, #6366f1)'
-                            : 'none',
+                            : customColor
+                              ? `0 0 10px ${customColor}10`
+                              : 'none',
                         cursor: 'grab', fontSize: '0.85rem', fontWeight: 600, width: '100%',
                         minWidth: 0, overflow: 'hidden', textAlign: 'left', justifyContent: 'flex-start',
                         opacity: isDragging ? 0.4 : 1,
@@ -1289,6 +1311,79 @@ const closeActiveByShortcut = useCallback(() => {
             >
               <span>复制模板</span>
             </button>
+            {/* 颜色标记快捷选择 */}
+            <div
+              style={{
+                borderTop: '1px solid var(--border-subtle, #27272a)',
+                margin: '3px 0',
+                padding: '6px 8px 4px',
+              }}
+            >
+              <div style={{ fontSize: '0.72rem', color: 'var(--text-tertiary, #71717a)', marginBottom: '5px' }}>
+                标签颜色
+              </div>
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(6, 18px)',
+                  gap: '5px',
+                  alignItems: 'center',
+                }}
+              >
+                {TEMPLATE_PRESET_COLORS.map((c) => {
+                  const isActive = data.templateContextMenu!.tpl.color === c;
+                  return (
+                    <button
+                      key={c}
+                      type="button"
+                      title={c}
+                      onClick={() => data.handleSetTemplateColor(data.templateContextMenu!.tpl, c)}
+                      style={{
+                        width: '18px',
+                        height: '18px',
+                        borderRadius: '50%',
+                        backgroundColor: c,
+                        border: isActive ? '2px solid #ffffff' : '1.5px solid rgba(255,255,255,0.15)',
+                        boxShadow: isActive ? `0 0 0 1px ${c}, 0 0 6px ${c}88` : 'none',
+                        cursor: 'pointer',
+                        padding: 0,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        transform: isActive ? 'scale(1.1)' : 'none',
+                        transition: 'transform 0.15s ease, box-shadow 0.15s ease',
+                      }}
+                    >
+                      {isActive && (
+                        <span style={{ color: '#fff', fontSize: '9px', fontWeight: 800, lineHeight: 1 }}>
+                          ✓
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+              {data.templateContextMenu!.tpl.color && (
+                <button
+                  type="button"
+                  onClick={() => data.handleSetTemplateColor(data.templateContextMenu!.tpl, null)}
+                  className="btn btn-ghost"
+                  style={{
+                    width: '100%',
+                    marginTop: '6px',
+                    padding: '3px 0',
+                    fontSize: '0.72rem',
+                    color: 'var(--text-secondary, #a1a1aa)',
+                    textAlign: 'center',
+                    borderRadius: '3px',
+                    border: '1px solid var(--border-subtle, #27272a)',
+                    cursor: 'pointer',
+                  }}
+                >
+                  清除颜色
+                </button>
+              )}
+            </div>
             <button
               onClick={() => data.handleDeleteTemplate(data.templateContextMenu!.tpl)}
               className="btn btn-ghost"
