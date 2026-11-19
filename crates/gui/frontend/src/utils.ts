@@ -667,6 +667,11 @@ export function buildZcodeResumeArgs(args: string[] | undefined, sessionId: stri
   return result;
 }
 
+export function isUuidFormat(s: string | undefined | null): boolean {
+  if (!s || typeof s !== 'string') return false;
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s.trim());
+}
+
 /**
  * 规范化 Antigravity CLI 的 Base URL
  * agy 必须为站点根路径，移除 /models, /v1, /v1beta, /gemini 等后缀

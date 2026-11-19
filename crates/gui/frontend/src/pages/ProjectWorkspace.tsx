@@ -11,7 +11,7 @@ import { useI18n } from '../I18nContext';
 import { TemplateModal } from './TemplatesPage';
 import { EditorPlaceholder } from '../components/EditorPlaceholder';
 import { clearProjectTerminals, deleteProjectAgentHistory, getProjectAgentHistory, getProjectLayout, getProjectTerminals, getRestoreTerminals, pollAgentState, saveProjectAgentHistory, saveProjectLayout, saveProjectTerminals } from '../api';
-import { buildAgyResumeArgs, buildMcodeResumeArgs, buildOpencodeResumeArgs, buildZcodeResumeArgs } from '../utils';
+import { buildAgyResumeArgs, buildMcodeResumeArgs, buildOpencodeResumeArgs, buildZcodeResumeArgs, isUuidFormat } from '../utils';
 import { syncProjectShells } from '../hooks/useProjectCompositeStates';
 import type { CompositeState } from '../hooks/useProjectCompositeStates';
 import type { Project, AgentStateInfo, PersistedTerminal, AgentHistoryEntry } from '../types';
@@ -45,9 +45,10 @@ export default function ProjectWorkspace({ project, isVisible, onUnregisterProje
 		terminals, showGrid, terminalSlots, handleAddRawTerminal, handleCloseTerminal,
 		handleOpenFile, updateTabDirty, removeTabById, moveTab, addTab,
 	} = tabsState;
-	const isAgentTerminal = useCallback((t: { isOpencode?: boolean; title?: string; command?: string }) => {
+	const isAgentTerminal = useCallback((t: { isOpencode?: boolean; title?: string; command?: string; initialCommand?: string; args?: string[]; opencodeSessionId?: string }) => {
 		if (t.isOpencode) return true;
-		const str = `${t.title || ''} ${t.command || ''}`.toLowerCase();
+		if (t.opencodeSessionId) return true;
+		const str = `${t.title || ''} ${t.command || ''} ${t.initialCommand || ''} ${(t.args || []).join(' ')}`.toLowerCase();
 		return str.includes('opencode') || str.includes('mcode') || str.includes('minimax') || str.includes('agy') || str.includes('antigravity') || str.includes('zcode');
 	}, []);
 
@@ -64,7 +65,7 @@ export default function ProjectWorkspace({ project, isVisible, onUnregisterProje
 		// zcode 会话 ID 为 sess_<uuid> 前缀
 		if (sessionId && sessionId.startsWith('sess_')) return 'zcode';
 		// agy 会话 ID 为 36 位的标准 UUID 格式
-		if (sessionId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(sessionId)) return 'agy';
+		if (sessionId && isUuidFormat(sessionId)) return 'agy';
 
 		const str = `${t.title || ''} ${t.command || ''} ${t.initialCommand || ''} ${(t.args || []).join(' ')}`.toLowerCase();
 		if (str.includes('agy') || str.includes('antigravity')) return 'agy';
@@ -119,7 +120,7 @@ const performRestore = useCallback((list: PersistedTerminal[], layout: GridLayou
     );
 
     if (isAgent) {
-      const isAgy = (sessionId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(sessionId)) ||
+      const isAgy = (sessionId && isUuidFormat(sessionId)) ||
         (p.title && (p.title.toLowerCase().includes('agy') || p.title.toLowerCase().includes('antigravity'))) ||
         (command && (command.toLowerCase().includes('agy') || command.toLowerCase().includes('antigravity'))) ||
         (initialCommand && (initialCommand.toLowerCase().includes('agy') || initialCommand.toLowerCase().includes('antigravity')));
@@ -279,14 +280,34 @@ useEffect(() => {
 
       let initCmd = t.initialCommand;
       if (isAgent && !t.command) {
+        const isAgy = (agentSessionId && isUuidFormat(agentSessionId)) ||
+          (t.title && (t.title.toLowerCase().includes('agy') || t.title.toLowerCase().includes('antigravity'))) ||
+          (initCmd && (initCmd.toLowerCase().includes('agy') || initCmd.toLowerCase().includes('antigravity')));
+
+        const isZcode = !isAgy && ((agentSessionId && agentSessionId.startsWith('sess_')) ||
+          (t.title && t.title.toLowerCase().includes('zcode')) ||
+          (initCmd && initCmd.toLowerCase().includes('zcode')));
+
+        const isMcode = !isAgy && !isZcode && ((agentSessionId && agentSessionId.startsWith('mvs_')) ||
+          (t.title && (t.title.toLowerCase().includes('mcode') || t.title.toLowerCase().includes('minimax'))) ||
+          (initCmd && (initCmd.toLowerCase().includes('mcode') || initCmd.toLowerCase().includes('minimax'))));
+
         if (agentSessionId) {
-          if (agentSessionId.startsWith('mvs_') || (t.title && (t.title.toLowerCase().includes('mcode') || t.title.toLowerCase().includes('minimax')))) {
+          if (isAgy) {
+            initCmd = `agy --conversation ${agentSessionId}`;
+          } else if (isZcode) {
+            initCmd = `zcode --resume ${agentSessionId}`;
+          } else if (isMcode) {
             initCmd = `mcode --session ${agentSessionId}`;
           } else {
             initCmd = `opencode -s ${agentSessionId}`;
           }
         } else if (!initCmd) {
-          if (t.title && (t.title.toLowerCase().includes('mcode') || t.title.toLowerCase().includes('minimax'))) {
+          if (isAgy) {
+            initCmd = 'agy';
+          } else if (isZcode) {
+            initCmd = 'zcode';
+          } else if (isMcode) {
             initCmd = 'mcode';
           } else if (t.title && t.title.toLowerCase().includes('opencode')) {
             initCmd = 'opencode';
@@ -822,7 +843,7 @@ const closeActiveByShortcut = useCallback(() => {
                         if (diff < 86400) return `${Math.floor(diff / 3600)} 小时前`;
                         return `${Math.floor(diff / 86400)} 天前`;
                       })();
-                      const isAgy = entry.agent_type === 'agy' || /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(entry.session_id);
+                      const isAgy = entry.agent_type === 'agy' || isUuidFormat(entry.session_id);
                       const isZcode = !isAgy && (entry.agent_type === 'zcode' || entry.session_id.startsWith('sess_'));
                       const isMcode = !isAgy && !isZcode && (entry.agent_type === 'mcode' || entry.session_id.startsWith('mvs_'));
                       const isRealTitle = !!(entry.session_title && !entry.session_title.startsWith('New session - '));
@@ -832,7 +853,7 @@ const closeActiveByShortcut = useCallback(() => {
                           key={entry.session_id}
                           onClick={() => {
                             const newId = crypto.randomUUID();
-                            const isEntryAgy = entry.agent_type === 'agy' || /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(entry.session_id);
+                            const isEntryAgy = entry.agent_type === 'agy' || isUuidFormat(entry.session_id);
                             const isEntryZcode = !isEntryAgy && (entry.agent_type === 'zcode' || entry.session_id.startsWith('sess_'));
                             const isEntryMcode = !isEntryAgy && !isEntryZcode && (entry.agent_type === 'mcode' || entry.session_id.startsWith('mvs_'));
                             let command = entry.command;

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildAgyResumeArgs, buildMcodeResumeArgs, buildOpencodeResumeArgs, buildZcodeResumeArgs, mergeCliArgs, projectPathKey } from "../utils";
+import { buildAgyResumeArgs, buildMcodeResumeArgs, buildOpencodeResumeArgs, buildZcodeResumeArgs, isUuidFormat, mergeCliArgs, projectPathKey } from "../utils";
 
 describe("mergeCliArgs", () => {
   it("merges empty arrays", () => {
@@ -204,4 +204,21 @@ describe("buildZcodeResumeArgs", () => {
     expect(buildZcodeResumeArgs([], "sess_1")).toEqual(["--resume", "sess_1"]);
   });
 });
+
+describe("isUuidFormat", () => {
+  it("identifies standard 36-character UUID strings", () => {
+    expect(isUuidFormat("b93fd167-1d49-4560-b609-26504f9da3ee")).toBe(true);
+    expect(isUuidFormat("B93FD167-1D49-4560-B609-26504F9DA3EE")).toBe(true);
+  });
+
+  it("rejects non-uuid strings or empty inputs", () => {
+    expect(isUuidFormat("mvs_12345")).toBe(false);
+    expect(isUuidFormat("sess_12345")).toBe(false);
+    expect(isUuidFormat("ses_12345")).toBe(false);
+    expect(isUuidFormat("")).toBe(false);
+    expect(isUuidFormat(null)).toBe(false);
+    expect(isUuidFormat(undefined)).toBe(false);
+  });
+});
+
 
