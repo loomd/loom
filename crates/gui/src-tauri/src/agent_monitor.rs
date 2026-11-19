@@ -2357,7 +2357,8 @@ mod tests {
                 workspace_uris TEXT NOT NULL,
                 status TEXT NOT NULL DEFAULT '',
                 not_fully_idle NUMERIC NOT NULL DEFAULT 0,
-                killed NUMERIC NOT NULL DEFAULT 0
+                killed NUMERIC NOT NULL DEFAULT 0,
+                last_user_input_time DATETIME
             )",
             [],
         ).unwrap();
@@ -3237,5 +3238,119 @@ mod tests {
 
         cleanup_pty(pty_agy);
         cleanup_pty(pty_mcode);
+    }
+
+    #[test]
+    fn test_concurrent_dual_agy_ptys_do_not_preempt_each_other() {
+        let _lock = TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+        let agy_conn = setup_test_agy_db();
+        let monitor = AgentMonitor::new();
+        let ws_dir = "D:/Develop/loom";
+
+        let pty_agy_1 = "pty_dual_agy_1";
+        let pty_agy_2 = "pty_dual_agy_2";
+
+        let spawn_1 = now_ms() - 10_000;
+        let spawn_2 = now_ms() + 10_000;
+
+        // 1. PTY 1 启动
+        PTY_SPAWNS.get_or_init(|| Mutex::new(HashMap::new()))
+            .lock().unwrap()
+            .insert(pty_agy_1.to_string(), spawn_1);
+        mark_pty_active(pty_agy_1);
+
+        // 写入 agy 会话 1 (处于运行中)
+        agy_conn.execute(
+            "INSERT INTO conversation_summaries (conversation_id, title, preview, last_modified_time, workspace_uris, status, not_fully_idle, killed) \
+             VALUES (?1, ?2, ?3, datetime('now'), ?4, ?5, ?6, ?7)",
+            rusqlite::params![
+                "11111111-1111-1111-1111-111111111111",
+                "agy任务1",
+                "内容1",
+                "[\"file:///D:/Develop/loom\"]",
+                "CASCADE_RUN_STATUS_RUNNING",
+                1,
+                0
+            ],
+        ).unwrap();
+
+        // PTY 1 轮询 -> 成功认领会话 1
+        let state_1 = monitor.poll_state_for_pty_with_conns(
+            None, None, Some(&agy_conn), None, ws_dir, pty_agy_1, Some("agy")
+        ).unwrap();
+        assert_eq!(state_1.state, AgentState::Running);
+        assert_eq!(state_1.session_id, "11111111-1111-1111-1111-111111111111");
+
+        // 2. 此时同项目启动 PTY 2 (spawn_2 在会话 1 创建之后) 并产生活跃输入
+        PTY_SPAWNS.get_or_init(|| Mutex::new(HashMap::new()))
+            .lock().unwrap()
+            .insert(pty_agy_2.to_string(), spawn_2);
+        mark_pty_active(pty_agy_2);
+
+        // PTY 2 轮询 -> 绝不能抢占 PTY 1 的运行中会话 1，必须呈现 Waiting 态
+        let state_2 = monitor.poll_state_for_pty_with_conns(
+            None, None, Some(&agy_conn), None, ws_dir, pty_agy_2, Some("agy")
+        ).unwrap();
+        assert_eq!(state_2.state, AgentState::Waiting);
+        assert_ne!(state_2.session_id, "11111111-1111-1111-1111-111111111111");
+
+        // PTY 1 再次轮询 -> 即使 PTY 2 是最新活跃输入，PTY 1 的会话 1 也依然稳定保留为 Running
+        let state_1_again = monitor.poll_state_for_pty_with_conns(
+            None, None, Some(&agy_conn), None, ws_dir, pty_agy_1, Some("agy")
+        ).unwrap();
+        assert_eq!(state_1_again.state, AgentState::Running);
+        assert_eq!(state_1_again.session_id, "11111111-1111-1111-1111-111111111111");
+
+        // 3. 此时 PTY 1 任务完成进入 IDLE 态（非 working）
+        agy_conn.execute(
+            "UPDATE conversation_summaries SET status = 'CASCADE_RUN_STATUS_IDLE', not_fully_idle = 0 WHERE conversation_id = '11111111-1111-1111-1111-111111111111'",
+            [],
+        ).unwrap();
+
+        // 再次轮询 PTY 2 -> 即使会话 1 不在 working 态，因为该会话是在 PTY 2 spawn 之前创建的 (spawn 2000)，PTY 2 绝不可抢占该会话！
+        let state_2_after_idle = monitor.poll_state_for_pty_with_conns(
+            None, None, Some(&agy_conn), None, ws_dir, pty_agy_2, Some("agy")
+        ).unwrap();
+        assert_eq!(state_2_after_idle.state, AgentState::Waiting);
+        assert_ne!(state_2_after_idle.session_id, "11111111-1111-1111-1111-111111111111");
+
+        // PTY 1 轮询 -> 依然稳定持有会话 1，正确呈现 Waiting 灯态
+        let state_1_idle = monitor.poll_state_for_pty_with_conns(
+            None, None, Some(&agy_conn), None, ws_dir, pty_agy_1, Some("agy")
+        ).unwrap();
+        assert_eq!(state_1_idle.state, AgentState::Waiting);
+        assert_eq!(state_1_idle.session_id, "11111111-1111-1111-1111-111111111111");
+
+        // 4. 用户在 PTY 2 中发起全新任务，落库会话 2（新创建，时间戳为 0001-01-01，通过 fallback 转为当前时间戳 >= spawn_2）
+        agy_conn.execute(
+            "INSERT INTO conversation_summaries (conversation_id, title, preview, last_modified_time, last_user_input_time, workspace_uris, status, not_fully_idle, killed) \
+             VALUES (?1, ?2, ?3, '0001-01-01 00:00:00+00:00', datetime('now', '+20 seconds'), ?4, ?5, ?6, ?7)",
+            rusqlite::params![
+                "22222222-2222-2222-2222-222222222222",
+                "agy任务2",
+                "内容2",
+                "[\"file:///D:/Develop/loom\"]",
+                "CASCADE_RUN_STATUS_RUNNING",
+                1,
+                0
+            ],
+        ).unwrap();
+
+        // PTY 2 轮询 -> 成功识别并认领会话 2 为 Running！
+        let state_2_own = monitor.poll_state_for_pty_with_conns(
+            None, None, Some(&agy_conn), None, ws_dir, pty_agy_2, Some("agy")
+        ).unwrap();
+        assert_eq!(state_2_own.state, AgentState::Running);
+        assert_eq!(state_2_own.session_id, "22222222-2222-2222-2222-222222222222");
+
+        // PTY 1 轮询 -> 依然牢牢持有会话 1，不被任何干扰！
+        let state_1_final = monitor.poll_state_for_pty_with_conns(
+            None, None, Some(&agy_conn), None, ws_dir, pty_agy_1, Some("agy")
+        ).unwrap();
+        assert_eq!(state_1_final.state, AgentState::Waiting);
+        assert_eq!(state_1_final.session_id, "11111111-1111-1111-1111-111111111111");
+
+        cleanup_pty(pty_agy_1);
+        cleanup_pty(pty_agy_2);
     }
 }
