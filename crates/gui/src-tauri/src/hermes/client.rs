@@ -78,6 +78,7 @@ pub struct LarkClient {
     token_cache: Mutex<Option<(String, Instant)>>,
     user_name_cache: Mutex<HashMap<String, String>>,
     chat_name_cache: Mutex<HashMap<String, String>>,
+    bot_open_id: Mutex<Option<String>>,
 }
 
 impl LarkClient {
@@ -93,6 +94,7 @@ impl LarkClient {
             token_cache: Mutex::new(None),
             user_name_cache: Mutex::new(HashMap::new()),
             chat_name_cache: Mutex::new(HashMap::new()),
+            bot_open_id: Mutex::new(None),
         }
     }
 
@@ -495,6 +497,61 @@ impl LarkClient {
         }
 
         Some(name_str)
+    }
+
+    /// 获取当前机器人自身的 open_id（带本地内存缓存）
+    pub fn get_bot_open_id(&self) -> Result<String, String> {
+        if let Ok(guard) = self.bot_open_id.lock() {
+            if let Some(id) = guard.as_ref() {
+                if !id.is_empty() {
+                    return Ok(id.clone());
+                }
+            }
+        }
+
+        let token = self.get_tenant_access_token()?;
+        let url = format!("{}/open-apis/bot/v3/info", LARK_HOST);
+
+        let resp = self
+            .http_client
+            .get(&url)
+            .bearer_auth(token)
+            .send()
+            .map_err(|e| format!("请求飞书机器人信息失败: {}", e))?;
+
+        if !resp.status().is_success() {
+            return Err(format!("飞书机器人信息接口返回 HTTP 状态码: {}", resp.status()));
+        }
+
+        let body: serde_json::Value = resp
+            .json()
+            .map_err(|e| format!("解析机器人信息响应失败: {}", e))?;
+
+        let code = body.get("code").and_then(|c| c.as_i64()).unwrap_or(-1);
+        if code != 0 {
+            let msg = body.get("msg").and_then(|m| m.as_str()).unwrap_or("未知错误");
+            return Err(format!("获取机器人信息失败 ({}): {}", code, msg));
+        }
+
+        let open_id = body
+            .get("bot")
+            .and_then(|b| b.get("open_id"))
+            .and_then(|o| o.as_str())
+            .filter(|s| !s.trim().is_empty())
+            .ok_or_else(|| "机器人信息中缺少 open_id".to_string())?
+            .trim()
+            .to_string();
+
+        if let Ok(mut guard) = self.bot_open_id.lock() {
+            *guard = Some(open_id.clone());
+        }
+
+        Ok(open_id)
+    }
+
+    /// 读取已缓存的自身 open_id（不发起网络请求）
+    pub fn cached_bot_open_id(&self) -> Option<String> {
+        self.bot_open_id.lock().ok()?.clone()
     }
 
     /// 获取指定消息内容及发送者（用于引用回复感知）

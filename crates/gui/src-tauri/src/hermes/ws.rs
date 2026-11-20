@@ -113,6 +113,10 @@ impl LarkWsClient {
                     Ok(conn) => {
                         failed_attempts = 0;
                         backoff_secs = 2;
+                        // 尝试获取并缓存当前机器人的 open_id，供群聊定向识别与机器人互聊过滤使用
+                        if let Err(e) = self.client.get_bot_open_id() {
+                            eprintln!("[Hermes WS] 获取当前 Bot 身份信息失败 (可能无权限或网络抖动): {}", e);
+                        }
                         self.handler.on_connected();
                         conn
                     }
@@ -344,14 +348,36 @@ impl LarkWsClient {
                     None => return,
                 };
 
-                // 过滤机器人/应用自身发出的消息，防止群聊自循环
-                let sender_type = event
+                let sender_open_id = event
                     .get("sender")
-                    .and_then(|s| s.get("sender_type"))
+                    .and_then(|s| s.get("sender_id"))
+                    .and_then(|sid| sid.get("open_id"))
                     .and_then(|v| v.as_str())
-                    .unwrap_or("user");
-                if sender_type == "app" || sender_type == "bot" {
-                    return;
+                    .unwrap_or_default()
+                    .to_string();
+
+                // 获取并检查自身机器人 open_id（若未缓存则尝试获取一次）
+                let self_bot_open_id = self
+                    .client
+                    .cached_bot_open_id()
+                    .or_else(|| self.client.get_bot_open_id().ok());
+
+                // 过滤机器人自身发出的消息，防止群聊自循环
+                // 注意：如果消息是由其他机器人发出的（sender_open_id != self_bot_open_id），必须允许流转，以支持机器人间互相 @ 协同
+                if let Some(ref self_id) = self_bot_open_id {
+                    if !sender_open_id.is_empty() && &sender_open_id == self_id {
+                        return;
+                    }
+                } else {
+                    // 若尚未获取到自身 open_id，且发件人为 app/bot，暂做兜底拦截
+                    let sender_type = event
+                        .get("sender")
+                        .and_then(|s| s.get("sender_type"))
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("user");
+                    if sender_type == "app" || sender_type == "bot" {
+                        return;
+                    }
                 }
 
                 let message = match event.get("message") {
@@ -387,13 +413,6 @@ impl LarkWsClient {
                     }
                     processed.insert(message_id.clone());
                 }
-                let sender_open_id = event
-                    .get("sender")
-                    .and_then(|s| s.get("sender_id"))
-                    .and_then(|sid| sid.get("open_id"))
-                    .and_then(|v| v.as_str())
-                    .unwrap_or_default()
-                    .to_string();
 
                 let parent_id = message
                     .get("parent_id")
@@ -428,10 +447,18 @@ impl LarkWsClient {
 
                     if let Ok(content_obj) = serde_json::from_str::<serde_json::Value>(content_str) {
                         if let Some(text) = content_obj.get("text").and_then(|t| t.as_str()) {
-                            // 群聊场景过滤：若群消息未 @ 机器人且不是斜杠指令，忽略群内普通闲聊
-                            let has_mentions = mentions.map(|arr| !arr.is_empty()).unwrap_or(false);
-                            let is_cmd = text.trim_start().starts_with('/') || text.trim_start().starts_with('@');
-                            if chat_type == "group" && !has_mentions && !is_cmd {
+                            // 群聊场景过滤规则：
+                            // 1. 若获取到了自身 open_id：仅在 mentions 包含当前机器人自身的 open_id 时才予以响应；
+                            // 2. 若未明确 @ 自身（例如 @ 了群里的其他机器人或其他人，或无 @ 的普通广播/指令），一律静默忽略；
+                            // 3. 允许其他机器人发出的 @ 自身消息正常响应，但自己发送的消息坚决过滤；
+                            // 4. 在 p2p 单聊场景下不受此限制，继续正常响应。
+                            if !should_respond_to_message(
+                                self_bot_open_id.as_deref(),
+                                &sender_open_id,
+                                &chat_type,
+                                text,
+                                mentions.map(|v| v.as_slice()),
+                            ) {
                                 return;
                             }
 
@@ -506,6 +533,55 @@ pub fn clean_text_mentions(raw: &str, mentions: Option<&[serde_json::Value]>) ->
     }
 
     result.trim().to_string()
+}
+
+/// 判断某条文本消息是否应当在群聊中被当前机器人响应
+/// - `self_bot_open_id`: 当前机器人自身的 open_id（若获取到）
+/// - `sender_open_id`: 发送者 open_id
+/// - `chat_type`: "group" 或 "p2p"
+/// - `text`: 文本内容
+/// - `mentions`: 飞书 mentions 数组
+pub fn should_respond_to_message(
+    self_bot_open_id: Option<&str>,
+    sender_open_id: &str,
+    chat_type: &str,
+    text: &str,
+    mentions: Option<&[serde_json::Value]>,
+) -> bool {
+    // 1. 如果发送者就是自己，坚决不回复，防止自循环
+    if let Some(self_id) = self_bot_open_id {
+        if !sender_open_id.is_empty() && sender_open_id == self_id {
+            return false;
+        }
+    }
+
+    // 2. 群聊场景判定
+    if chat_type == "group" {
+        if let Some(self_id) = self_bot_open_id {
+            // 必须显式 @ 自身
+            let mentioned_self = mentions.map(|arr| {
+                arr.iter().any(|m| {
+                    m.get("id")
+                        .and_then(|i| i.get("open_id"))
+                        .and_then(|o| o.as_str())
+                        == Some(self_id)
+                })
+            }).unwrap_or(false);
+
+            if !mentioned_self {
+                return false;
+            }
+        } else {
+            // 降级兜底逻辑
+            let has_mentions = mentions.map(|arr| !arr.is_empty()).unwrap_or(false);
+            let is_cmd = text.trim_start().starts_with('/') || text.trim_start().starts_with('@');
+            if !has_mentions && !is_cmd {
+                return false;
+            }
+        }
+    }
+
+    true
 }
 
 /// 解析飞书事件时间戳（支持毫秒字符串、秒字符串、数值毫秒及数值秒），统一返回毫秒
@@ -584,5 +660,87 @@ mod tests {
             Some(1700000000000)
         );
         assert_eq!(parse_timestamp_ms(&serde_json::json!("invalid")), None);
+    }
+
+    #[test]
+    fn test_should_respond_to_message_group_mentions() {
+        let self_id = "ou_bot_hermes_1";
+        let other_bot_id = "ou_bot_hermes_2";
+        let user_id = "ou_user_123";
+
+        // 1. 发送者是自己 -> 坚决不回复（防止死循环）
+        assert!(!should_respond_to_message(
+            Some(self_id),
+            self_id,
+            "group",
+            "hello",
+            Some(&[serde_json::json!({ "id": { "open_id": self_id } })])
+        ));
+
+        // 2. 群聊中，其他人 @ 自己 -> 必须回复
+        assert!(should_respond_to_message(
+            Some(self_id),
+            user_id,
+            "group",
+            "@hermes_1 你好",
+            Some(&[serde_json::json!({ "id": { "open_id": self_id } })])
+        ));
+
+        // 3. 群聊中，其他机器人 @ 自己 -> 必须回复（支持机器人互相协同）
+        assert!(should_respond_to_message(
+            Some(self_id),
+            other_bot_id,
+            "group",
+            "@hermes_1 请处理这个任务",
+            Some(&[serde_json::json!({ "id": { "open_id": self_id } })])
+        ));
+
+        // 4. 群聊中，其他人只 @ 了另一个机器人 -> 当前机器人不回复
+        assert!(!should_respond_to_message(
+            Some(self_id),
+            user_id,
+            "group",
+            "@hermes_2 你好",
+            Some(&[serde_json::json!({ "id": { "open_id": other_bot_id } })])
+        ));
+
+        // 5. 群聊中，同时 @ 了多个机器人（包括自己） -> 当前机器人必须回复
+        assert!(should_respond_to_message(
+            Some(self_id),
+            user_id,
+            "group",
+            "@hermes_1 @hermes_2 都在吗",
+            Some(&[
+                serde_json::json!({ "id": { "open_id": other_bot_id } }),
+                serde_json::json!({ "id": { "open_id": self_id } }),
+            ])
+        ));
+
+        // 6. 群聊中，未 @ 任何机器人且无指令 -> 不回复
+        assert!(!should_respond_to_message(
+            Some(self_id),
+            user_id,
+            "group",
+            "大家吃饭了吗",
+            None
+        ));
+
+        // 7. 群聊中，未 @ 自身但输入了 /help 等命令 -> 避免多机器人抢答冲突，不显式 @ 自己则不回复
+        assert!(!should_respond_to_message(
+            Some(self_id),
+            user_id,
+            "group",
+            "/help",
+            None
+        ));
+
+        // 8. 单聊场景 (p2p) -> 无需 @，直接响应
+        assert!(should_respond_to_message(
+            Some(self_id),
+            user_id,
+            "p2p",
+            "你好",
+            None
+        ));
     }
 }
