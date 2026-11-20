@@ -801,6 +801,31 @@ static SESSION_CACHE: OnceLock<Mutex<HashMap<String, (String, i64)>>> = OnceLock
 static SESSION_OWNER: OnceLock<Mutex<HashMap<String, String>>> = OnceLock::new();
 /// Maps pty_session_id -> spawn_timestamp_ms
 static PTY_SPAWNS: OnceLock<Mutex<HashMap<String, i64>>> = OnceLock::new();
+/// Maps session_id -> latest valid AgentStateInfo (protects against transient SQLite lock / busy timeouts)
+static SESSION_LAST_KNOWN_STATE: OnceLock<Mutex<HashMap<String, AgentStateInfo>>> = OnceLock::new();
+
+pub fn get_last_known_state(session_id: &str) -> Option<AgentStateInfo> {
+    SESSION_LAST_KNOWN_STATE
+        .get_or_init(|| Mutex::new(HashMap::new()))
+        .lock()
+        .unwrap()
+        .get(session_id)
+        .cloned()
+}
+
+pub fn set_last_known_state(session_id: &str, info: &AgentStateInfo) {
+    SESSION_LAST_KNOWN_STATE
+        .get_or_init(|| Mutex::new(HashMap::new()))
+        .lock()
+        .unwrap()
+        .insert(session_id.to_string(), info.clone());
+}
+
+pub fn clear_last_known_state(session_id: &str) {
+    if let Some(cell) = SESSION_LAST_KNOWN_STATE.get() {
+        cell.lock().unwrap().remove(session_id);
+    }
+}
 
 /// Time window (ms) during which a PTY's input is considered "active".
 /// 30 seconds covers user thinking time between prompt submissions.
@@ -862,6 +887,7 @@ pub fn cleanup_pty(pty_session_id: &str) {
                     owners_guard.remove(&sess_id);
                 }
             }
+            clear_last_known_state(&sess_id);
         }
     }
     if let Some(cell) = LAST_ACTIVE_PTY.get() {
@@ -990,7 +1016,7 @@ impl AgentMonitor {
         let flags = OpenFlags::SQLITE_OPEN_READ_ONLY
             | OpenFlags::SQLITE_OPEN_URI;
         let conn = Connection::open_with_flags(db_path, flags)?;
-        let _ = conn.execute_batch("PRAGMA query_only = ON; PRAGMA busy_timeout = 200;");
+        let _ = conn.execute_batch("PRAGMA query_only = ON; PRAGMA busy_timeout = 3000;");
         Ok(conn)
     }
 
@@ -1644,8 +1670,20 @@ impl AgentMonitor {
             return Some(waiting());
         }
 
-        // Sort candidates: prioritize started/working sessions first, then by timestamp descending
-        candidates.sort_by(|a, b| b.3.cmp(&a.3).then_with(|| b.1.cmp(&a.1)));
+        // Sort candidates:
+        // 1. Prioritize sessions already owned by this PTY (highest affinity)
+        // 2. Prioritize started/working sessions
+        // 3. Timestamp descending
+        {
+            let owners_guard = owners.lock().unwrap();
+            candidates.sort_by(|a, b| {
+                let a_mine = owners_guard.get(&a.0).map(|s| s.as_str()) == Some(pty_session_id);
+                let b_mine = owners_guard.get(&b.0).map(|s| s.as_str()) == Some(pty_session_id);
+                b_mine.cmp(&a_mine)
+                    .then_with(|| b.3.cmp(&a.3))
+                    .then_with(|| b.1.cmp(&a.1))
+            });
+        }
 
         let spawn_time_opt = spawns.lock().unwrap().get(pty_session_id).copied();
         let spawn_time = spawn_time_opt.unwrap_or(0);
@@ -1680,12 +1718,9 @@ impl AgentMonitor {
                     || is_zcode_session_id(&cand_sid);
 
                 if is_isolated {
-                    // For mcode and agy, multiple PTYs run distinct instances.
-                    // If the original PTY is alive, NEVER steal its session while it is working,
-                    // and NEVER steal a session that was active before this PTY was spawned.
-                    if is_candidate_working || cand_ts < spawn_time {
-                        continue;
-                    }
+                    // For mcode, agy, zcode, multiple PTYs run distinct instances in their own terminals.
+                    // If the original PTY is alive, NEVER steal its session under any circumstances.
+                    continue;
                 } else {
                     // For opencode, transfer is only allowed if this session had new activity AFTER this PTY spawned.
                     if cand_ts < spawn_time {
@@ -1863,48 +1898,69 @@ impl AgentMonitor {
         };
 
         eprintln!("[AgentPoll:zcode] {:?}, session: {}", state, session_id);
-        Some(AgentStateInfo {
+        let info = AgentStateInfo {
             state,
             session_id: session_id.to_string(),
             session_title,
-        })
+        };
+        set_last_known_state(session_id, &info);
+        Some(info)
     }
 
     fn poll_agy_session(&self, conn: &Connection, conversation_id: &str) -> Option<AgentStateInfo> {
+        type AgySummaryRow = (Option<String>, Option<String>, String, bool, bool);
         let mut session_title: Option<String> = None;
         let mut status = String::new();
         let mut not_fully_idle = false;
         let mut killed = false;
 
-        if let Ok(mut stmt) = conn.prepare(
-            "SELECT title, preview, status, not_fully_idle, killed \
-             FROM conversation_summaries WHERE conversation_id = ?1 LIMIT 1"
-        ) {
-            if let Ok(row) = stmt.query_row(rusqlite::params![conversation_id], |r| {
-                let t: Option<String> = r.get(0).ok();
-                let p: Option<String> = r.get(1).ok();
-                let st: String = r.get(2).unwrap_or_default();
-                let nfi: bool = r.get::<_, i64>(3).map(|v| v != 0).unwrap_or(false);
-                let kd: bool = r.get::<_, i64>(4).map(|v| v != 0).unwrap_or(false);
-                Ok((t, p, st, nfi, kd))
-            }) {
-                if let Some(t) = row.0 {
-                    let tr = t.trim().to_string();
+        let query_res = (|| -> Result<Option<AgySummaryRow>, rusqlite::Error> {
+            let mut stmt = conn.prepare(
+                "SELECT title, preview, status, not_fully_idle, killed \
+                 FROM conversation_summaries WHERE conversation_id = ?1 LIMIT 1"
+            )?;
+            let mut rows = stmt.query(rusqlite::params![conversation_id])?;
+            if let Some(row) = rows.next()? {
+                let t: Option<String> = row.get(0).ok();
+                let p: Option<String> = row.get(1).ok();
+                let st: String = row.get(2).unwrap_or_default();
+                let nfi: bool = row.get::<_, i64>(3).map(|v| v != 0).unwrap_or(false);
+                let kd: bool = row.get::<_, i64>(4).map(|v| v != 0).unwrap_or(false);
+                Ok(Some((t, p, st, nfi, kd)))
+            } else {
+                Ok(None)
+            }
+        })();
+
+        match query_res {
+            Ok(Some((t, p, st, nfi, kd))) => {
+                if let Some(t_val) = t {
+                    let tr = t_val.trim().to_string();
                     if !tr.is_empty() {
                         session_title = Some(tr);
                     }
                 }
                 if session_title.is_none() {
-                    if let Some(p) = row.1 {
-                        let tr = p.trim().chars().take(30).collect::<String>();
+                    if let Some(p_val) = p {
+                        let tr = p_val.trim().chars().take(30).collect::<String>();
                         if !tr.is_empty() {
                             session_title = Some(tr);
                         }
                     }
                 }
-                status = row.2;
-                not_fully_idle = row.3;
-                killed = row.4;
+                status = st;
+                not_fully_idle = nfi;
+                killed = kd;
+            }
+            Ok(None) => {
+                clear_last_known_state(conversation_id);
+                return None;
+            }
+            Err(e) => {
+                eprintln!("[AgentPoll:agy] query error for conversation {}: {}, using last known state", conversation_id, e);
+                if let Some(known) = get_last_known_state(conversation_id) {
+                    return Some(known);
+                }
             }
         }
 
@@ -1917,11 +1973,13 @@ impl AgentMonitor {
         };
 
         eprintln!("[AgentPoll:agy] {:?}, conversation: {}", state, conversation_id);
-        Some(AgentStateInfo {
+        let info = AgentStateInfo {
             state,
             session_id: conversation_id.to_string(),
             session_title,
-        })
+        };
+        set_last_known_state(conversation_id, &info);
+        Some(info)
     }
 
     fn poll_mcode_parts(&self, conn: &Connection, session_id: &str) -> Option<AgentStateInfo> {
@@ -1942,11 +2000,13 @@ impl AgentMonitor {
             if let Ok(mut rows) = stmt.query(rusqlite::params![session_id]) {
                 if let Ok(Some(_)) = rows.next() {
                     eprintln!("[AgentPoll:mcode] Question, session: {}", session_id);
-                    return Some(AgentStateInfo {
+                    let info = AgentStateInfo {
                         state: AgentState::Question,
                         session_id: session_id.to_string(),
                         session_title,
-                    });
+                    };
+                    set_last_known_state(session_id, &info);
+                    return Some(info);
                 }
             }
         }
@@ -1956,47 +2016,62 @@ impl AgentMonitor {
             if let Ok(mut rows) = stmt.query(rusqlite::params![session_id]) {
                 if let Ok(Some(_)) = rows.next() {
                     eprintln!("[AgentPoll:mcode] AgentCall, session: {}", session_id);
-                    return Some(AgentStateInfo {
+                    let info = AgentStateInfo {
                         state: AgentState::AgentCall,
                         session_id: session_id.to_string(),
                         session_title,
-                    });
+                    };
+                    set_last_known_state(session_id, &info);
+                    return Some(info);
                 }
             }
         }
 
         // 3. Check local_runtime_sessions for status and error_message
-        if let Ok(mut stmt) = conn.prepare("SELECT status, error_message FROM local_runtime_sessions WHERE session_id = ?1 LIMIT 1") {
-            if let Ok(mut rows) = stmt.query(rusqlite::params![session_id]) {
-                if let Ok(Some(row)) = rows.next() {
-                    let status: String = row.get(0).unwrap_or_default();
-                    let err_msg: Option<String> = row.get(1).ok();
-
-                    let state = match status.as_str() {
-                        "started" => AgentState::Running,
-                        "error" => {
-                            if let Some(err) = err_msg.as_deref().filter(|s| !s.is_empty()) {
-                                eprintln!("[AgentPoll:mcode] Error: {}, session: {}", err, session_id);
-                            }
-                            AgentState::Error
-                        }
-                        _ => AgentState::Waiting,
-                    };
-                    eprintln!("[AgentPoll:mcode] {:?}, session: {}", state, session_id);
-                    return Some(AgentStateInfo {
-                        state,
-                        session_id: session_id.to_string(),
-                        session_title,
-                    });
-                }
+        let query_res = (|| -> Result<Option<(String, Option<String>)>, rusqlite::Error> {
+            let mut stmt = conn.prepare("SELECT status, error_message FROM local_runtime_sessions WHERE session_id = ?1 LIMIT 1")?;
+            let mut rows = stmt.query(rusqlite::params![session_id])?;
+            if let Some(row) = rows.next()? {
+                let status: String = row.get(0).unwrap_or_default();
+                let err_msg: Option<String> = row.get(1).ok();
+                Ok(Some((status, err_msg)))
+            } else {
+                Ok(None)
             }
-        }
+        })();
 
-        Some(AgentStateInfo {
-            state: AgentState::Waiting,
+        let state = match query_res {
+            Ok(Some((status, err_msg))) => match status.as_str() {
+                "started" => AgentState::Running,
+                "error" => {
+                    if let Some(err) = err_msg.as_deref().filter(|s| !s.is_empty()) {
+                        eprintln!("[AgentPoll:mcode] Error: {}, session: {}", err, session_id);
+                    }
+                    AgentState::Error
+                }
+                _ => AgentState::Waiting,
+            },
+            Ok(None) => {
+                clear_last_known_state(session_id);
+                return None;
+            }
+            Err(e) => {
+                eprintln!("[AgentPoll:mcode] query error for session {}: {}, using last known state", session_id, e);
+                if let Some(known) = get_last_known_state(session_id) {
+                    return Some(known);
+                }
+                AgentState::Waiting
+            }
+        };
+
+        eprintln!("[AgentPoll:mcode] {:?}, session: {}", state, session_id);
+        let info = AgentStateInfo {
+            state,
             session_id: session_id.to_string(),
             session_title,
-        })
+        };
+        set_last_known_state(session_id, &info);
+        Some(info)
     }
 
     fn poll_parts(&self, conn: &Connection, session_id: &str) -> Option<AgentStateInfo> {
@@ -2014,15 +2089,21 @@ impl AgentMonitor {
 
         let mut stmt = match conn.prepare("SELECT data, time_created FROM part WHERE session_id = ?1 ORDER BY time_created DESC") {
             Ok(s) => s,
-            Err(_) => {
-                eprintln!("[AgentPoll] parts query prepare failed, Waiting");
+            Err(e) => {
+                eprintln!("[AgentPoll] parts query prepare failed: {}, using last known state", e);
+                if let Some(known) = get_last_known_state(session_id) {
+                    return Some(known);
+                }
                 return Some(AgentStateInfo { state: AgentState::Waiting, session_id: session_id.to_string(), session_title });
             }
         };
         let mut rows = match stmt.query(rusqlite::params![session_id]) {
             Ok(r) => r,
-            Err(_) => {
-                eprintln!("[AgentPoll] parts query failed, Waiting");
+            Err(e) => {
+                eprintln!("[AgentPoll] parts query failed: {}, using last known state", e);
+                if let Some(known) = get_last_known_state(session_id) {
+                    return Some(known);
+                }
                 return Some(AgentStateInfo { state: AgentState::Waiting, session_id: session_id.to_string(), session_title });
             }
         };
@@ -2083,7 +2164,9 @@ impl AgentMonitor {
 
         let state = Self::parse_state(latest_data);
         eprintln!("[AgentPoll] parse_state: {:?}, parts={}, session: {}", state, parts.len(), session_id);
-        Some(AgentStateInfo { state, session_id: session_id.to_string(), session_title })
+        let info = AgentStateInfo { state, session_id: session_id.to_string(), session_title };
+        set_last_known_state(session_id, &info);
+        Some(info)
     }
 
     pub fn reset_idle(&self) {}
@@ -3352,5 +3435,136 @@ mod tests {
 
         cleanup_pty(pty_agy_1);
         cleanup_pty(pty_agy_2);
+    }
+
+    #[test]
+    fn test_dual_agy_ptys_spawned_before_sessions_do_not_steal_on_waiting() {
+        let _lock = TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+        let agy_conn = setup_test_agy_db();
+        let monitor = AgentMonitor::new();
+        let ws_dir = "D:/Develop/loom_dual_spawn";
+
+        let pty_1 = "pty_dual_spawn_1";
+        let pty_2 = "pty_dual_spawn_2";
+
+        // 两个 PTY 都在任务开始前很早就创建好了 (spawn_1 与 spawn_2 时间戳均远早于会话创建)
+        let t_base = now_ms() - 20_000;
+        PTY_SPAWNS.get_or_init(|| Mutex::new(HashMap::new()))
+            .lock().unwrap()
+            .insert(pty_1.to_string(), t_base);
+        PTY_SPAWNS.get_or_init(|| Mutex::new(HashMap::new()))
+            .lock().unwrap()
+            .insert(pty_2.to_string(), t_base + 100);
+
+        mark_pty_active(pty_1);
+
+        // 写入任务 1，时间戳在两个 PTY spawn 之后
+        agy_conn.execute(
+            "INSERT INTO conversation_summaries (conversation_id, title, preview, last_modified_time, workspace_uris, status, not_fully_idle, killed) \
+             VALUES (?1, ?2, ?3, datetime('now'), ?4, ?5, ?6, ?7)",
+            rusqlite::params![
+                "aaaaaaaa-1111-1111-1111-aaaaaaaaaaaa",
+                "任务1",
+                "预览1",
+                "[\"file:///D:/Develop/loom_dual_spawn\"]",
+                "CASCADE_RUN_STATUS_RUNNING",
+                1,
+                0
+            ],
+        ).unwrap();
+
+        // PTY 1 轮询认领任务 1
+        let s1 = monitor.poll_state_for_pty_with_conns(
+            None, None, Some(&agy_conn), None, ws_dir, pty_1, Some("agy")
+        ).unwrap();
+        assert_eq!(s1.state, AgentState::Running);
+        assert_eq!(s1.session_id, "aaaaaaaa-1111-1111-1111-aaaaaaaaaaaa");
+
+        // 任务 1 回合结束，进入 IDLE 待命态
+        agy_conn.execute(
+            "UPDATE conversation_summaries SET status = 'CASCADE_RUN_STATUS_IDLE', not_fully_idle = 0 WHERE conversation_id = 'aaaaaaaa-1111-1111-1111-aaaaaaaaaaaa'",
+            [],
+        ).unwrap();
+
+        // 此时用户在 PTY 2 中敲击激活 (mark_pty_active)
+        mark_pty_active(pty_2);
+
+        // 关键断言：即使任务 1 的时间戳在 PTY 2 spawn 之后，且任务 1 当前不是 working 态，
+        // 只要持有任务 1 的原 PTY 1 依然存活，PTY 2 绝不可窃取任务 1！
+        let s2 = monitor.poll_state_for_pty_with_conns(
+            None, None, Some(&agy_conn), None, ws_dir, pty_2, Some("agy")
+        ).unwrap();
+        assert_eq!(s2.state, AgentState::Waiting);
+        assert_ne!(s2.session_id, "aaaaaaaa-1111-1111-1111-aaaaaaaaaaaa");
+
+        // PTY 1 轮询依然牢牢持有自身任务 1，cache 未被清空
+        let s1_again = monitor.poll_state_for_pty_with_conns(
+            None, None, Some(&agy_conn), None, ws_dir, pty_1, Some("agy")
+        ).unwrap();
+        assert_eq!(s1_again.state, AgentState::Waiting);
+        assert_eq!(s1_again.session_id, "aaaaaaaa-1111-1111-1111-aaaaaaaaaaaa");
+
+        cleanup_pty(pty_1);
+        cleanup_pty(pty_2);
+    }
+
+    #[test]
+    fn test_agy_sqlite_transient_error_preserves_running_state() {
+        let _lock = TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+        let agy_conn = setup_test_agy_db();
+        let monitor = AgentMonitor::new();
+        let ws_dir = "D:/Develop/loom_lock_test";
+        let pty = "pty_lock_test";
+        let sid = "bbbbbbbb-2222-2222-2222-bbbbbbbbbbbb";
+
+        register_pty(pty);
+        mark_pty_active(pty);
+
+        agy_conn.execute(
+            "INSERT INTO conversation_summaries (conversation_id, title, preview, last_modified_time, workspace_uris, status, not_fully_idle, killed) \
+             VALUES (?1, ?2, ?3, datetime('now'), ?4, ?5, ?6, ?7)",
+            rusqlite::params![
+                sid,
+                "锁冲突任务",
+                "内容",
+                "[\"file:///D:/Develop/loom_lock_test\"]",
+                "CASCADE_RUN_STATUS_RUNNING",
+                1,
+                0
+            ],
+        ).unwrap();
+
+        // 1. 首次正常轮询 -> 识别为 Running 并缓存 last known state
+        let s1 = monitor.poll_state_for_pty_with_conns(
+            None, None, Some(&agy_conn), None, ws_dir, pty, Some("agy")
+        ).unwrap();
+        assert_eq!(s1.state, AgentState::Running);
+        assert_eq!(s1.session_id, sid);
+
+        // 2. 模拟外部 SQLite 出现错误（例如表被重命名模拟 transient query error）
+        agy_conn.execute_batch("ALTER TABLE conversation_summaries RENAME TO conversation_summaries_locked;").unwrap();
+
+        // 再次轮询 -> 因为数据库报错，触发 Last Known State 容灾，依然稳定返回 Running 态，绝不丢灯！
+        let s_err = monitor.poll_state_for_pty_with_conns(
+            None, None, Some(&agy_conn), None, ws_dir, pty, Some("agy")
+        ).unwrap();
+        assert_eq!(s_err.state, AgentState::Running);
+        assert_eq!(s_err.session_id, sid);
+
+        // 3. 恢复数据库表名，并更新为正常 IDLE
+        agy_conn.execute_batch("ALTER TABLE conversation_summaries_locked RENAME TO conversation_summaries;").unwrap();
+        agy_conn.execute(
+            "UPDATE conversation_summaries SET status = 'CASCADE_RUN_STATUS_IDLE', not_fully_idle = 0 WHERE conversation_id = ?1",
+            rusqlite::params![sid],
+        ).unwrap();
+
+        // 再次轮询 -> 正常读取到真实完成态 Waiting
+        let s_recovered = monitor.poll_state_for_pty_with_conns(
+            None, None, Some(&agy_conn), None, ws_dir, pty, Some("agy")
+        ).unwrap();
+        assert_eq!(s_recovered.state, AgentState::Waiting);
+        assert_eq!(s_recovered.session_id, sid);
+
+        cleanup_pty(pty);
     }
 }
