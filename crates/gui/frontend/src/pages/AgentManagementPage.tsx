@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import WindowControlButtons from '../components/WindowControlButtons';
-import { getAgentDiscoveryStatus, checkAgentLatestVersion, fetchProviderModels, configureOpencodeProvider, configureMcodeProvider, configureAgyProvider, configureZcodeProvider, triggerInjectLoomSkills, getInjectedSkillPaths, getLoomSkillVersion, installLoomCli, getLoomCliStatus, getTemplates, createTemplate, updateTemplate, deleteTemplate, importCliTool, getCliTools, openUrl } from '../api';
+import { getAgentDiscoveryStatus, checkAgentLatestVersion, fetchProviderModels, configureOpencodeProvider, configureMcodeProvider, configureAgyProvider, configureZcodeProvider, triggerInjectLoomSkills, getInjectedSkillPaths, getLoomSkillVersion, installLoomCli, getLoomCliStatus, getTemplates, createTemplate, updateTemplate, importCliTool, getCliTools, openUrl } from '../api';
 import type { AgentDiscoveryStatus, CliInstallStatus, FetchedModel } from '../types';
 import { useToast } from '../ToastContext';
 import { useI18n } from '../I18nContext';
@@ -412,106 +412,67 @@ export const AgentManagementPage: React.FC<AgentManagementPageProps> = ({ onOpen
         }
 
         const existingTemplates = await getTemplates();
-        if (targetAgent === 'zcode') {
-          // zcode 的 TUI 不接受 --model 参数（只有 headless 的 --prompt/-p 模式才允许，
-          // 传入会直接报 "--model requires --prompt or -p" 并退出）。
-          // 因此这里只维护一个 zcode 模板，模型取自 provider_config.json 里共享的
-          // defaultModelSelection，需要切换模型时在 TUI 内使用 /model。
-          const zcodeTemplates = existingTemplates.filter(
-            t => t.cli_id === targetToolId && (t.name === 'zcode' || t.name.startsWith('zcode '))
-          );
-          const [primary, ...stale] = zcodeTemplates;
-          if (primary) {
-            await updateTemplate(
-              primary.id,
-              'zcode',
-              [],
-              primary.env,
-              primary.env_var_ids || [],
-              primary.pwd,
-              primary.env_mode || 'inherit'
-            );
-          } else {
-            await createTemplate(
-              targetToolId,
-              'zcode',
-              [],
-              {},
-              [],
-              undefined,
-              'inherit'
-            );
-          }
-          // 清理旧版本生成的、携带无效 --model 参数的 zcode 模板，避免用户点到无法启动的模板
-          for (const t of stale) {
-            if (t.args && t.args.includes('--model')) {
-              await deleteTemplate(t.id);
-            } else {
+        for (const model of selectedModels) {
+          const tplName = `${targetAgent} ${model}`;
+          const existing = existingTemplates.find(t => t.cli_id === targetToolId && t.name === tplName);
+
+          if (targetAgent === 'agy') {
+            const cleanBaseUrl = normalizeAgyBaseUrl(baseUrl);
+            const envVars: Record<string, string> = {
+              'GOOGLE_GEMINI_BASE_URL': cleanBaseUrl,
+              'GEMINI_API_KEY': apiKey,
+              'GEMINI_MODEL': model,
+            };
+            if (existing) {
               await updateTemplate(
-                t.id,
-                t.name,
+                existing.id,
+                tplName,
+                ['--model', model, '--dangerously-skip-permissions'],
+                { ...existing.env, ...envVars },
+                existing.env_var_ids || [],
+                existing.pwd,
+                existing.env_mode || 'inherit'
+              );
+            } else {
+              await createTemplate(
+                targetToolId,
+                tplName,
+                ['--model', model, '--dangerously-skip-permissions'],
+                envVars,
                 [],
-                t.env,
-                t.env_var_ids || [],
-                t.pwd,
-                t.env_mode || 'inherit'
+                undefined,
+                'inherit'
+              );
+            }
+          } else {
+            const modelArg = targetAgent === 'mcode'
+              ? `custom_provider:${providerId}/${model}`
+              : `${providerId}/${model}`;
+            const modelArgs = ['--model', modelArg];
+            if (existing) {
+              await updateTemplate(
+                existing.id,
+                tplName,
+                modelArgs,
+                existing.env,
+                existing.env_var_ids || [],
+                existing.pwd,
+                existing.env_mode || 'inherit'
+              );
+            } else {
+              await createTemplate(
+                targetToolId,
+                tplName,
+                modelArgs,
+                {},
+                [],
+                undefined,
+                'inherit'
               );
             }
           }
-          toast.success('已自动创建/同步 zcode 运行模板（模型取自共享默认配置，TUI 内可用 /model 切换）');
-        } else {
-          for (const model of selectedModels) {
-            const tplName = `${targetAgent} ${model}`;
-            const existing = existingTemplates.find(t => t.cli_id === targetToolId && t.name === tplName);
-
-            if (targetAgent === 'agy') {
-              const cleanBaseUrl = normalizeAgyBaseUrl(baseUrl);
-              const envVars: Record<string, string> = {
-                'GOOGLE_GEMINI_BASE_URL': cleanBaseUrl,
-                'GEMINI_API_KEY': apiKey,
-                'GEMINI_MODEL': model,
-              };
-              if (existing) {
-                await updateTemplate(
-                  existing.id,
-                  tplName,
-                  ['--model', model, '--dangerously-skip-permissions'],
-                  { ...existing.env, ...envVars },
-                  existing.env_var_ids || [],
-                  existing.pwd,
-                  existing.env_mode || 'inherit'
-                );
-              } else {
-                await createTemplate(
-                  targetToolId,
-                  tplName,
-                  ['--model', model, '--dangerously-skip-permissions'],
-                  envVars,
-                  [],
-                  undefined,
-                  'inherit'
-                );
-              }
-            } else {
-              const modelArg = targetAgent === 'mcode'
-                ? `custom_provider:${providerId}/${model}`
-                : `${providerId}/${model}`;
-              const modelArgs = ['--model', modelArg];
-              if (!existing) {
-                await createTemplate(
-                  targetToolId,
-                  tplName,
-                  modelArgs,
-                  {},
-                  [],
-                  undefined,
-                  'inherit'
-                );
-              }
-            }
-          }
-          toast.success(`已自动创建/同步 ${selectedModels.length} 个 ${targetAgent} 运行模板！`);
         }
+        toast.success(`已自动创建/同步 ${selectedModels.length} 个 ${targetAgent} 运行模板！`);
         window.dispatchEvent(new Event('loom-refresh-data'));
       }
     } catch (err: unknown) {

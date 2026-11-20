@@ -330,4 +330,103 @@ describe("AgentManagementPage", () => {
       }));
     });
   });
+
+  it("配置引导保存 zcode 配置时为每个选中模型自动创建带有 --model 参数的 Loom 运行模板", async () => {
+    vi.mocked(invoke).mockImplementation(async (cmd: string) => {
+      if (cmd === "get_agent_discovery_status") {
+        return {
+          agents: [
+            {
+              name: "zcode",
+              installed: true,
+              version: "3.18.2-47",
+              executable_path: "C:\\bin\\zcode.cmd",
+              install_command: "npm install -g zcode-app-cli@latest",
+              download_url: "https://www.npmjs.com/package/zcode-app-cli",
+            },
+          ],
+          npm_installed: true,
+          npm_path: "C:\\bin\\npm.cmd",
+          node_install_command: "winget install NodeJS",
+          node_download_url: "https://nodejs.org",
+        };
+      }
+      if (cmd === "check_agent_latest_version") {
+        return "3.18.2-47";
+      }
+      if (cmd === "get_injected_skill_paths") {
+        return [];
+      }
+      if (cmd === "get_loom_skill_version") {
+        return "0.8.1";
+      }
+      if (cmd === "get_loom_cli_status") {
+        return { installed: true, version: "0.8.1" };
+      }
+      if (cmd === "fetch_provider_models") {
+        return [
+          { id: "gpt-4o", name: "GPT-4o" }
+        ];
+      }
+      if (cmd === "configure_zcode_provider") {
+        return "C:\\Users\\test\\.zcode\\v2\\provider_config.json";
+      }
+      if (cmd === "get_cli_tools") {
+        return [{ id: "cli-zcode-id", name: "zcode", path: "C:\\bin\\zcode.cmd" }];
+      }
+      if (cmd === "get_templates") {
+        return [];
+      }
+      if (cmd === "create_template") {
+        return {
+          id: "tpl-1",
+          cli_id: "cli-zcode-id",
+          name: "zcode gpt-4o",
+          args: ["--model", "loom/gpt-4o"],
+          env: {},
+          env_var_ids: [],
+          created_at: 1000,
+          updated_at: 1000,
+        };
+      }
+      return null;
+    });
+
+    const { findAllByText, findByText, getByPlaceholderText } = render(
+      <TestWrapper>
+        <AgentManagementPage active={true} />
+      </TestWrapper>
+    );
+
+    // 选中 zcode
+    const zcodeLabels = await findAllByText("ZCode");
+    fireEvent.click(zcodeLabels[0]);
+
+    // 填写 Base URL
+    const baseUrlInput = getByPlaceholderText(/api\.openai\.com/);
+    fireEvent.change(baseUrlInput, { target: { value: "https://api.example.com/v1" } });
+
+    // 点击获取模型
+    const fetchBtn = await findByText("获取模型列表");
+    fireEvent.click(fetchBtn);
+
+    // 等待模型加载并勾选
+    const modelItem = await findByText("GPT-4o");
+    fireEvent.click(modelItem);
+
+    // 点击保存并创建模板
+    const saveBtn = await findByText(/写入 provider_config\.json & 自动创建 Loom 运行模板/);
+    fireEvent.click(saveBtn);
+
+    await waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith("configure_zcode_provider", expect.objectContaining({
+        providerId: "loom",
+        selectedModels: ["gpt-4o"],
+      }));
+      expect(invoke).toHaveBeenCalledWith("create_template", expect.objectContaining({
+        name: "zcode gpt-4o",
+        args: ["--model", "loom/gpt-4o"],
+      }));
+    });
+  });
 });

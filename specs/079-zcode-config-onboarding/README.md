@@ -43,8 +43,7 @@ Loom「配置引导」页（AgentManagementPage）当前只支持 opencode / mco
 - [x] **手工模型配置的字段必须严格落在 zcode 允许的集合内**：`enabled` / `properties{contextWindow, supportsJsonSchemaOutput, supportsNativeWebSearch, supportsMidConversationSystem, inputFormat{supportsImage, supportsVideo, supportsPdf}}` / `optionSpecs{reasoningLevel, maxOutputTokens{max}}`。该 schema 为 strict，多写一个字段（如 `supportsText`、`outputFormat`、`maxOutputTokens.map`）会导致整个 `provider_config.json` 被拒绝，Provider 注册不上，表现为 `Provider Registry 不存在 Model: <provider>/<model>`。
 - [x] 协议映射：OpenAI 兼容 → `openai-chat-completions`；Anthropic → `anthropic-messages`；不支持 Gemini。
 - [x] 写入必须原子（临时文件 + rename），且严格保留既有 provider 规则与模型规则。
-- [x] zcode **只维护一个 `zcode` 模板且不带任何参数**：zcode 的 TUI 不接受 `--model`（只有 headless 的 `--prompt`/`-p` 模式允许，传入会直接报 `--model requires --prompt or -p` 并退出），模型由共享的 `defaultModelSelection` 决定，需要切换时在 TUI 内使用 `/model`。
-- [x] 旧版本生成的、携带无效 `--model` 参数的 zcode 模板在保存配置时自动清理。
+- [x] 配置成功后为每个选中模型创建/同步 Loom 运行模板，参数为 `['--model', `${providerId}/${model}`]`（此前旧版 zcode TUI 曾因拒绝交互式 `--model` 暂时退避为无参模板，现随着 zcode CLI 全局支持 `--model <provider/model>` 已全面恢复为多模型自动模板注入）。
 
 ### 4. 前端
 - [x] 「配置引导」页目标 Agent 选择器增加 ZCode，配套安装 / 更新 / 版本检测按钮与提示文案。
@@ -75,7 +74,7 @@ Loom「配置引导」页（AgentManagementPage）当前只支持 opencode / mco
 - **配置目标文件**：优先 `ZCODE_PERSONAL_PROVIDER_CONFIG_FILE`，其次 `ZCODE_DATA_BASE_DIR/v2/provider_config.json`，默认 `~/.zcode/v2/provider_config.json`。前者用于把某个模板的 provider 隔离到独立文件。
 - **模型配置用 manual 规则**：自定义模型不在 zcode 内置目录中，仅写 smart overlay（`providerModelRules`）时模型不可选，因此每个模型都补一份完整的 `manualProviderModelRules`；字段必须严格等于 manual schema 的允许集合，否则整个文件被 strict schema 拒绝。
 - **协议不含 Gemini**：官方 provider schema 只认 `anthropic-messages` / `openai-chat-completions` / `openai-responses`，与 mcode 一样只开放 OpenAI 兼容与 Anthropic。
-- **模板不带 `--model`**：zcode TUI 拒绝 `--model`（仅 headless 可用），因此模板是纯净的 `zcode`，模型由共享默认配置决定。
+- **模板参数**：`--model <providerId>/<modelId>`，与 zcode 的 `--model <provider/model>` 语义一致；保存配置时自动为每个选中模型创建或同步运行模板。
 
 ### 验证
 - 单元测试：`test_discover_agents`、`test_build_zcode_api_type`、`test_normalize_zcode_base_url`、`test_write_zcode_config_merge_existing`、`test_write_zcode_config_overwrites_same_provider`（含手工模型配置字段白名单断言）。
