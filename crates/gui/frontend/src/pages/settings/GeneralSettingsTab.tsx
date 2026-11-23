@@ -129,11 +129,11 @@ function ThemeMiniPreview({ type, active }: { type: "day" | "gray"; active: bool
 			accent: "#7c3aed",
 		},
 		gray: {
-			border: active ? "var(--accent-purple, #8b5cf6)" : "var(--border-subtle, #393b40)",
-			titleBg: "#393b40",
+			border: active ? "var(--accent-purple, #8b5cf6)" : "var(--border-subtle, #33363b)",
+			titleBg: "#33363b",
 			dots: "#6a6e75",
-			sidebarBg: "#2f3135",
-			contentBg: "#2b2d30",
+			sidebarBg: "#282a2e",
+			contentBg: "#232528",
 			line: "rgba(255, 255, 255, 0.10)",
 			accent: "#9333ea",
 		},
@@ -1278,7 +1278,7 @@ export default function GeneralSettingsTab({
 							</div>
 							<div
 								style={{
-									background: "#121214",
+									background: "#1E1F22",
 									border: "1px solid var(--border-subtle, #27272a)",
 									borderRadius: "var(--radius-sm, 6px)",
 									padding: "12px 14px",
@@ -2487,7 +2487,7 @@ export default function GeneralSettingsTab({
 								<div
 									style={{
 										height: "56px",
-										backgroundColor: "#121214",
+										backgroundColor: "#1E1F22",
 										backgroundImage: "linear-gradient(45deg, rgba(255,255,255,0.03) 25%, transparent 25%, transparent 75%, rgba(255,255,255,0.03) 75%), linear-gradient(45deg, rgba(255,255,255,0.03) 25%, transparent 25%, transparent 75%, rgba(255,255,255,0.03) 75%)",
 										backgroundSize: "16px 16px",
 										backgroundPosition: "0 0, 8px 8px",

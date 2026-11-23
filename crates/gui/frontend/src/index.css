@@ -163,14 +163,14 @@ body {
   --ambient-orb-emerald: radial-gradient(circle, rgba(16,185,129,0.04) 0%, transparent 70%);
 
   /* ─── Terminal variables (dark default) ─── */
-  --terminal-bg: #121214;
+  --terminal-bg: #1E1F22;
   --terminal-text: #c8c8c8;
   --terminal-error: #f87171;
 }
 
 /* ─── Gray Eye-Care Theme Override ─── */
 body.theme-gray {
-  --bg-base:       #2b2d30; /* Soft dark gray, low contrast JetBrains-style */
+  --bg-base:       #232528; /* Soft deeper eye-care dark gray */
   --bg-surface:    rgba(255,255,255,0.03);
   --bg-elevated:   rgba(255,255,255,0.05);
   --bg-hover:      rgba(255,255,255,0.07);
@@ -193,7 +193,7 @@ body.theme-gray {
   --bg-sidebar:    rgba(255,255,255,0.018);
   --bg-card-outer: rgba(255,255,255,0.025);
   --bg-card-inner: rgba(255,255,255,0.035);
-  --bg-modal:      #313438;
+  --bg-modal:      #292b2f;
   --border-inset:  rgba(255,255,255,0.06);
   --shadow-card-inset: inset 0 1px 0 rgba(255,255,255,0.04);
 
@@ -201,11 +201,11 @@ body.theme-gray {
   --shadow-glow-emerald: 0 0 35px rgba(16,185,129,0.04);
   --shadow-card: 0 4px 24px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.04);
 
-  --ambient-orb-purple: radial-gradient(circle, rgba(139,92,246,0.04) 0%, transparent 70%);
-  --ambient-orb-emerald: radial-gradient(circle, rgba(16,185,129,0.03) 0%, transparent 70%);
+  --ambient-orb-purple: none;
+  --ambient-orb-emerald: none;
 
   /* Gray theme terminal colors */
-  --terminal-bg: #2b2d30;
+  --terminal-bg: #1E1F22;
   --terminal-text: #c8c8c8;
   --terminal-error: #f87171;
 }
@@ -247,7 +247,7 @@ body.theme-day {
   --ambient-orb-emerald: radial-gradient(circle, rgba(5,150,105,0.02) 0%, transparent 70%);
 
   /* ─── Terminal variables (day) ─── */
-  --terminal-bg: #121214;
+  --terminal-bg: #1E1F22;
   --terminal-text: #c8c8c8;
   --terminal-error: #f87171;
 }

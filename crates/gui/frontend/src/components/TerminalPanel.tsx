@@ -102,7 +102,7 @@ export function TerminalPanel({ terminals, terminalSlots, activeTabId, layoutMod
             minWidth: 0,
             minHeight: 0,
             overflow: isMultiSplit ? 'visible' : 'hidden',
-            backgroundColor: '#121214',
+            backgroundColor: '#1E1F22',
             gridArea: areaName,
           }}
         >
@@ -125,7 +125,7 @@ export function TerminalPanel({ terminals, terminalSlots, activeTabId, layoutMod
           minWidth: 0,
           minHeight: 0,
           overflow: 'hidden',
-          backgroundColor: '#121214',
+          backgroundColor: '#1E1F22',
           flex: 1,
         }}
       >
@@ -149,7 +149,7 @@ export function TerminalPanel({ terminals, terminalSlots, activeTabId, layoutMod
               minWidth: 0,
               minHeight: 0,
               overflow: 'hidden',
-              backgroundColor: '#121214',
+              backgroundColor: '#1E1F22',
               gridArea: areaName,
             }}
           >
@@ -182,7 +182,7 @@ export function TerminalPanel({ terminals, terminalSlots, activeTabId, layoutMod
       minHeight: 0,
       display: (showGrid || terminals.some(t => t.id === activeTabId)) ? 'flex' : 'none',
       flexDirection: 'column',
-      backgroundColor: '#121214',
+      backgroundColor: '#1E1F22',
       boxSizing: 'border-box',
       overflow: 'hidden',
       padding: (showGrid && dims) ? '0 1px 1.5px 0' : 0,
