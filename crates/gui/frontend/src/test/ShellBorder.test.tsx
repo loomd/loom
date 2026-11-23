@@ -95,7 +95,7 @@ function renderWithProviders(ui: React.ReactElement) {
 
 describe("Shell Border Settings & Features", () => {
   const defaultSettingsProps = {
-    theme: "dark" as const,
+    theme: "gray" as const,
     onThemeChange: vi.fn(async () => {}),
     projectColumnAlign: "top",
     onProjectColumnAlignChange: vi.fn(async () => {}),

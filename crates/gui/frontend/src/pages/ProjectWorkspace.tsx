@@ -40,7 +40,7 @@ interface Props {
   onUnregisterProject: (proj: Project) => void;
   isSubWindow?: boolean;
   compositeState?: CompositeState;
-  theme?: 'dark' | 'day' | 'gray';
+  theme?: 'day' | 'gray';
   fontSize?: string;
   fontFamily?: string;
   isSidebarCollapsed?: boolean;

@@ -44,7 +44,7 @@ describe("WindowControlButtons", () => {
 
 describe("GeneralSettingsTab", () => {
   const defaultProps = {
-    theme: "dark" as const,
+    theme: "gray" as const,
     onThemeChange: vi.fn(async () => {}),
     projectColumnAlign: "top",
     onProjectColumnAlignChange: vi.fn(async () => {}),
@@ -211,7 +211,7 @@ describe("GlobalDocModal", () => {
 
 describe("SettingsPage", () => {
   const defaultProps = {
-    theme: "dark" as const,
+    theme: "gray" as const,
     onThemeChange: vi.fn(async () => {}),
     projectColumnAlign: "top",
     onProjectColumnAlignChange: vi.fn(async () => {}),

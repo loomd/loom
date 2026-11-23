@@ -7,8 +7,8 @@ import LibsTab from "./settings/LibsTab";
 import EnvVarsPage from "./EnvVarsPage";
 import type { DownloadProgress } from "../hooks/useUpdateChecker";
 interface Props {
-	theme: "dark" | "day" | "gray";
-	onThemeChange: (newTheme: "dark" | "day" | "gray") => Promise<void>;
+	theme: "day" | "gray";
+	onThemeChange: (newTheme: "day" | "gray") => Promise<void>;
 	projectColumnAlign: string;
 	onProjectColumnAlignChange: (align: string) => Promise<void>;
 	fontFamily: string;

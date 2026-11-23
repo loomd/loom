@@ -73,7 +73,7 @@ let original = AppConfig {
 		templates: vec![template],
 		env_vars: Vec::new(),
 		language: "zh".to_string(),
-		theme: "dark".to_string(),
+		theme: "gray".to_string(),
 		font_family: "Plus Jakarta Sans".to_string(),
 		font_size: "15px".to_string(),
 		terminal_font_size: "13px".to_string(),

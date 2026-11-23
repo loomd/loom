@@ -14,7 +14,7 @@ interface TerminalPanelProps {
   layoutMode: GridLayout | null;
   showGrid: boolean;
   isVisible: boolean;
-  theme?: 'dark' | 'day' | 'gray';
+  theme?: 'day' | 'gray';
   fontSize?: string | number;
   fontFamily?: string;
   onAddTerminal?: (targetSlotIndex?: number) => void;

@@ -11,17 +11,16 @@ loader.config({ monaco });
 interface FileEditorProps {
   filePath: string;
   onContentDirtyChange: (isDirty: boolean) => void;
-  theme?: 'dark' | 'day' | 'gray';
+  theme?: 'day' | 'gray';
   /** Incremented externally to force a re-read from disk */
   refreshKey?: number;
 }
 
-const getMonacoTheme = (theme?: 'dark' | 'day' | 'gray') => {
+const getMonacoTheme = (theme?: 'day' | 'gray') => {
   switch (theme) {
     case 'day':
       return 'vs';
     case 'gray':
-      return 'vs-dark';
     default:
       return 'vs-dark';
   }

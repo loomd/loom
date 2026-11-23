@@ -273,10 +273,10 @@ describe("TerminalTab", () => {
 
   it("renders with different themes", async () => {
     const { TerminalTab } = await import("../components/TerminalTab");
-    const { container: darkContainer } = render(
-      <TerminalTab sessionId="s-1" cwd="/tmp" isVisible={true} theme="dark" />
+    const { container: dayContainer } = render(
+      <TerminalTab sessionId="s-1" cwd="/tmp" isVisible={true} theme="day" />
     );
-    expect(darkContainer.querySelector('[style*="background-color"]')).toBeTruthy();
+    expect(dayContainer.querySelector('[style*="background-color"]')).toBeTruthy();
 
     const { container: grayContainer } = render(
       <TerminalTab sessionId="s-2" cwd="/tmp" isVisible={true} theme="gray" />

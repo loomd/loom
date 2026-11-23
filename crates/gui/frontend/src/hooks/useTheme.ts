@@ -32,7 +32,7 @@ function applyFontToDocument(family: string, size: string) {
 }
 
 export function useTheme(toast: { error: (msg: string) => void }) {
-	const [theme, setThemeState] = useState<"dark" | "day" | "gray">("gray");
+	const [theme, setThemeState] = useState<"day" | "gray">("gray");
 	const [fontFamily, setFontFamilyState] = useState("HarmonyOS Sans SC");
 	const [fontSize, setFontSizeState] = useState("15px");
 	const [terminalFontSize, setTerminalFontSizeState] = useState("13px");
@@ -53,9 +53,12 @@ export function useTheme(toast: { error: (msg: string) => void }) {
 	useEffect(() => {
 		getTheme()
 			.then((t) => {
-				if (t === "dark" || t === "day" || t === "gray") {
+				if (t === "day" || t === "gray") {
 					setThemeState(t);
 					document.body.className = `theme-${t}`;
+				} else {
+					setThemeState("gray");
+					document.body.className = "theme-gray";
 				}
 			})
 			.catch((err) => {
@@ -95,7 +98,7 @@ export function useTheme(toast: { error: (msg: string) => void }) {
 			});
 	}, [toast]);
 
-	const handleThemeChange = useCallback(async (newTheme: "dark" | "day" | "gray") => {
+	const handleThemeChange = useCallback(async (newTheme: "day" | "gray") => {
 		setThemeState(newTheme);
 		document.body.className = `theme-${newTheme}`;
 		try {

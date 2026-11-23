@@ -7,8 +7,8 @@ import { parseArgbColor, createArgbColor, normalizeBorderColorToCss, composeTerm
 import type { DownloadProgress } from "../../hooks/useUpdateChecker";
 
 interface Props {
-	theme: "dark" | "day" | "gray";
-	onThemeChange: (newTheme: "dark" | "day" | "gray") => Promise<void>;
+	theme: "day" | "gray";
+	onThemeChange: (newTheme: "day" | "gray") => Promise<void>;
 	projectColumnAlign: string;
 	onProjectColumnAlignChange: (align: string) => Promise<void>;
 	fontFamily: string;
@@ -110,40 +110,30 @@ const SHELL_BORDER_PRESET_COLORS = [
 ];
 
 const THEME_OPTIONS: Array<{
-	id: "dark" | "day" | "gray";
-	labelKey: "settings.theme.dark" | "settings.theme.day" | "settings.theme.gray";
+	id: "day" | "gray";
+	labelKey: "settings.theme.day" | "settings.theme.gray";
 }> = [
-	{ id: "dark", labelKey: "settings.theme.dark" },
 	{ id: "day", labelKey: "settings.theme.day" },
 	{ id: "gray", labelKey: "settings.theme.gray" },
 ];
 
-function ThemeMiniPreview({ type, active }: { type: "dark" | "day" | "gray"; active: boolean }) {
+function ThemeMiniPreview({ type, active }: { type: "day" | "gray"; active: boolean }) {
 	const configs = {
-		dark: {
-			border: active ? "var(--accent-purple, #8b5cf6)" : "var(--border-subtle, #27272a)",
-			titleBg: "#18181c",
-			dots: "#3f3f46",
-			sidebarBg: "#121215",
-			contentBg: "#0c0c0e",
-			line: "rgba(255, 255, 255, 0.12)",
-			accent: "#8b5cf6",
-		},
 		day: {
 			border: active ? "var(--accent-purple, #8b5cf6)" : "var(--border-subtle, #e4e4e7)",
-			titleBg: "#e4e4e7",
+			titleBg: "#dfdfda",
 			dots: "#a1a1aa",
-			sidebarBg: "#f4f4f5",
-			contentBg: "#ffffff",
+			sidebarBg: "#eeeee9",
+			contentBg: "#f2f2ed",
 			line: "rgba(0, 0, 0, 0.08)",
 			accent: "#7c3aed",
 		},
 		gray: {
-			border: active ? "var(--accent-purple, #8b5cf6)" : "var(--border-subtle, #2d2d34)",
-			titleBg: "#27272e",
-			dots: "#52525b",
-			sidebarBg: "#202026",
-			contentBg: "#17171c",
+			border: active ? "var(--accent-purple, #8b5cf6)" : "var(--border-subtle, #393b40)",
+			titleBg: "#393b40",
+			dots: "#6a6e75",
+			sidebarBg: "#2f3135",
+			contentBg: "#2b2d30",
 			line: "rgba(255, 255, 255, 0.10)",
 			accent: "#9333ea",
 		},
@@ -411,7 +401,7 @@ export default function GeneralSettingsTab({
 		setShowColorModal(true);
 	};
 
-	const handleThemeSelect = async (newTheme: "dark" | "day" | "gray") => {
+	const handleThemeSelect = async (newTheme: "day" | "gray") => {
 		try {
 			await onThemeChange(newTheme);
 			toast.success(t("settings.toast.themeSaved"));

@@ -38,7 +38,7 @@ describe("App", () => {
     const mockInvoke = invoke as ReturnType<typeof vi.fn>;
     mockInvoke.mockImplementation((cmd: string) => {
       if (cmd === "get_projects") return Promise.resolve([]);
-      if (cmd === "get_theme") return Promise.resolve("dark");
+      if (cmd === "get_theme") return Promise.resolve("gray");
       if (cmd === "get_font_family") return Promise.resolve("Plus Jakarta Sans");
       if (cmd === "get_font_size") return Promise.resolve("15px");
       if (cmd === "get_terminal_font_size") return Promise.resolve("13px");
@@ -65,7 +65,7 @@ describe("App", () => {
     const mockInvoke = invoke as ReturnType<typeof vi.fn>;
     mockInvoke.mockImplementation((cmd: string) => {
       if (cmd === "get_projects") return Promise.resolve([]);
-      if (cmd === "get_theme") return Promise.resolve("dark");
+      if (cmd === "get_theme") return Promise.resolve("gray");
       if (cmd === "get_font_family") return Promise.resolve("Plus Jakarta Sans");
       if (cmd === "get_font_size") return Promise.resolve("15px");
       if (cmd === "get_terminal_font_size") return Promise.resolve("13px");
@@ -93,7 +93,7 @@ describe("App", () => {
     const mockInvoke = invoke as ReturnType<typeof vi.fn>;
     mockInvoke.mockImplementation((cmd: string) => {
       if (cmd === "get_projects") return Promise.resolve([]);
-      if (cmd === "get_theme") return Promise.resolve("dark");
+      if (cmd === "get_theme") return Promise.resolve("gray");
       if (cmd === "get_font_family") return Promise.resolve("Plus Jakarta Sans");
       if (cmd === "get_font_size") return Promise.resolve("15px");
       if (cmd === "get_terminal_font_size") return Promise.resolve("13px");
@@ -112,7 +112,7 @@ describe("App", () => {
     await act(async () => {});
 
     await vi.waitFor(() => {
-      expect(document.body.className).toContain("theme-dark");
+      expect(document.body.className).toContain("theme-gray");
     });
   });
 
@@ -126,7 +126,7 @@ describe("App", () => {
           { id: "p2", name: "beta", root_path: "D:\\Develop\\beta" },
         ]);
       }
-      if (cmd === "get_theme") return Promise.resolve("dark");
+      if (cmd === "get_theme") return Promise.resolve("gray");
       if (cmd === "get_font_family") return Promise.resolve("Plus Jakarta Sans");
       if (cmd === "get_font_size") return Promise.resolve("15px");
       if (cmd === "get_terminal_font_size") return Promise.resolve("13px");
@@ -186,7 +186,7 @@ describe("App", () => {
       if (cmd === "get_projects") {
         return Promise.resolve([{ id: "p1", name: "alpha", root_path: "D:\\Develop\\alpha" }]);
       }
-      if (cmd === "get_theme") return Promise.resolve("dark");
+      if (cmd === "get_theme") return Promise.resolve("gray");
       if (cmd === "get_font_family") return Promise.resolve("Plus Jakarta Sans");
       if (cmd === "get_font_size") return Promise.resolve("15px");
       if (cmd === "get_terminal_font_size") return Promise.resolve("13px");

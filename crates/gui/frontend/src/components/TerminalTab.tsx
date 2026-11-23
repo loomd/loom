@@ -19,7 +19,7 @@ interface TerminalTabProps {
   isVisible: boolean;
   isFocused?: boolean;
   onFocus?: () => void;
-  theme?: 'dark' | 'day' | 'gray';
+  theme?: 'day' | 'gray';
   fontSize?: string | number;
   fontFamily?: string;
   borderColor?: string;
@@ -36,7 +36,7 @@ const parseFontSize = (size?: string | number): number => {
   return 13;
 };
 
-const getTerminalTheme = (theme?: 'dark' | 'day' | 'gray') => {
+const getTerminalTheme = (theme?: 'day' | 'gray') => {
   switch (theme) {
     case 'day':
       return {
@@ -61,11 +61,12 @@ const getTerminalTheme = (theme?: 'dark' | 'day' | 'gray') => {
         brightWhite: '#fafafa',
       };
     case 'gray':
+    default:
       return {
-        background: '#1a1a1f',
+        background: '#2b2d30',
         foreground: '#e0e0e0',
         cursor: '#a0a0a0',
-        black: '#1a1a1f',
+        black: '#2b2d30',
         red: '#f87171',
         green: '#4ade80',
         yellow: '#facc15',
@@ -81,28 +82,6 @@ const getTerminalTheme = (theme?: 'dark' | 'day' | 'gray') => {
         brightMagenta: '#d8b4fe',
         brightCyan: '#67e8f9',
         brightWhite: '#f4f4f5',
-      };
-    default: // dark
-      return {
-        background: '#1a1a1f',
-        foreground: '#e4e4e7',
-        cursor: '#a1a1aa',
-        black: '#18181b',
-        red: '#ef4444',
-        green: '#22c55e',
-        yellow: '#eab308',
-        blue: '#3b82f6',
-        magenta: '#a855f7',
-        cyan: '#06b6d4',
-        white: '#f4f4f5',
-        brightBlack: '#71717a',
-        brightRed: '#f87171',
-        brightGreen: '#4ade80',
-        brightYellow: '#facc15',
-        brightBlue: '#60a5fa',
-        brightMagenta: '#c084fc',
-        brightCyan: '#22d3ee',
-        brightWhite: '#fafafa',
       };
   }
 };
@@ -680,10 +659,10 @@ export function TerminalTab({ sessionId, cwd, command, args, env, initialCommand
     }
   }, [fontFamily, sessionId]);
 
-  const getOuterBg = (theme?: 'dark' | 'day' | 'gray') => {
+  const getOuterBg = (theme?: 'day' | 'gray') => {
     switch (theme) {
-      case 'gray': return '#1a1a1f';
-      default: return '#1a1a1f';
+      case 'gray': return '#2b2d30';
+      default: return '#2b2d30';
     }
   };
 

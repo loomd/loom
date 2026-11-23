@@ -143,7 +143,7 @@ describe("FileEditor", () => {
     const { FileEditor } = await import("../components/FileEditor");
     render(
       <TestWrapper>
-        <FileEditor filePath="/test/file.ts" onContentDirtyChange={mockOnContentDirtyChange} theme="dark" />
+        <FileEditor filePath="/test/file.ts" onContentDirtyChange={mockOnContentDirtyChange} theme="gray" />
       </TestWrapper>
     );
 
