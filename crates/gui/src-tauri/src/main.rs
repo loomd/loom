@@ -440,6 +440,11 @@ fn delete_project(id: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn rename_project(id: String, new_name: String) -> Result<Project, String> {
+    cstore::rename_project(id, new_name).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 fn reorder_projects(ids: Vec<String>) -> Result<(), String> {
     cstore::reorder_projects(ids).map_err(|e| e.to_string())
 }
@@ -2847,6 +2852,7 @@ fn main() {
             get_projects,
             create_project,
             delete_project,
+            rename_project,
             reorder_projects,
             reorder_templates,
             reorder_cli_tools,

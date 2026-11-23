@@ -290,6 +290,11 @@ export const createProject = (
 export const deleteProject = (id: string): Promise<void> =>
 	invoke("delete_project", { id });
 
+export const renameProject = (
+	id: string,
+	newName: string,
+): Promise<Project> => invoke("rename_project", { id, newName });
+
 export const getProjectAgents = (projectId: string): Promise<AgentInstance[]> =>
 	invoke("get_project_agents", { projectId });
 

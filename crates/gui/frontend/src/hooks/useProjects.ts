@@ -7,6 +7,7 @@ import {
 	reorderProjects,
 	getSelectedProjectId,
 	saveSelectedProjectId,
+	renameProject,
 } from "../api";
 import type { Project } from "../types";
 import { useDialog } from "../DialogContext";
@@ -192,6 +193,18 @@ export function useProjects(
 		}
 	};
 
+	const handleRenameProject = async (projectId: string, newName: string) => {
+		try {
+			const updated = await renameProject(projectId, newName);
+			setProjects((prev) =>
+				prev.map((p) => (p.id === projectId ? { ...p, name: updated.name } : p))
+			);
+			toast.success(t("proj.toast.renamed") || "项目重命名成功");
+		} catch (e) {
+			toast.error(String(e) || "项目重命名失败");
+		}
+	};
+
 	return {
 		projects,
 		selectedProjectId,
@@ -214,5 +227,6 @@ export function useProjects(
 		handleBrowseFolder,
 		handleRegisterProject,
 		handleUnregisterProject,
+		handleRenameProject,
 	};
 }

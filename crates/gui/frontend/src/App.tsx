@@ -734,6 +734,7 @@ function App() {
 						onAddClick={() => p.setShowModal(true)}
 						onDragStart={p.handleDragStart} onDragOver={p.handleDragOver}
 						onDragLeave={p.handleDragLeave} onDrop={p.handleDrop} onDragEnd={p.handleDragEnd}
+						onRenameProject={p.handleRenameProject}
 						width={sidebarWidth}
 					/>
 				) : undefined}

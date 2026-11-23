@@ -2582,6 +2582,24 @@ pub fn delete_project(id: String) -> Result<()> {
     Ok(())
 }
 
+pub fn rename_project(id: String, new_name: String) -> Result<Project> {
+    let trimmed = new_name.trim().to_string();
+    if trimmed.is_empty() {
+        return Err(StorageError::Validation("Project name cannot be empty".to_string()));
+    }
+    let mut config = load_config()?;
+    let project = config
+        .projects
+        .iter_mut()
+        .find(|p| p.id == id)
+        .ok_or_else(|| StorageError::Validation("Project not found".to_string()))?;
+
+    project.name = trimmed;
+    let updated = project.clone();
+    save_config(&config)?;
+    Ok(updated)
+}
+
 pub fn reorder_projects(ids: Vec<String>) -> Result<()> {
     let mut config = load_config()?;
     let mut reordered = Vec::with_capacity(config.projects.len());
