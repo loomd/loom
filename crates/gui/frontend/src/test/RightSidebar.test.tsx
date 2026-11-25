@@ -113,17 +113,14 @@ describe("RightSidebar", () => {
     expect(settingsItems.length).toBeGreaterThanOrEqual(1);
   });
 
-  it("respects hermesEnabled, remoteEnabled, agentsEnabled switches", async () => {
+  it("respects hermesEnabled and agentsEnabled switches", async () => {
     await renderSidebar({
       onHermesClick: vi.fn(),
-      onRemoteClick: vi.fn(),
       onAgentsClick: vi.fn(),
       hermesEnabled: false,
-      remoteEnabled: false,
       agentsEnabled: false,
     });
     expect(screen.queryByText("Hermes")).not.toBeInTheDocument();
-    expect(screen.queryByText("远程连接")).not.toBeInTheDocument();
     expect(screen.queryByText("配置引导")).not.toBeInTheDocument();
   });
 

@@ -7,15 +7,10 @@
  *   2. crates/gui/src-tauri/tauri.conf.json (version)
  *   3. crates/gui/frontend/package.json (version)
  *   4. crates/gui/frontend/src/pages/AgentManagementPage.tsx (skillVersion 默认 fallback)
- *   5. mobile/app.json (expo.version & expo.android.versionCode)
- *   6. mobile/package.json (version) & mobile/package-lock.json
- *   7. mobile/android/app/build.gradle (versionName & versionCode, 通过 mobile/scripts/sync-version.mjs)
- *   8. relay/package.json (version) & relay/package-lock.json
  *
  * 用法：
  *   node scripts/bump-version.mjs --check                 # 校验全端版本是否一致
  *   node scripts/bump-version.mjs <new_version>           # 统一修改全端版本号 (例如 0.8.4)
- *   node scripts/bump-version.mjs <new_version> --code 12 # 统一修改并显式指定 Android versionCode
  */
 
 import fs from "node:fs";
@@ -38,18 +33,10 @@ const agentMgmtPath = path.join(
   "pages",
   "AgentManagementPage.tsx"
 );
-const mobileAppJsonPath = path.join(rootDir, "mobile", "app.json");
-const mobilePkgPath = path.join(rootDir, "mobile", "package.json");
-const mobilePkgLockPath = path.join(rootDir, "mobile", "package-lock.json");
-const mobileSyncScript = path.join(rootDir, "mobile", "scripts", "sync-version.mjs");
-const relayPkgPath = path.join(rootDir, "relay", "package.json");
-const relayPkgLockPath = path.join(rootDir, "relay", "package-lock.json");
 
 const args = process.argv.slice(2);
 const checkOnly = args.includes("--check");
-const codeIndex = args.indexOf("--code");
-const explicitCode = codeIndex !== -1 && args[codeIndex + 1] ? parseInt(args[codeIndex + 1], 10) : null;
-const targetVersion = args.find((arg) => !arg.startsWith("--") && arg !== String(explicitCode));
+const targetVersion = args.find((arg) => !arg.startsWith("--"));
 
 function fail(msg) {
   console.error(`\x1b[31m[bump-version ERROR]\x1b[0m ${msg}`);
@@ -94,27 +81,6 @@ function readCurrentVersions() {
     if (match) versions["AgentManagementPage.tsx"] = match[1];
   }
 
-  // 5. mobile/app.json
-  if (fs.existsSync(mobileAppJsonPath)) {
-    const json = JSON.parse(fs.readFileSync(mobileAppJsonPath, "utf8"));
-    if (json?.expo?.version) {
-      versions["mobile/app.json"] = json.expo.version;
-      versions["mobile:versionCode"] = json.expo?.android?.versionCode;
-    }
-  }
-
-  // 6. mobile/package.json
-  if (fs.existsSync(mobilePkgPath)) {
-    const json = JSON.parse(fs.readFileSync(mobilePkgPath, "utf8"));
-    if (json.version) versions["mobile/package.json"] = json.version;
-  }
-
-  // 7. relay/package.json
-  if (fs.existsSync(relayPkgPath)) {
-    const json = JSON.parse(fs.readFileSync(relayPkgPath, "utf8"));
-    if (json.version) versions["relay/package.json"] = json.version;
-  }
-
   return versions;
 }
 
@@ -126,10 +92,6 @@ if (checkOnly) {
   const primaryVersion = versions["Cargo.toml"];
 
   for (const [key, ver] of Object.entries(versions)) {
-    if (key === "mobile:versionCode") {
-      console.log(`  - ${key.padEnd(28)}: ${ver}`);
-      continue;
-    }
     const match = ver === primaryVersion;
     if (!match) hasMismatch = true;
     const mark = match ? "\x1b[32mOK\x1b[0m" : "\x1b[31mMISMATCH\x1b[0m";
@@ -146,7 +108,7 @@ if (checkOnly) {
 
 // ── 3. 修改模式 ──────────────────────────────────────────────────────────────
 if (!targetVersion) {
-  fail("缺少目标版本号参数。\n用法: node scripts/bump-version.mjs <new_version> [--code <versionCode>]");
+  fail("缺少目标版本号参数。\n用法: node scripts/bump-version.mjs <new_version>");
 }
 
 if (!/^\d+\.\d+\.\d+.*$/.test(targetVersion)) {
@@ -193,71 +155,7 @@ if (fs.existsSync(agentMgmtPath)) {
   info(`已更新 crates/gui/frontend/src/pages/AgentManagementPage.tsx fallback -> ${targetVersion}`);
 }
 
-// 5. mobile/app.json
-let currentCode = 1;
-if (fs.existsSync(mobileAppJsonPath)) {
-  const json = JSON.parse(fs.readFileSync(mobileAppJsonPath, "utf8"));
-  const prevCode = json?.expo?.android?.versionCode || 1;
-  const nextCode = explicitCode !== null ? explicitCode : (json.expo?.version !== targetVersion ? prevCode + 1 : prevCode);
-  currentCode = nextCode;
-
-  if (!json.expo) json.expo = {};
-  if (!json.expo.android) json.expo.android = {};
-  json.expo.version = targetVersion;
-  json.expo.android.versionCode = nextCode;
-
-  fs.writeFileSync(mobileAppJsonPath, `${JSON.stringify(json, null, 2)}\n`, "utf8");
-  info(`已更新 mobile/app.json -> ${targetVersion} (versionCode: ${nextCode})`);
-}
-
-// 6. mobile/package.json
-if (fs.existsSync(mobilePkgPath)) {
-  const json = JSON.parse(fs.readFileSync(mobilePkgPath, "utf8"));
-  json.version = targetVersion;
-  fs.writeFileSync(mobilePkgPath, `${JSON.stringify(json, null, 2)}\n`, "utf8");
-  info(`已更新 mobile/package.json -> ${targetVersion}`);
-}
-
-// 7. mobile/package-lock.json
-if (fs.existsSync(mobilePkgLockPath)) {
-  const json = JSON.parse(fs.readFileSync(mobilePkgLockPath, "utf8"));
-  json.version = targetVersion;
-  if (json.packages && json.packages[""]) {
-    json.packages[""].version = targetVersion;
-  }
-  fs.writeFileSync(mobilePkgLockPath, `${JSON.stringify(json, null, 2)}\n`, "utf8");
-  info(`已同步 mobile/package-lock.json -> ${targetVersion}`);
-}
-
-// 8. 触发 mobile/scripts/sync-version.mjs 同步到 Android build.gradle
-if (fs.existsSync(mobileSyncScript)) {
-  try {
-    execSync(`node "${mobileSyncScript}"`, { stdio: "inherit", cwd: rootDir });
-  } catch (err) {
-    console.warn(`[bump-version] 调用 sync-version.mjs 警告: ${err.message}`);
-  }
-}
-
-// 9. relay/package.json
-if (fs.existsSync(relayPkgPath)) {
-  const json = JSON.parse(fs.readFileSync(relayPkgPath, "utf8"));
-  json.version = targetVersion;
-  fs.writeFileSync(relayPkgPath, `${JSON.stringify(json, null, 2)}\n`, "utf8");
-  info(`已更新 relay/package.json -> ${targetVersion}`);
-}
-
-// 10. relay/package-lock.json
-if (fs.existsSync(relayPkgLockPath)) {
-  const json = JSON.parse(fs.readFileSync(relayPkgLockPath, "utf8"));
-  json.version = targetVersion;
-  if (json.packages && json.packages[""]) {
-    json.packages[""].version = targetVersion;
-  }
-  fs.writeFileSync(relayPkgLockPath, `${JSON.stringify(json, null, 2)}\n`, "utf8");
-  info(`已同步 relay/package-lock.json -> ${targetVersion}`);
-}
-
-// 11. 检查 whats-new 日志提示
+// 5. 检查 whats-new 日志提示
 const whatsNewPath = path.join(
   rootDir,
   "crates",

@@ -1,6 +1,6 @@
 // TypeScript types matching Rust core models exactly
 
-export type Page = "workspace" | "settings" | "agents" | "remote" | "hermes";
+export type Page = "workspace" | "settings" | "agents" | "hermes";
 
 export interface CliTool {
   id: string;
@@ -227,34 +227,6 @@ export interface McodeAuthInfo {
   region: string | null;
   status: string;
   expiresAtMs: number | null;
-}
-
-export interface RemoteSessionInfo {
-  status: 'stopped' | 'starting' | 'waiting_pairing' | 'waiting_mobile' | 'connecting' | 'connected';
-  pairingCode: string | null;
-  workspaceDir: string | null;
-  startedAtMs: number | null;
-  expiresAtMs: number | null;
-  pid: number | null;
-  mobileDeviceName: string | null;
-  message: string | null;
-  relayUrl: string | null;
-  username: string | null;
-  loggedIn: boolean;
-  /** 账号是否已与手机端完成绑定：已绑定后重连不再需要配对码 */
-  mobilePaired: boolean;
-}
-
-export interface RelayAuthData {
-  token: string;
-  expiresAt: number;
-  username: string;
-}
-
-export interface RelayLoginRequest {
-  serverUrl: string;
-  username: string;
-  password: string;
 }
 
 export interface ProjectWindowInitData {

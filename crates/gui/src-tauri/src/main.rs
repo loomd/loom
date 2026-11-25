@@ -2151,8 +2151,6 @@ mod agent_monitor;
 mod notification;
 mod crash_shield;
 mod whats_new;
-mod relay_adapter;
-mod acp;
 mod hermes;
 
 fn get_window_state_path() -> std::path::PathBuf {
@@ -2508,8 +2506,6 @@ fn main() {
     pty::init_process_session_job();
     eprintln!("[Startup] process session job ready t=+{}ms", startup_elapsed_ms());
 
-    // 从磁盘加载自建 Relay 配置
-    relay_adapter::init_relay_config();
 
     if let Ok(cmd) = std::env::var("TAURI_TEST_CMD") {
         let args_json = std::env::var("TAURI_TEST_ARGS").unwrap_or_else(|_| "{}".to_string());
@@ -2943,15 +2939,6 @@ fn main() {
             set_agent_notification_enabled,
             get_git_status,
             pull_git_project,
-            relay_adapter::get_relay_status,
-            relay_adapter::set_relay_url,
-            relay_adapter::relay_login,
-            relay_adapter::relay_register,
-            relay_adapter::relay_logout,
-            relay_adapter::get_remote_session_status,
-            relay_adapter::start_remote_session,
-            relay_adapter::stop_remote_session,
-            relay_adapter::unbind_mobile,
             hermes::get_hermes_config,
             hermes::save_hermes_config,
             hermes::start_hermes_service,

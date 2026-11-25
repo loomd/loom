@@ -14,7 +14,96 @@ use super::client::{
     build_permission_request_card, build_permission_resolved_card, LarkClient, QuotedMessageInfo,
 };
 use super::ws::{LarkEventHandler, LarkWsClient};
-use crate::acp::match_model_option;
+/// 在 ACP 返回的 model 选项列表中匹配目标模型。
+///
+/// 选项形如：`{"value": "m:custom_provider%3Aloom:claude-sonnet-4-6:v:thinking", "name": "claude-sonnet-4-6 · thinking"}`
+/// 目标模型形如：`custom_provider:loom/claude-sonnet-4-6`、`claude-sonnet-4-6` 或全值。
+pub fn match_model_option(target: &str, options: &[serde_json::Value]) -> Option<String> {
+    let target_clean = target.trim();
+    if target_clean.is_empty() || target_clean.eq_ignore_ascii_case("default") {
+        return None;
+    }
+
+    // 1. 完全精确匹配 value 或 name
+    for opt in options {
+        if let Some(val) = opt.get("value").and_then(|v| v.as_str()) {
+            if val == target_clean {
+                return Some(val.to_string());
+            }
+        }
+        if let Some(name) = opt.get("name").and_then(|v| v.as_str()) {
+            if name.eq_ignore_ascii_case(target_clean) {
+                if let Some(val) = opt.get("value").and_then(|v| v.as_str()) {
+                    return Some(val.to_string());
+                }
+            }
+        }
+    }
+
+    // 2. 结构化拆解：针对形如 "custom_provider:loom/claude-sonnet-4-6" 或 "provider/model"
+    let (target_provider, target_model) = if let Some(slash_idx) = target_clean.find('/') {
+        let (p, m) = target_clean.split_at(slash_idx);
+        (Some(p.trim()), m[1..].trim())
+    } else {
+        (None, target_clean)
+    };
+
+    let target_provider_encoded = target_provider.map(|p| p.replace(':', "%3A").to_lowercase());
+    let target_provider_raw = target_provider.map(|p| p.to_lowercase());
+    let target_model_lower = target_model.to_lowercase();
+
+    let mut best_val: Option<String> = None;
+    let mut best_score: i32 = -1;
+
+    for opt in options {
+        let val = opt.get("value").and_then(|v| v.as_str()).unwrap_or("");
+        let name = opt.get("name").and_then(|v| v.as_str()).unwrap_or("");
+        let val_lower = val.to_lowercase();
+        let name_lower = name.to_lowercase();
+
+        // ACP 模型 value 结构约定为冒号分隔：m : provider : model : ...
+        let parts: Vec<&str> = val.split(':').collect();
+        let opt_provider = if parts.len() > 1 { parts[1].to_lowercase() } else { String::new() };
+        let opt_model = if parts.len() > 2 { parts[2].to_lowercase() } else { String::new() };
+
+        let mut score: i32 = 0;
+
+        // 匹配 model
+        if !target_model_lower.is_empty() {
+            if opt_model == target_model_lower {
+                score += 30;
+            } else if opt_model.contains(&target_model_lower)
+                || val_lower.contains(&target_model_lower)
+                || name_lower.contains(&target_model_lower)
+            {
+                score += 15;
+            }
+        }
+
+        // 匹配 provider
+        if let Some(ref tp_enc) = target_provider_encoded {
+            if opt_provider == *tp_enc {
+                score += 40;
+            } else if let Some(ref tp_raw) = target_provider_raw {
+                if opt_provider == *tp_raw || val_lower.contains(tp_enc) {
+                    score += 25;
+                }
+            }
+        }
+
+        // 倾向带有 thinking 变体的选项
+        if val.contains(":v:thinking") {
+            score += 1;
+        }
+
+        if score > best_score && score >= 15 {
+            best_score = score;
+            best_val = Some(val.to_string());
+        }
+    }
+
+    best_val
+}
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum HermesCommand {

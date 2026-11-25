@@ -18,10 +18,8 @@ interface SidebarProps {
 	onProjectSelect: (id: string, page: Page) => void;
 	onSettingsClick: () => void;
 	onAgentsClick?: () => void;
-	onRemoteClick?: () => void;
 	onHermesClick?: () => void;
 	hermesEnabled?: boolean;
-	remoteEnabled?: boolean;
 	agentsEnabled?: boolean;
 	onAddClick: () => void;
 	onDragStart: (e: React.DragEvent, index: number) => void;
@@ -45,10 +43,8 @@ export default function Sidebar({
 	onProjectSelect,
 	onSettingsClick,
 	onAgentsClick,
-	onRemoteClick,
 	onHermesClick,
 	hermesEnabled = false,
-	remoteEnabled = false,
 	agentsEnabled = true,
 	onAddClick,
 	onDragStart,
@@ -300,41 +296,6 @@ export default function Sidebar({
 								}}
 							>
 								Hermes
-							</span>
-						</button>
-					)}
-					{remoteEnabled && onRemoteClick && (
-						<button
-							className={`nav-item${page === "remote" ? " active" : ""}`}
-							onClick={onRemoteClick}
-							style={{
-								width: "100%",
-								textAlign: "left",
-								border: "1px solid transparent",
-								cursor: "pointer",
-								display: "flex",
-								alignItems: "center",
-								gap: "8px",
-								padding: "8px 8px",
-								borderRadius: "var(--radius-sm)",
-								transition:
-									"opacity 0.2s ease, transform 0.2s ease, border-color 0.2s ease, background-color 0.2s ease",
-							}}
-						>
-							<span
-								style={{
-									overflow: "hidden",
-									textOverflow: "ellipsis",
-									whiteSpace: "nowrap",
-									flexGrow: 1,
-									fontWeight: 400,
-									display: "inline-flex",
-									alignItems: "center",
-									lineHeight: "1.2",
-									gap: "6px",
-								}}
-							>
-								远程连接
 							</span>
 						</button>
 					)}

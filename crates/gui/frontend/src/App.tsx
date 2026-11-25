@@ -39,7 +39,6 @@ import {
 	getOpenProjectWindows,
 } from "./api";
 import { AgentManagementPage } from "./pages/AgentManagementPage";
-import RemoteConnectionPage from "./pages/RemoteConnectionPage";
 import HermesPage from "./pages/HermesPage";
 import { listen } from "@tauri-apps/api/event";
 import type { Template, AgentNotificationPayload, Page } from "./types";
@@ -219,10 +218,6 @@ function App() {
 		const saved = safeGetItem("loom_hermes_enabled");
 		return saved === "true";
 	});
-	const [remoteEnabled, setRemoteEnabled] = useState<boolean>(() => {
-		const saved = safeGetItem("loom_remote_enabled");
-		return saved === "true";
-	});
 	const [agentsGuideEnabled, setAgentsGuideEnabled] = useState<boolean>(() => {
 		const saved = safeGetItem("loom_agents_guide_enabled");
 		return saved !== null ? saved === "true" : true;
@@ -308,9 +303,6 @@ function App() {
 	useEffect(() => {
 		safeSetItem("loom_hermes_enabled", hermesEnabled.toString());
 	}, [hermesEnabled]);
-	useEffect(() => {
-		safeSetItem("loom_remote_enabled", remoteEnabled.toString());
-	}, [remoteEnabled]);
 	useEffect(() => {
 		safeSetItem("loom_agents_guide_enabled", agentsGuideEnabled.toString());
 	}, [agentsGuideEnabled]);
@@ -489,13 +481,6 @@ function App() {
 	const handleHermesEnabledChange = useCallback((enabled: boolean) => {
 		setHermesEnabled(enabled);
 		if (!enabled && page === "hermes") {
-			setPage("workspace");
-		}
-	}, [page]);
-
-	const handleRemoteEnabledChange = useCallback((enabled: boolean) => {
-		setRemoteEnabled(enabled);
-		if (!enabled && page === "remote") {
 			setPage("workspace");
 		}
 	}, [page]);
@@ -727,9 +712,7 @@ function App() {
 						onSettingsClick={() => setPage("settings")}
 						onAgentsClick={() => setPage("agents")}
 						onHermesClick={() => setPage("hermes")}
-						onRemoteClick={() => setPage("remote")}
 						hermesEnabled={hermesEnabled}
-						remoteEnabled={remoteEnabled}
 						agentsEnabled={agentsGuideEnabled}
 						onAddClick={() => p.setShowModal(true)}
 						onDragStart={p.handleDragStart} onDragOver={p.handleDragOver}
@@ -794,8 +777,6 @@ function App() {
 								onShellBorderWidthChange={handleShellBorderWidthChange}
 								hermesEnabled={hermesEnabled}
 								onHermesEnabledChange={handleHermesEnabledChange}
-								remoteEnabled={remoteEnabled}
-								onRemoteEnabledChange={handleRemoteEnabledChange}
 								agentsGuideEnabled={agentsGuideEnabled}
 								onAgentsGuideEnabledChange={handleAgentsGuideEnabledChange}
 							/>
@@ -811,9 +792,6 @@ function App() {
 									p.setShowModal(true);
 								}
 							}} />
-						</div>
-						<div style={{ display: page === "remote" ? "flex" : "none", flexDirection: "column", flex: 1, minHeight: 0, overflow: "hidden" }}>
-							<RemoteConnectionPage projects={p.projects} active={page === "remote"} defaultProjectId={p.selectedProjectId} isSidebarCollapsed={actualCollapsed} onToggleSidebar={leftPanelEnabled ? () => setIsCollapsed(!isCollapsed) : undefined} />
 						</div>
 						<div style={{ display: page === "hermes" ? "flex" : "none", flexDirection: "column", flex: 1, minHeight: 0, overflow: "hidden" }}>
 							<HermesPage projects={p.projects} active={page === "hermes"} defaultProjectId={p.selectedProjectId} isSidebarCollapsed={actualCollapsed} onToggleSidebar={leftPanelEnabled ? () => setIsCollapsed(!isCollapsed) : undefined} />
@@ -834,9 +812,7 @@ function App() {
 							onSettingsClick={() => setPage("settings")}
 							onAgentsClick={() => setPage("agents")}
 							onHermesClick={() => setPage("hermes")}
-							onRemoteClick={() => setPage("remote")}
 							hermesEnabled={hermesEnabled}
-							remoteEnabled={remoteEnabled}
 							agentsEnabled={agentsGuideEnabled}
 							onAddClick={() => p.setShowModal(true)}
 							onDragStart={p.handleDragStart}

@@ -56,8 +56,6 @@ interface Props {
 	onShellBorderWidthChange?: (width: string) => void;
 	hermesEnabled?: boolean;
 	onHermesEnabledChange?: (enabled: boolean) => void;
-	remoteEnabled?: boolean;
-	onRemoteEnabledChange?: (enabled: boolean) => void;
 	agentsGuideEnabled?: boolean;
 	onAgentsGuideEnabledChange?: (enabled: boolean) => void;
 }
@@ -108,8 +106,6 @@ export default function SettingsPage({
 	onShellBorderWidthChange,
 	hermesEnabled,
 	onHermesEnabledChange,
-	remoteEnabled,
-	onRemoteEnabledChange,
 	agentsGuideEnabled,
 	onAgentsGuideEnabledChange,
 }: Props) {
@@ -239,8 +235,6 @@ export default function SettingsPage({
 						onShellBorderWidthChange={onShellBorderWidthChange}
 						hermesEnabled={hermesEnabled}
 						onHermesEnabledChange={onHermesEnabledChange}
-						remoteEnabled={remoteEnabled}
-						onRemoteEnabledChange={onRemoteEnabledChange}
 						agentsGuideEnabled={agentsGuideEnabled}
 						onAgentsGuideEnabledChange={onAgentsGuideEnabledChange}
 					/>

@@ -56,8 +56,6 @@ interface Props {
 	onShellBorderWidthChange?: (width: string) => void;
 	hermesEnabled?: boolean;
 	onHermesEnabledChange?: (enabled: boolean) => void;
-	remoteEnabled?: boolean;
-	onRemoteEnabledChange?: (enabled: boolean) => void;
 	agentsGuideEnabled?: boolean;
 	onAgentsGuideEnabledChange?: (enabled: boolean) => void;
 }
@@ -262,8 +260,6 @@ export default function GeneralSettingsTab({
 	onShellBorderWidthChange,
 	hermesEnabled = false,
 	onHermesEnabledChange,
-	remoteEnabled = false,
-	onRemoteEnabledChange,
 	agentsGuideEnabled = true,
 	onAgentsGuideEnabledChange,
 }: Props) {
@@ -2120,71 +2116,6 @@ export default function GeneralSettingsTab({
 									position: "absolute",
 									top: "2px",
 									left: hermesEnabled ? "26px" : "2px",
-									width: "18px",
-									height: "18px",
-									borderRadius: "50%",
-									background: "#fff",
-									transition: "all 200ms ease",
-									boxShadow: "0 1px 3px rgba(0,0,0,0.2)",
-								}}
-							/>
-						</button>
-					</div>
-
-					{/* Remote Connection Toggle */}
-					<div
-						style={{
-							display: "flex",
-							alignItems: "center",
-							justifyContent: "space-between",
-							marginTop: "16px",
-							paddingTop: "16px",
-							borderTop: "1px solid var(--border-subtle)",
-						}}
-					>
-						<div>
-							<div
-								style={{
-									fontSize: "14px",
-									fontWeight: 500,
-									color: "var(--text-primary)",
-								}}
-							>
-								远程连接
-							</div>
-							<div
-								style={{
-									fontSize: "12px",
-									color: "var(--text-secondary)",
-									marginTop: "4px",
-								}}
-							>
-								在侧边栏显示手机端扫码与远程连接入口
-							</div>
-						</div>
-						<button
-							onClick={() => onRemoteEnabledChange?.(!remoteEnabled)}
-							style={{
-								background: remoteEnabled
-									? "var(--accent-purple)"
-									: "var(--bg-elevated)",
-								border: remoteEnabled
-									? "1px solid var(--accent-purple)"
-									: "1px solid var(--border-mid)",
-								borderRadius: "20px",
-								width: "48px",
-								height: "24px",
-								position: "relative",
-								cursor: "pointer",
-								transition: "all 200ms ease",
-								padding: 0,
-							}}
-						>
-							<span
-								style={{
-									position: "absolute",
-									top: "2px",
-									left: remoteEnabled ? "26px" : "2px",
 									width: "18px",
 									height: "18px",
 									borderRadius: "50%",
