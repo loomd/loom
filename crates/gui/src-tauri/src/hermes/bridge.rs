@@ -108,10 +108,10 @@ pub fn match_model_option(target: &str, options: &[serde_json::Value]) -> Option
 #[derive(Debug, PartialEq, Eq)]
 pub enum HermesCommand {
     Help,
-    NewSession,
+    NewSession(Option<String>),
     ListModels,
     SwitchModel(String),
-    Stop,
+    Stop(Option<String>),
 }
 
 pub fn parse_hermes_command(text: &str) -> Option<HermesCommand> {
@@ -125,20 +125,58 @@ pub fn parse_hermes_command(text: &str) -> Option<HermesCommand> {
         return Some(HermesCommand::Help);
     }
 
-    // 匹配 /stop / @stop / stop
-    if trimmed.eq_ignore_ascii_case("/stop")
-        || trimmed.eq_ignore_ascii_case("@stop")
-        || trimmed.eq_ignore_ascii_case("stop")
-    {
-        return Some(HermesCommand::Stop);
+    // 匹配 /stop / @stop / stop 以及连带新消息（如 /stop 改用 Python 实现）
+    for prefix in ["/stop", "@stop", "stop"] {
+        if trimmed.eq_ignore_ascii_case(prefix) {
+            return Some(HermesCommand::Stop(None));
+        }
+        if trimmed.to_lowercase().starts_with(prefix) {
+            let after = &trimmed[prefix.len()..];
+            if after.starts_with(char::is_whitespace)
+                || after.starts_with(':')
+                || after.starts_with('：')
+                || after.starts_with(',')
+                || after.starts_with('，')
+            {
+                let trailing = after
+                    .trim_start_matches(|c: char| {
+                        c.is_whitespace() || c == ':' || c == '：' || c == ',' || c == '，'
+                    })
+                    .trim();
+                return if !trailing.is_empty() {
+                    Some(HermesCommand::Stop(Some(trailing.to_string())))
+                } else {
+                    Some(HermesCommand::Stop(None))
+                };
+            }
+        }
     }
 
-    // 匹配 /new / @new / new
-    if trimmed.eq_ignore_ascii_case("/new")
-        || trimmed.eq_ignore_ascii_case("@new")
-        || trimmed.eq_ignore_ascii_case("new")
-    {
-        return Some(HermesCommand::NewSession);
+    // 匹配 /new / @new / new 以及连带新消息（如 /new 请帮我分析项目结构）
+    for prefix in ["/new", "@new", "new"] {
+        if trimmed.eq_ignore_ascii_case(prefix) {
+            return Some(HermesCommand::NewSession(None));
+        }
+        if trimmed.to_lowercase().starts_with(prefix) {
+            let after = &trimmed[prefix.len()..];
+            if after.starts_with(char::is_whitespace)
+                || after.starts_with(':')
+                || after.starts_with('：')
+                || after.starts_with(',')
+                || after.starts_with('，')
+            {
+                let trailing = after
+                    .trim_start_matches(|c: char| {
+                        c.is_whitespace() || c == ':' || c == '：' || c == ',' || c == '，'
+                    })
+                    .trim();
+                return if !trailing.is_empty() {
+                    Some(HermesCommand::NewSession(Some(trailing.to_string())))
+                } else {
+                    Some(HermesCommand::NewSession(None))
+                };
+            }
+        }
     }
 
     // 匹配单纯的 /models / @models / models / /model-list / @model-list / model-list
@@ -608,7 +646,23 @@ impl HermesBridge {
                         }
 
                         if let Some(prompt_text) = pending.initial_prompt {
-                            // 首次接入自动建会话：继续发起 prompt
+                            // 注册为当前活跃会话，以便接收后续 agent chunk 流式推送
+                            {
+                                let mut chats = self.active_chats.lock().unwrap();
+                                chats.insert(
+                                    chat_id.clone(),
+                                    ActiveChatSession {
+                                        current_chunk_buffer: String::new(),
+                                        accumulated_content: String::new(),
+                                        last_updated: Instant::now(),
+                                        is_finished: false,
+                                        chat_type: chat_type.clone(),
+                                        current_message_id: None,
+                                    },
+                                );
+                            }
+
+                            // 首次接入自动建会话或 /new 连带任务：继续发起 prompt
                             let prompt_req_id = self.next_rpc_id.fetch_add(1, Ordering::SeqCst);
                             self.pending_prompt_to_chat.lock().unwrap().insert(prompt_req_id, chat_id.clone());
                             let prompt_req = json!({
@@ -1007,7 +1061,7 @@ impl HermesBridge {
         self.add_log("out", "Hermes", chat_type, "已返回指令帮助指南");
     }
 
-    fn handle_command_stop(&self, chat_id: &str, chat_type: &str) {
+    fn handle_command_stop(&self, chat_id: &str, chat_type: &str, has_follow_up: bool) {
         let sid_opt = self.chat_to_session.lock().unwrap().get(chat_id).cloned();
 
         let mut was_running = false;
@@ -1040,15 +1094,20 @@ impl HermesBridge {
                 self.send_segment(chat_id, &c_type, &segment);
             }
 
-            let _ = self.client.send_text_message("chat_id", chat_id, "🛑 [Hermes] 任务已手动中止。");
-            self.add_log("out", "Hermes", chat_type, "任务已手动强制停止");
-        } else {
+            if has_follow_up {
+                let _ = self.client.send_text_message("chat_id", chat_id, "🛑 [Hermes] 任务已手动中止，正在执行新任务...");
+                self.add_log("out", "Hermes", chat_type, "任务已手动强制停止并流转新任务");
+            } else {
+                let _ = self.client.send_text_message("chat_id", chat_id, "🛑 [Hermes] 任务已手动中止。");
+                self.add_log("out", "Hermes", chat_type, "任务已手动强制停止");
+            }
+        } else if !has_follow_up {
             let _ = self.client.send_text_message("chat_id", chat_id, "ℹ️ [Hermes] 当前没有正在执行的任务。");
             self.add_log("out", "Hermes", chat_type, "当前无正在执行任务，忽略 /stop");
         }
     }
 
-    fn handle_command_new(&self, chat_id: &str, chat_type: &str) {
+    fn handle_command_new(&self, chat_id: &str, chat_type: &str, initial_prompt: Option<String>) {
         // 重置该会话的群聊上下文记录，使新会话的首轮对话重新注入群聊信息
         self.known_context_chats.lock().unwrap().remove(chat_id);
 
@@ -1058,7 +1117,7 @@ impl HermesBridge {
             PendingSessionRequest {
                 chat_id: chat_id.to_string(),
                 chat_type: chat_type.to_string(),
-                initial_prompt: None,
+                initial_prompt: initial_prompt.clone(),
             },
         );
 
@@ -1075,9 +1134,15 @@ impl HermesBridge {
             }
         }));
 
-        let reply = "🎉 **Hermes 新会话启动中**\n已请求重置当前会话，正在为你建立全新上下文...";
-        let _ = self.client.send_text_message("chat_id", chat_id, reply);
-        self.add_log("out", "Hermes", chat_type, "已请求开启全新会话");
+        if initial_prompt.is_some() {
+            let reply = "🎉 **Hermes 新会话启动中**\n已请求建立全新上下文，正在为你执行新任务...";
+            let _ = self.client.send_text_message("chat_id", chat_id, reply);
+            self.add_log("out", "Hermes", chat_type, "已请求开启全新会话并执行新任务");
+        } else {
+            let reply = "🎉 **Hermes 新会话启动中**\n已请求重置当前会话，正在为你建立全新上下文...";
+            let _ = self.client.send_text_message("chat_id", chat_id, reply);
+            self.add_log("out", "Hermes", chat_type, "已请求开启全新会话");
+        }
     }
 
     fn handle_command_model_list(&self, chat_id: &str, chat_type: &str) {
@@ -1218,14 +1283,15 @@ impl LarkEventHandler for HermesBridge {
         text: String,
         parent_id: Option<String>,
     ) {
-        let maybe_cmd = parse_hermes_command(&text);
+        let mut text = text;
+        let mut maybe_cmd = parse_hermes_command(&text);
 
         // 1. 获取发送者姓名（用于日志展示与 Prompt 增强）
         let sender_name = self.client.get_user_name(&sender_open_id);
         let display_sender = sender_name.as_deref().unwrap_or(&sender_open_id);
 
         // 2. /stop 指令优先响应，绕过在途互斥拦截以强制中止当前任务
-        if let Some(HermesCommand::Stop) = maybe_cmd {
+        if let Some(HermesCommand::Stop(ref follow_up_prompt)) = maybe_cmd {
             if !message_id.is_empty() {
                 let client = self.client.clone();
                 let mid = message_id.clone();
@@ -1234,8 +1300,16 @@ impl LarkEventHandler for HermesBridge {
                 });
             }
             self.add_log("in", display_sender, &chat_type, &text);
-            self.handle_command_stop(&chat_id, &chat_type);
-            return;
+            let has_follow_up = follow_up_prompt.is_some();
+            self.handle_command_stop(&chat_id, &chat_type, has_follow_up);
+
+            if let Some(new_text) = follow_up_prompt {
+                // 中止旧任务后，将连带的新消息转入正常 Prompt 流程继续处理
+                text = new_text.clone();
+                maybe_cmd = None;
+            } else {
+                return;
+            }
         }
 
         // 3. 会话在途互斥保护：若当前会话上一条任务还在执行中，忽略并发重发消息，避免并发冲突与双重回复
@@ -1281,8 +1355,20 @@ impl LarkEventHandler for HermesBridge {
                     self.handle_command_help(&chat_id, &chat_type);
                     return;
                 }
-                HermesCommand::NewSession => {
-                    self.handle_command_new(&chat_id, &chat_type);
+                HermesCommand::NewSession(initial_prompt) => {
+                    let formatted_initial = initial_prompt.map(|prompt_str| {
+                        let prompt_ctx = HermesPromptContext {
+                            sender_name: sender_name.as_deref(),
+                            sender_id: &sender_open_id,
+                            chat_type: &chat_type,
+                            chat_id: &chat_id,
+                            chat_name: None,
+                            include_chat_context: chat_type == "group",
+                            quoted_info: None,
+                        };
+                        format_hermes_prompt(&prompt_ctx, &prompt_str)
+                    });
+                    self.handle_command_new(&chat_id, &chat_type, formatted_initial);
                     return;
                 }
                 HermesCommand::ListModels => {
@@ -1293,7 +1379,7 @@ impl LarkEventHandler for HermesBridge {
                     self.handle_command_switch_model(&chat_id, &chat_type, &target);
                     return;
                 }
-                HermesCommand::Stop => unreachable!(),
+                HermesCommand::Stop(_) => unreachable!(),
             }
         }
 
@@ -1598,13 +1684,34 @@ mod tests {
         assert_eq!(parse_hermes_command("@help"), Some(HermesCommand::Help));
         assert_eq!(parse_hermes_command("help"), Some(HermesCommand::Help));
 
-        assert_eq!(parse_hermes_command("/stop"), Some(HermesCommand::Stop));
-        assert_eq!(parse_hermes_command("@stop"), Some(HermesCommand::Stop));
-        assert_eq!(parse_hermes_command("stop"), Some(HermesCommand::Stop));
+        assert_eq!(parse_hermes_command("/stop"), Some(HermesCommand::Stop(None)));
+        assert_eq!(parse_hermes_command("@stop"), Some(HermesCommand::Stop(None)));
+        assert_eq!(parse_hermes_command("stop"), Some(HermesCommand::Stop(None)));
+        assert_eq!(
+            parse_hermes_command("/stop 别写了，改成用 Python 实现"),
+            Some(HermesCommand::Stop(Some("别写了，改成用 Python 实现".to_string())))
+        );
+        assert_eq!(
+            parse_hermes_command("stop: 先停一下"),
+            Some(HermesCommand::Stop(Some("先停一下".to_string())))
+        );
 
-        assert_eq!(parse_hermes_command("/new"), Some(HermesCommand::NewSession));
-        assert_eq!(parse_hermes_command("@new"), Some(HermesCommand::NewSession));
-        assert_eq!(parse_hermes_command("new"), Some(HermesCommand::NewSession));
+        assert_eq!(parse_hermes_command("/new"), Some(HermesCommand::NewSession(None)));
+        assert_eq!(parse_hermes_command("@new"), Some(HermesCommand::NewSession(None)));
+        assert_eq!(parse_hermes_command("new"), Some(HermesCommand::NewSession(None)));
+        assert_eq!(
+            parse_hermes_command("/new 请帮我分析下这个项目"),
+            Some(HermesCommand::NewSession(Some("请帮我分析下这个项目".to_string())))
+        );
+        assert_eq!(
+            parse_hermes_command("new: 重置上下文并写个测试"),
+            Some(HermesCommand::NewSession(Some("重置上下文并写个测试".to_string())))
+        );
+
+        // 避免误伤以 new / stop 开头的普通单词
+        assert_eq!(parse_hermes_command("news"), None);
+        assert_eq!(parse_hermes_command("newline"), None);
+        assert_eq!(parse_hermes_command("stopping"), None);
 
         assert_eq!(parse_hermes_command("/models"), Some(HermesCommand::ListModels));
         assert_eq!(parse_hermes_command("@models"), Some(HermesCommand::ListModels));
