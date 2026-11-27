@@ -633,6 +633,201 @@ impl LarkClient {
             text,
         })
     }
+
+    /// 下载消息中的资源（如图片、文件等）
+    pub fn download_message_resource(
+        &self,
+        message_id: &str,
+        file_key: &str,
+        resource_type: &str,
+    ) -> Result<Vec<u8>, String> {
+        if message_id.is_empty() || file_key.is_empty() {
+            return Err("message_id 或 file_key 为空".to_string());
+        }
+
+        let token = self.get_tenant_access_token()?;
+        let url = format!(
+            "{}/open-apis/im/v1/messages/{}/resources/{}?type={}",
+            LARK_HOST, message_id, file_key, resource_type
+        );
+
+        let resp = self
+            .http_client
+            .get(&url)
+            .bearer_auth(token)
+            .send()
+            .map_err(|e| format!("下载消息资源网络错误: {}", e))?;
+
+        if !resp.status().is_success() {
+            return Err(format!("下载消息资源接口返回 HTTP 状态码: {}", resp.status()));
+        }
+
+        let content_type = resp
+            .headers()
+            .get(reqwest::header::CONTENT_TYPE)
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or_default()
+            .to_string();
+
+        let bytes = resp
+            .bytes()
+            .map_err(|e| format!("读取消息资源数据流失败: {}", e))?
+            .to_vec();
+
+        if content_type.contains("application/json") {
+            if let Ok(body) = serde_json::from_slice::<serde_json::Value>(&bytes) {
+                let code = body.get("code").and_then(|c| c.as_i64()).unwrap_or(0);
+                if code != 0 {
+                    let msg = body.get("msg").and_then(|m| m.as_str()).unwrap_or("未知错误");
+                    return Err(format!("飞书下载资源失败 ({}): {}", code, msg));
+                }
+            }
+        }
+
+        Ok(bytes)
+    }
+}
+
+/// 本地附件缓存目录路径
+pub fn get_hermes_attachments_dir() -> std::path::PathBuf {
+    let mut base_dir = loom_core::storage::manager::get_config_path();
+    base_dir.pop();
+    base_dir.join("hermes").join("attachments")
+}
+
+/// 检查并获取已缓存的附件本地绝对路径
+pub fn get_cached_attachment_path(file_key: &str, ext: &str) -> Option<std::path::PathBuf> {
+    let attach_dir = get_hermes_attachments_dir();
+    let filename = if ext.is_empty() {
+        file_key.to_string()
+    } else {
+        format!("{}.{}", file_key, ext.trim_start_matches('.'))
+    };
+    let file_path = attach_dir.join(filename);
+    if file_path.exists() {
+        Some(file_path)
+    } else {
+        None
+    }
+}
+
+/// 保存消息资源到本地持久化缓存目录并返回绝对路径
+pub fn save_attachment(file_key: &str, ext: &str, bytes: &[u8]) -> Result<std::path::PathBuf, String> {
+    let attach_dir = get_hermes_attachments_dir();
+    if let Err(e) = std::fs::create_dir_all(&attach_dir) {
+        return Err(format!("创建 attachments 目录失败: {}", e));
+    }
+    let filename = if ext.is_empty() {
+        file_key.to_string()
+    } else {
+        format!("{}.{}", file_key, ext.trim_start_matches('.'))
+    };
+    let file_path = attach_dir.join(filename);
+    if let Err(e) = std::fs::write(&file_path, bytes) {
+        return Err(format!("写入 attachment 文件失败: {}", e));
+    }
+    Ok(file_path)
+}
+
+/// 从 post 富文本中提取出的内容结构
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ExtractedPostContent {
+    /// 展平后的文本内容（包含标题、段落、代码块、链接等）
+    pub text: String,
+    /// 包含的所有图片 key（按出现顺序排列，去重）
+    pub image_keys: Vec<String>,
+}
+
+/// 解析 post 富文本中的文字、代码块与图片 key
+pub fn extract_post_content(parsed: &serde_json::Value) -> ExtractedPostContent {
+    let mut result_lines = Vec::new();
+    let mut image_keys = Vec::new();
+
+    let lang_obj = if let Some(zh) = parsed.get("zh_cn") {
+        Some(zh)
+    } else if let Some(map) = parsed.as_object() {
+        // 如果存在其它语言或者未嵌套语言
+        if map.contains_key("content") {
+            Some(parsed)
+        } else {
+            map.values().next()
+        }
+    } else {
+        None
+    };
+
+    if let Some(post) = lang_obj {
+        if let Some(title) = post.get("title").and_then(|t| t.as_str()) {
+            if !title.trim().is_empty() {
+                result_lines.push(title.to_string());
+            }
+        }
+        if let Some(paragraphs) = post.get("content").and_then(|c| c.as_array()) {
+            for p in paragraphs {
+                if let Some(elements) = p.as_array() {
+                    let mut line = String::new();
+                    for elem in elements {
+                        let tag = elem.get("tag").and_then(|t| t.as_str()).unwrap_or("");
+                        match tag {
+                            "text" => {
+                                if let Some(txt) = elem.get("text").and_then(|t| t.as_str()) {
+                                    line.push_str(txt);
+                                }
+                            }
+                            "code_block" => {
+                                let code = elem.get("text").and_then(|t| t.as_str()).unwrap_or_default();
+                                let lang = elem.get("language").and_then(|l| l.as_str()).unwrap_or("");
+                                if !line.is_empty() {
+                                    result_lines.push(std::mem::take(&mut line));
+                                }
+                                result_lines.push(format!("```{}\n{}\n```", lang, code));
+                            }
+                            "a" => {
+                                let txt = elem.get("text").and_then(|t| t.as_str()).unwrap_or("");
+                                let href = elem.get("href").and_then(|h| h.as_str()).unwrap_or("");
+                                if !href.is_empty() && !txt.is_empty() && txt != href {
+                                    line.push_str(&format!("[{}]({})", txt, href));
+                                } else if !txt.is_empty() {
+                                    line.push_str(txt);
+                                } else {
+                                    line.push_str(href);
+                                }
+                            }
+                            "at" => {
+                                // 优先保留 @_user_1 等占位符 key，以便上层 clean_text_mentions 剔除
+                                if let Some(key) = elem.get("key").and_then(|k| k.as_str()) {
+                                    line.push_str(key);
+                                } else if let Some(name) = elem.get("user_name").and_then(|n| n.as_str()) {
+                                    line.push_str(&format!("@{}", name));
+                                }
+                            }
+                            "img" => {
+                                if let Some(k) = elem.get("image_key").and_then(|k| k.as_str()) {
+                                    if !k.is_empty() && !image_keys.contains(&k.to_string()) {
+                                        image_keys.push(k.to_string());
+                                    }
+                                }
+                            }
+                            "emotion" => {
+                                if let Some(emoji_type) = elem.get("emoji_type").and_then(|e| e.as_str()) {
+                                    line.push_str(&format!("[{}]", emoji_type));
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                    if !line.is_empty() {
+                        result_lines.push(line);
+                    }
+                }
+            }
+        }
+    }
+
+    ExtractedPostContent {
+        text: result_lines.join("\n"),
+        image_keys,
+    }
 }
 
 /// 从飞书消息体中提取纯文本可读内容
@@ -649,57 +844,15 @@ pub fn extract_text_from_message(msg_type: &str, content_json_str: &str) -> Stri
             .unwrap_or_default()
             .to_string(),
         "post" => {
-            let mut result = Vec::new();
-            let lang_obj = if let Some(zh) = parsed.get("zh_cn") {
-                Some(zh)
-            } else if let Some(map) = parsed.as_object() {
-                map.values().next()
-            } else {
-                None
-            };
-
-            if let Some(post) = lang_obj {
-                if let Some(title) = post.get("title").and_then(|t| t.as_str()) {
-                    if !title.trim().is_empty() {
-                        result.push(title.to_string());
-                    }
+            let extracted = extract_post_content(&parsed);
+            if extracted.text.is_empty() {
+                if !extracted.image_keys.is_empty() {
+                    format!("[图片 * {}]", extracted.image_keys.len())
+                } else {
+                    "[富文本消息]".to_string()
                 }
-                if let Some(paragraphs) = post.get("content").and_then(|c| c.as_array()) {
-                    for p in paragraphs {
-                        if let Some(elements) = p.as_array() {
-                            let mut line = String::new();
-                            for elem in elements {
-                                let tag = elem.get("tag").and_then(|t| t.as_str()).unwrap_or("");
-                                match tag {
-                                    "text" => {
-                                        if let Some(txt) = elem.get("text").and_then(|t| t.as_str()) {
-                                            line.push_str(txt);
-                                        }
-                                    }
-                                    "a" => {
-                                        if let Some(txt) = elem.get("text").and_then(|t| t.as_str()) {
-                                            line.push_str(txt);
-                                        }
-                                    }
-                                    "at" => {
-                                        if let Some(name) = elem.get("user_name").and_then(|n| n.as_str()) {
-                                            line.push_str(&format!("@{}", name));
-                                        }
-                                    }
-                                    _ => {}
-                                }
-                            }
-                            if !line.is_empty() {
-                                result.push(line);
-                            }
-                        }
-                    }
-                }
-            }
-            if result.is_empty() {
-                "[富文本消息]".to_string()
             } else {
-                result.join("\n")
+                extracted.text
             }
         }
         "image" => "[图片]".to_string(),
@@ -953,6 +1106,39 @@ mod tests {
         // 多媒体类型占位
         assert_eq!(extract_text_from_message("image", "{}"), "[图片]");
         assert_eq!(extract_text_from_message("file", "{}"), "[文件]");
+    }
+
+    #[test]
+    fn test_extract_post_content_with_code_and_multi_images() {
+        let post_json = serde_json::json!({
+            "zh_cn": {
+                "title": "测试图文与代码混排",
+                "content": [
+                    [
+                        { "tag": "text", "text": "请看这段脚本与两张截图：" },
+                        { "tag": "at", "key": "@_user_1", "user_name": "子飞鱼" }
+                    ],
+                    [
+                        { "tag": "code_block", "language": "bash", "text": "git status\ngit push" }
+                    ],
+                    [
+                        { "tag": "img", "image_key": "img_111" },
+                        { "tag": "text", "text": " 第一张图说明" }
+                    ],
+                    [
+                        { "tag": "img", "image_key": "img_222" },
+                        { "tag": "img", "image_key": "img_111" } // 重复 key 测试去重
+                    ]
+                ]
+            }
+        });
+
+        let extracted = extract_post_content(&post_json);
+        assert!(extracted.text.contains("测试图文与代码混排"));
+        assert!(extracted.text.contains("请看这段脚本与两张截图：@_user_1"));
+        assert!(extracted.text.contains("```bash\ngit status\ngit push\n```"));
+        assert!(extracted.text.contains("第一张图说明"));
+        assert_eq!(extracted.image_keys, vec!["img_111".to_string(), "img_222".to_string()]);
     }
 
     #[test]

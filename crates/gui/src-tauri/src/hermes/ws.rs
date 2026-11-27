@@ -6,7 +6,9 @@ use std::time::{Duration, Instant};
 use prost::Message as ProstMessage;
 use tungstenite::{connect, Message};
 
-use super::client::LarkClient;
+use super::client::{
+    extract_post_content, get_cached_attachment_path, save_attachment, LarkClient,
+};
 use super::proto::{Frame, Header};
 
 static GLOBAL_PROCESSED_IDS: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
@@ -425,57 +427,152 @@ impl LarkWsClient {
                     .and_then(|v| v.as_str())
                     .unwrap_or_default();
 
-                // 仅处理文本类型消息
-                if msg_type == "text" {
-                    let content_str = message
-                        .get("content")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or_default();
-                    let mentions = message.get("mentions").and_then(|m| m.as_array());
+                let mentions = message.get("mentions").and_then(|m| m.as_array());
 
-                    // 从 mentions 中提取已知用户姓名预填充本地缓存
-                    if let Some(mention_list) = mentions {
-                        for m in mention_list {
-                            if let (Some(open_id), Some(name)) = (
-                                m.get("id").and_then(|i| i.get("open_id")).and_then(|o| o.as_str()),
-                                m.get("name").and_then(|n| n.as_str()),
-                            ) {
-                                self.client.cache_user_name(open_id, name);
-                            }
-                        }
-                    }
-
-                    if let Ok(content_obj) = serde_json::from_str::<serde_json::Value>(content_str) {
-                        if let Some(text) = content_obj.get("text").and_then(|t| t.as_str()) {
-                            // 群聊场景过滤规则：
-                            // 1. 若获取到了自身 open_id：仅在 mentions 包含当前机器人自身的 open_id 时才予以响应；
-                            // 2. 若未明确 @ 自身（例如 @ 了群里的其他机器人或其他人，或无 @ 的普通广播/指令），一律静默忽略；
-                            // 3. 允许其他机器人发出的 @ 自身消息正常响应，但自己发送的消息坚决过滤；
-                            // 4. 在 p2p 单聊场景下不受此限制，继续正常响应。
-                            if !should_respond_to_message(
-                                self_bot_open_id.as_deref(),
-                                &sender_open_id,
-                                &chat_type,
-                                text,
-                                mentions.map(|v| v.as_slice()),
-                            ) {
-                                return;
-                            }
-
-                            let cleaned_text = clean_text_mentions(text, mentions.map(|v| v.as_slice()));
-                            if !cleaned_text.trim().is_empty() {
-                                self.handler.on_text_message(
-                                    chat_id,
-                                    chat_type,
-                                    message_id,
-                                    sender_open_id,
-                                    cleaned_text,
-                                    parent_id,
-                                );
-                            }
+                // 从 mentions 中提取已知用户姓名预填充本地缓存
+                if let Some(mention_list) = mentions {
+                    for m in mention_list {
+                        if let (Some(open_id), Some(name)) = (
+                            m.get("id").and_then(|i| i.get("open_id")).and_then(|o| o.as_str()),
+                            m.get("name").and_then(|n| n.as_str()),
+                        ) {
+                            self.client.cache_user_name(open_id, name);
                         }
                     }
                 }
+
+                let content_str = message
+                    .get("content")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default();
+
+                let content_obj: serde_json::Value = match serde_json::from_str(content_str) {
+                    Ok(v) => v,
+                    Err(e) => {
+                        eprintln!("[Hermes WS] 解析消息 content 失败: {}, raw: {}", e, content_str);
+                        return;
+                    }
+                };
+
+                let mut raw_text = String::new();
+                let mut image_keys: Vec<String> = Vec::new();
+
+                match msg_type {
+                    "text" => {
+                        if let Some(txt) = content_obj.get("text").and_then(|t| t.as_str()) {
+                            raw_text = txt.to_string();
+                        }
+                    }
+                    "post" => {
+                        let extracted = extract_post_content(&content_obj);
+                        raw_text = extracted.text;
+                        image_keys = extracted.image_keys;
+                    }
+                    "image" => {
+                        if let Some(img_key) = content_obj.get("image_key").and_then(|k| k.as_str()) {
+                            if !img_key.is_empty() {
+                                image_keys.push(img_key.to_string());
+                            }
+                        }
+                    }
+                    other => {
+                        println!("[Hermes WS] 收到未适配的消息类型: {} (message_id: {})", other, message_id);
+                        return;
+                    }
+                }
+
+                // 群聊场景过滤规则判定
+                if !should_respond_to_message(
+                    self_bot_open_id.as_deref(),
+                    &sender_open_id,
+                    &chat_type,
+                    &raw_text,
+                    mentions.map(|v| v.as_slice()),
+                ) {
+                    return;
+                }
+
+                let cleaned_text = clean_text_mentions(&raw_text, mentions.map(|v| v.as_slice()));
+
+                // 处理图片资源下载（多图防并发冲突与路径整合）
+                let mut image_paths: Vec<String> = Vec::new();
+                for img_key in &image_keys {
+                    if let Some(cached) = get_cached_attachment_path(img_key, "png") {
+                        image_paths.push(cached.to_string_lossy().to_string());
+                        continue;
+                    }
+
+                    match self.client.download_message_resource(&message_id, img_key, "image") {
+                        Ok(bytes) => match save_attachment(img_key, "png", &bytes) {
+                            Ok(path) => {
+                                image_paths.push(path.to_string_lossy().to_string());
+                            }
+                            Err(e) => {
+                                eprintln!("[Hermes WS] 保存图片附件失败 (key: {}): {}", img_key, e);
+                                image_paths.push(format!("[图片保存失败: {}]", img_key));
+                            }
+                        },
+                        Err(e) => {
+                            eprintln!("[Hermes WS] 下载图片资源失败 (key: {}): {}", img_key, e);
+                            image_paths.push(format!("[图片下载失败: {}]", img_key));
+                        }
+                    }
+                }
+
+                // 拼接合成最终送入 Agent 的 Prompt 内容
+                let final_prompt = match (cleaned_text.trim().is_empty(), image_paths.is_empty()) {
+                    (false, true) => cleaned_text,
+                    (false, false) => {
+                        let mut combined = cleaned_text;
+                        combined.push_str("\n\n");
+                        if image_paths.len() == 1 {
+                            combined.push_str(&format!("[附带图片: {}]", image_paths[0]));
+                        } else {
+                            combined.push_str(&format!("[附带图片共 {} 张]:\n", image_paths.len()));
+                            for (idx, path) in image_paths.iter().enumerate() {
+                                combined.push_str(&format!("- 图片 {}: {}\n", idx + 1, path));
+                            }
+                        }
+                        combined
+                    }
+                    (true, false) => {
+                        if image_paths.len() == 1 {
+                            format!("[用户发送了 1 张图片: {}]", image_paths[0])
+                        } else {
+                            let mut combined = format!("[用户发送了 {} 张图片]:\n", image_paths.len());
+                            for (idx, path) in image_paths.iter().enumerate() {
+                                combined.push_str(&format!("- 图片 {}: {}\n", idx + 1, path));
+                            }
+                            combined
+                        }
+                    }
+                    (true, true) => {
+                        // 文字与图片均为空：
+                        // 若带有 parent_id，说明用户是“引用回复”某条历史消息并呼叫机器人（无需额外加文本）
+                        if parent_id.is_some() {
+                            "请查看并协助处理上述引用的内容".to_string()
+                        } else {
+                            // 无引用且无有效内容，静默忽略
+                            return;
+                        }
+                    }
+                };
+
+                println!(
+                    "[Hermes WS] 成功派发消息 (msg_type: {}, message_id: {}, images: {})",
+                    msg_type,
+                    message_id,
+                    image_keys.len()
+                );
+
+                self.handler.on_text_message(
+                    chat_id,
+                    chat_type,
+                    message_id,
+                    sender_open_id,
+                    final_prompt,
+                    parent_id,
+                );
             }
             "card.action.trigger" => {
                 let event = match root.get("event") {
@@ -741,6 +838,24 @@ mod tests {
             "p2p",
             "你好",
             None
+        ));
+
+        // 9. 群聊中，富文本/代码块带 @ -> 必须回复
+        assert!(should_respond_to_message(
+            Some(self_id),
+            user_id,
+            "group",
+            "@_user_1 ```bash\ngit status\n```",
+            Some(&[serde_json::json!({ "id": { "open_id": self_id } })])
+        ));
+
+        // 10. 群聊中，纯图片带 @ -> 必须回复
+        assert!(should_respond_to_message(
+            Some(self_id),
+            user_id,
+            "group",
+            "@_user_1",
+            Some(&[serde_json::json!({ "id": { "open_id": self_id } })])
         ));
     }
 }
